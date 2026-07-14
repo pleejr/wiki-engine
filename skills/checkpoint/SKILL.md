@@ -2,6 +2,7 @@
 name: checkpoint
 description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, then distills durable facts from this session into memory/ notes. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session only — never a hook.
 status: active
+summary: "end-of-session: update project page + `log.md`, distill memory. In-session only."
 updated: 2026-07-13
 used_by: []
 ---

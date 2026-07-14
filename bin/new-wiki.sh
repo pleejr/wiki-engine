@@ -95,10 +95,11 @@ render "$ENGINE_ROOT/scaffold/gitignore.tmpl"  > "$VAULT_PATH/.gitignore"
 
 if [ "$LINK_SKILLS" -eq 1 ]; then
   mkdir -p "$HOME/.claude/skills"
-  for s in wiki-repo wiki-context checkpoint; do
-    ln -sfn "$ENGINE_ROOT/skills/$s" "$HOME/.claude/skills/$s"
+  for s in "$ENGINE_ROOT"/skills/*/; do
+    name="$(basename "$s")"
+    ln -sfn "$ENGINE_ROOT/skills/$name" "$HOME/.claude/skills/$name"
   done
-  echo "  linked ~/.claude/skills/{wiki-repo,wiki-context,checkpoint} -> $ENGINE_ROOT/skills/"
+  echo "  linked ~/.claude/skills/* -> $ENGINE_ROOT/skills/ (all engine skills)"
 fi
 
 git -C "$VAULT_PATH" add -A
@@ -117,4 +118,6 @@ Next steps (not automated — machine/user choices):
   3. Add a remote and push:
        git -C "$VAULT_PATH" remote add origin <url>
        git -C "$VAULT_PATH" push -u origin main
+  4. Seed the empty vault from your existing environment (memories, repos, projects):
+       run the 'wiki-onboard' skill in a Claude Code session with WIKI_PATH set.
 EOF

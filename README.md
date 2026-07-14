@@ -6,10 +6,13 @@ managed once and pinned per wiki — engine updates never silently drift across 
 
 ## What's here
 
-- `skills/` — the three Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`.
+- `skills/` — the Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`.
 - `SCHEMA.md` — node model, three layers, page conventions, memory lifecycle.
 - `CLAUDE.md` — generic context router a wiki imports from its own thin `CLAUDE.md`.
-- `bin/new-wiki.sh` + `scaffold/` — scaffold a new consuming wiki in one command.
+- `bin/` — deterministic maintenance tools (no LLM):
+  - `new-wiki.sh` + `scaffold/` — scaffold a new consuming wiki in one command.
+  - `gen-skills-index.sh` — regenerate a wiki's `index.md` skills catalog from `SKILL.md` frontmatter.
+  - `lint-memory.sh` — validate a wiki's `memory/` notes (frontmatter, wikilinks, drift).
 
 ## New wiki (recommended)
 
@@ -25,6 +28,10 @@ It creates the vault repo, pins this engine as the `engine/` submodule, renders 
 templates (thin `CLAUDE.md`, `index.md`, `log.md`, node folders), and symlinks the skills into
 `~/.claude/skills`. It then prints the manual next steps it deliberately does **not** automate: setting
 `$WIKI_PATH`, wiring `~/.claude/CLAUDE.md`, and adding a git remote. Run `new-wiki.sh --help` for options.
+
+Then **seed the empty vault** from your existing environment — run the `wiki-onboard` skill in a Claude
+Code session (with `$WIKI_PATH` set) to distill existing native memories, ingest the repos you work in,
+and stub project pages. It's a one-time bootstrap; `checkpoint` keeps the vault current thereafter.
 
 ## Doing it by hand
 

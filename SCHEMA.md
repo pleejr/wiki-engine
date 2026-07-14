@@ -27,8 +27,8 @@ boundary-agnostic.
 |---|---|---|---|---|
 | **repo** | `repos/` | external repo (drifts) | git **ref/SHA** change | LLM re-ingest (`wiki-repo`) |
 | **project** | `projects/` | your work (curated) | your **activity** | in-session `checkpoint` |
-| **skill** | engine `skills/` | the `SKILL.md` (self-describing, lazy-loaded) | you **edit** it | deterministic frontmatter **scan** |
-| **memory** | `memory/` | curated note (distilled from raw native memory) | **supersession/contradiction** | **lint** + in-session distill |
+| **skill** | engine `skills/` | the `SKILL.md` (self-describing, lazy-loaded) | you **edit** it | deterministic frontmatter **scan** (`bin/gen-skills-index.sh`) |
+| **memory** | `memory/` | curated note (distilled from raw native memory) | **supersession/contradiction** | **lint** (`bin/lint-memory.sh`) + in-session distill |
 
 Plus general knowledge in `entities/`, `concepts/`, `comparisons/`, `queries/`.
 
@@ -62,8 +62,21 @@ Plus general knowledge in `entities/`, `concepts/`, `comparisons/`, `queries/`.
 - **`wiki-context`** — the router: read `index.md`, select relevant pages, freshness-check, load on demand.
 - **`checkpoint`** — end-of-session: update the project page + append `log.md`, and distill durable facts
   from native memory into `memory/` notes. **In-session only — never a hook.**
+- **`wiki-onboard`** — one-time bootstrap: seed a freshly-scaffolded vault from existing native memories,
+  repos, and projects. The inverse of `checkpoint`. **In-session only — never a hook.**
 
-Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be set).
+Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be set). The catalog in a
+wiki's `index.md` is not hand-kept — it is scan-generated (see tooling below).
+
+## Tooling (`bin/`, deterministic — no LLM)
+
+- **`gen-skills-index.sh`** — regenerate the `index.md` skills catalog from `skills/*/SKILL.md`
+  frontmatter, spliced between `<!-- skills:start -->` / `<!-- skills:end -->` sentinels. `--check` fails
+  on drift; `--stdout` prints the block. Run after adding/editing a skill.
+- **`lint-memory.sh`** — validate `memory/*.md`: required frontmatter, valid `type`, ≥2 wikilinks,
+  dead-link and index-drift warnings. `--strict` fails on warnings. This is the memory node's freshness check.
+- **`new-wiki.sh`** — scaffold a new consuming wiki (repo + engine submodule + rendered templates + skill
+  symlinks).
 
 ## How a wiki consumes this engine
 

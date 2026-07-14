@@ -2,6 +2,7 @@
 name: wiki-repo
 description: Ingest or refresh ONE repo's wiki page in the wiki vault ($WIKI_PATH) with git-ref provenance. Use when documenting a repository for the brain, or when a repo's existing wiki page is stale (its recorded ref/sha differs from HEAD). Single repo only — no cross-repo synthesis.
 status: active
+summary: ingest/refresh one repo's wiki page with git-ref provenance.
 updated: 2026-07-13
 used_by: []
 ---
