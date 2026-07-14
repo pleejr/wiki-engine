@@ -1,5 +1,8 @@
-# Obsidian per-machine UI/workspace state — not portable brain content
-.obsidian/
+# Obsidian per-machine UI/workspace state — not portable brain content.
+# Exception: app.json carries rendering-correctness settings (strictLineBreaks)
+# that must travel with the vault so hard-wrapped pages read correctly everywhere.
+.obsidian/*
+!.obsidian/app.json
 
 # OS cruft
 .DS_Store

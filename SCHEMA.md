@@ -90,3 +90,10 @@ wiki's `index.md` is not hand-kept — it is scan-generated (see tooling below).
 
 Open a wiki repo directly as an Obsidian vault (no conversion). Attachments → `raw/assets/`.
 Wikilinks + Graph View + Dataview (frontmatter) work natively.
+
+**Line wrapping.** Pages are **hard-wrapped at ~100 chars** (line-level git diffs + readable `blame`).
+For that source to render as flowing prose, Obsidian must use **strict line breaks** (otherwise its
+default treats every newline as a break and paragraphs look broken). This travels with the vault: keep
+`.obsidian/` git-ignored **except** `.obsidian/app.json`, which is committed with
+`{ "strictLineBreaks": true }`. The scaffolder writes both; the exception lives in the vault `.gitignore`
+as `.obsidian/*` + `!.obsidian/app.json`. No per-machine toggling needed.

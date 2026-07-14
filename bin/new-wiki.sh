@@ -93,6 +93,11 @@ render "$ENGINE_ROOT/scaffold/log.md.tmpl"     > "$VAULT_PATH/log.md"
 render "$ENGINE_ROOT/scaffold/README.md.tmpl"  > "$VAULT_PATH/README.md"
 render "$ENGINE_ROOT/scaffold/gitignore.tmpl"  > "$VAULT_PATH/.gitignore"
 
+# Committed Obsidian setting (strictLineBreaks) so hard-wrapped pages render as
+# flowing prose in Obsidian on every machine — the rest of .obsidian/ stays ignored.
+mkdir -p "$VAULT_PATH/.obsidian"
+render "$ENGINE_ROOT/scaffold/obsidian-app.json.tmpl" > "$VAULT_PATH/.obsidian/app.json"
+
 if [ "$LINK_SKILLS" -eq 1 ]; then
   mkdir -p "$HOME/.claude/skills"
   for s in "$ENGINE_ROOT"/skills/*/; do
