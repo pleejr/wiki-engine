@@ -9,23 +9,18 @@ used_by: []
 
 # wiki-repo — ingest or refresh one repo
 
-Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's context cheaply instead
-of re-deriving it. **One repo per run.** Never synthesize across repos (fragile, drops stale).
+Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's context cheaply instead of re-deriving it. **One repo per run.** Never synthesize across repos (fragile, drops stale).
 
 ## Inputs
 - Target repo path (default: current working repo).
-- **Vault**: `$WIKI_PATH` — the vault root; must be set. Every wiki file below lives under it —
-  `$WIKI_PATH/repos/<name>.md`, `$WIKI_PATH/index.md`, `$WIKI_PATH/log.md`.
+- **Vault**: `$WIKI_PATH` — the vault root; must be set. Every wiki file below lives under it — `$WIKI_PATH/repos/<name>.md`, `$WIKI_PATH/index.md`, `$WIKI_PATH/log.md`.
 
 ## Steps
 1. **Read provenance signals** from the target repo:
    - `git -C <repo> describe --tags --always` → latest release tag (primary signal).
    - `git -C <repo> rev-parse --short HEAD` → HEAD sha (fallback for untagged drift).
-2. **If a page already exists** (`$WIKI_PATH/repos/<name>.md`) and its frontmatter `ref`/`sha` **match** current →
-   report "fresh, no change" and stop. Otherwise continue (ingest or refresh are the same op).
-3. **Read the repo** enough to characterize it: purpose, stack, entry points, key modules,
-   external interfaces (APIs, IaC/Terraform inputs/outputs), and how a new consumer integrates. Read
-   `README`, manifests, and top-level structure; sample deeper only as needed. Do NOT dump file contents.
+2. **If a page already exists** (`$WIKI_PATH/repos/<name>.md`) and its frontmatter `ref`/`sha` **match** current → report "fresh, no change" and stop. Otherwise continue (ingest or refresh are the same op).
+3. **Read the repo** enough to characterize it: purpose, stack, entry points, key modules, external interfaces (APIs, IaC/Terraform inputs/outputs), and how a new consumer integrates. Read `README`, manifests, and top-level structure; sample deeper only as needed. Do NOT dump file contents.
 4. **Write `$WIKI_PATH/repos/<name>.md`** with frontmatter:
    ```yaml
    title: <name>
@@ -42,8 +37,7 @@ of re-deriving it. **One repo per run.** Never synthesize across repos (fragile,
    ```
    Body sections: **Purpose · Stack · Structure/entry points · Interfaces · How to extend/integrate · Gotchas**.
    Add **≥2 `[[wikilinks]]`** (to related repos/concepts). Keep it a *map*, not a transcript.
-5. **Update navigation**: add/refresh the `repos/` entry in `$WIKI_PATH/index.md`; append a dated
-   `$WIKI_PATH/log.md` line.
+5. **Update navigation**: add/refresh the `repos/` entry in `$WIKI_PATH/index.md`; append a dated `$WIKI_PATH/log.md` line.
 6. Report what changed and the new `ref`/`sha`.
 
 ## Rules

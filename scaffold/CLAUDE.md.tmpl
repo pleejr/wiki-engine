@@ -1,16 +1,12 @@
 # {{WIKI_NAME}} — the brain
 
-{{BRAIN_CAP}} second brain (LLM-Wiki / Karpathy pattern). **This repo is the single durable brain.**
-Claude Code's native per-project memory is *raw scratch*; curated truth lives here, in git.
+{{BRAIN_CAP}} second brain (LLM-Wiki / Karpathy pattern). **This repo is the single durable brain.** Claude Code's native per-project memory is *raw scratch*; curated truth lives here, in git.
 
-The reusable machinery (skills, node model, router, safety rules) is the **wiki-engine** submodule at
-`engine/`, pinned per bump. This file carries only the {{BRAIN}} boundary/identity and imports the
-engine's generic router below.
+The reusable machinery (skills, node model, router, safety rules) is the **wiki-engine** submodule at `engine/`, pinned per bump. This file carries only the {{BRAIN}} boundary/identity and imports the engine's generic router below.
 
 ## Boundary (non-negotiable)
 
-- `brain: {{BRAIN}}`. **No secrets** (keys, tokens, credentials). Keep this vault to the `{{BRAIN}}`
-  brain — crossover to `{{OTHER}}` is a deliberate manual export only. Git identity `{{GIT_EMAIL}}`.
+- `brain: {{BRAIN}}`. **No secrets** (keys, tokens, credentials). Keep this vault to the `{{BRAIN}}` brain — crossover to `{{OTHER}}` is a deliberate manual export only. Git identity `{{GIT_EMAIL}}`.
 
 ## Engine (imported)
 

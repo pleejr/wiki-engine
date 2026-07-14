@@ -15,11 +15,9 @@ Pull in just-enough brain context without inhaling the vault. This is the token-
 
 ## Steps
 1. **Read `$WIKI_PATH/index.md`** (the map) and, if useful, recent `$WIKI_PATH/log.md` entries.
-2. **Select** only the `[[links]]` relevant to the current task (the repo you're in, the active project,
-   related decisions/preferences). Prefer 1–3 pages over breadth.
+2. **Select** only the `[[links]]` relevant to the current task (the repo you're in, the active project, related decisions/preferences). Prefer 1–3 pages over breadth.
 3. **Freshness-check any repo page** you're about to rely on:
-   - Compare the page's frontmatter `ref`/`sha` to `git -C <repo> describe --tags --always` /
-     `git -C <repo> rev-parse --short HEAD`.
+   - Compare the page's frontmatter `ref`/`sha` to `git -C <repo> describe --tags --always` / `git -C <repo> rev-parse --short HEAD`.
    - **On a mismatch**, invoke **`wiki-repo`** to refresh that page, then use the refreshed content.
    - Project and memory pages have no git signal — use as-is (they're refreshed by `checkpoint`/lint).
 4. **Load** the selected pages into context and proceed with the task.
