@@ -30,7 +30,7 @@ Run **once**, right after `new-wiki.sh` (or after adopting the engine in an exis
 
 5. **Skills.** The engine's `skills/` are already linked by the scaffolder. Inventory any other `~/.claude/skills/*`; note user-authored ones worth promoting into the engine (a manual add — don't copy them into the vault). Then regenerate the catalog: `engine/bin/gen-skills-index.sh`.
 
-6. **Finalize.** Refresh `$WIKI_PATH/index.md` sections for the new pages, run `engine/bin/lint-memory.sh` and fix any errors, and append a dated `log.md` line summarizing the seed.
+6. **Finalize.** Refresh `$WIKI_PATH/index.md` sections for the new pages, run `engine/bin/lint.sh` (umbrella) and fix any failures, and append a dated `log.md` line summarizing the seed.
 
 ## Rules
 - **In-session, on demand only. NEVER wire to a hook or a background/recursive `claude` spawn** — that was the `.ai-os` fork-bomb. See [[lesson-no-claude-in-hooks]].

@@ -29,6 +29,9 @@ Run this deliberately at the end of a work session. **Vault**: `$WIKI_PATH` — 
 - Exception — the always-on layer: native `MEMORY.md` is auto-loaded every session, the vault is on-demand. Anything that must be present *every* session (core behavioral guidance) belongs in `CLAUDE.md`, not left in native as a workaround. Move it there, then prune.
 - Deletion is a **guided in-session action** — confirm before removing. Never wire pruning to a hook or background spawn. See [[lesson-no-claude-in-hooks]].
 
+## 4. Lint before finishing
+- Run `engine/bin/lint.sh` (the umbrella: memory notes + frontmatter-property validity + soft-wrap drift + skills-catalog drift). Fix any failures before you consider the checkpoint done — don't commit a vault that fails lint.
+
 ## Rules
 - **In-session, on demand only. NEVER wire this to a hook or a background/recursive `claude` spawn** — that was the `.ai-os` fork-bomb. See [[lesson-no-claude-in-hooks]].
 - `brain: personal`; no secrets; personal git identity.
