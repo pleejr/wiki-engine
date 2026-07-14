@@ -1,6 +1,6 @@
 # wiki-engine — the engine (generic router)
 
-Shared machinery for an LLM-Wiki / Karpathy-pattern brain: the node model, page conventions, and skills. A wiki vault pins this as a submodule and imports this file from its own thin `CLAUDE.md`. This file is boundary-agnostic — the consuming wiki declares its own `brain`/identity.
+Shared machinery for an LLM-Wiki / Karpathy-pattern vault: the node model, page conventions, and skills. A wiki vault pins this as a submodule and imports this file from its own thin `CLAUDE.md`. This file is boundary-agnostic — the consuming wiki declares its own `boundary`/identity.
 
 ## How to use a wiki — context router (do this; do NOT inhale everything)
 

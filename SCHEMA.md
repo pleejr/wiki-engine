@@ -6,7 +6,7 @@ Each consuming wiki declares its own boundary in its top-level `CLAUDE.md` (see 
 
 ## Boundary law (convention)
 
-- Every page carries `brain:` (`personal` or `work`) in frontmatter. A vault holds **no secrets** (keys, credentials, tokens, SSNs, card/bank numbers) and uses a single declared git identity. Crossover between brains is a deliberate manual export, never automatic.
+- Every page carries `boundary:` (`personal` or `work`) in frontmatter. A vault holds **no secrets** (keys, credentials, tokens, SSNs, card/bank numbers) and uses a single declared git identity. Crossover between vaults is a deliberate manual export, never automatic.
 
 ## Three layers
 
@@ -32,7 +32,7 @@ Plus general knowledge in `entities/`, `concepts/`, `comparisons/`, `queries/`.
 
 ## Page conventions
 
-- YAML frontmatter: `title`, `created`, `updated`, `type`, `tags`, `sources`, `brain`.
+- YAML frontmatter: `title`, `created`, `updated`, `type`, `tags`, `sources`, `boundary`.
 - **≥2 outbound `[[wikilinks]]` per page.** A link to a not-yet-written page is a stub marker.
 - **Wikilink-valued frontmatter** (e.g. `repos`) must be a **quoted YAML block list**, never an inline value — Obsidian flags inline `[[...]]` in a property as *invalid properties*, and `key: [[a]], [[b]]` isn't valid YAML at all. Write it as a block list of quoted links (`bin/lint.sh` enforces this):
   ```yaml

@@ -3,7 +3,7 @@
 # SCHEMA. Memory is kept current by supersession + this lint (see SCHEMA.md).
 #
 # Per $WIKI_PATH/memory/*.md it checks:
-#   ERROR   — missing frontmatter, or missing title/type/brain
+#   ERROR   — missing frontmatter, or missing title/type/boundary
 #   ERROR   — type not one of: memory | lesson | decision | preference
 #   ERROR   — fewer than 2 outbound [[wikilinks]] (SCHEMA: >=2 per page)
 #   WARN    — missing updated:
@@ -76,7 +76,7 @@ for f in "${notes[@]}"; do
   fi
 
   # required frontmatter
-  for k in title type brain; do
+  for k in title type boundary; do
     [ -n "$(fm_get "$f" "$k")" ] || err "missing frontmatter: $k"
   done
   [ -n "$(fm_get "$f" updated)" ] || warn "missing frontmatter: updated"

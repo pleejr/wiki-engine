@@ -34,5 +34,5 @@ Run this deliberately at the end of a work session. **Vault**: `$WIKI_PATH` — 
 
 ## Rules
 - **In-session, on demand only. NEVER wire this to a hook or a background/recursive `claude` spawn** — that was the `.ai-os` fork-bomb. See [[lesson-no-claude-in-hooks]].
-- `brain: personal`; no secrets; personal git identity.
+- `boundary: personal`; no secrets; personal git identity.
 - Prefer few high-signal notes over many; this is curation, not logging.

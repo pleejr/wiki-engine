@@ -3,7 +3,7 @@
 #
 # Run from a standalone clone of wiki-engine, e.g.:
 #   ./bin/new-wiki.sh --path ~/Documents/repos/work-wiki --name work-wiki \
-#                     --brain work --email you@company.com --git-name "Your Name"
+#                     --boundary work --email you@company.com --git-name "Your Name"
 #
 # Creates the vault repo, pins wiki-engine as the engine/ submodule, renders the
 # scaffold templates, seeds node folders, and (by default) symlinks the skills
@@ -14,15 +14,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-VAULT_PATH="" WIKI_NAME="" BRAIN="" GIT_EMAIL="" GIT_NAME="" ENGINE_URL="" LINK_SKILLS=1
+VAULT_PATH="" WIKI_NAME="" BOUNDARY="" GIT_EMAIL="" GIT_NAME="" ENGINE_URL="" LINK_SKILLS=1
 
 usage() {
   cat <<'USAGE'
-Usage: new-wiki.sh --path DIR --brain personal|work --email EMAIL [options]
+Usage: new-wiki.sh --path DIR --boundary personal|work --email EMAIL [options]
 
 Required:
   --path DIR         where to create the vault (must not exist)
-  --brain B          personal | work  (sets the boundary + frontmatter)
+  --boundary B          personal | work  (sets the boundary + frontmatter)
   --email EMAIL      git identity for this vault
 
 Options:
@@ -38,7 +38,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --path) VAULT_PATH="$2"; shift 2;;
     --name) WIKI_NAME="$2"; shift 2;;
-    --brain) BRAIN="$2"; shift 2;;
+    --boundary) BOUNDARY="$2"; shift 2;;
     --email) GIT_EMAIL="$2"; shift 2;;
     --git-name) GIT_NAME="$2"; shift 2;;
     --engine-url) ENGINE_URL="$2"; shift 2;;
@@ -51,18 +51,18 @@ done
 [ -n "$VAULT_PATH" ] || { echo "error: --path required" >&2; exit 1; }
 [ -n "$GIT_EMAIL" ] || { echo "error: --email required" >&2; exit 1; }
 [ -e "$VAULT_PATH" ] && { echo "error: $VAULT_PATH already exists" >&2; exit 1; }
-case "$BRAIN" in personal|work) ;; *) echo "error: --brain must be 'personal' or 'work'" >&2; exit 1;; esac
+case "$BOUNDARY" in personal|work) ;; *) echo "error: --boundary must be 'personal' or 'work'" >&2; exit 1;; esac
 [ -n "$WIKI_NAME" ] || WIKI_NAME="$(basename "$VAULT_PATH")"
 
 if [ -z "$ENGINE_URL" ]; then
   ENGINE_URL="$(git -C "$ENGINE_ROOT" remote get-url origin 2>/dev/null || echo "$ENGINE_ROOT")"
 fi
 
-if [ "$BRAIN" = "personal" ]; then OTHER="work"; else OTHER="personal"; fi
-BRAIN_CAP="$(printf '%s' "$BRAIN" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')"
+if [ "$BOUNDARY" = "personal" ]; then OTHER="work"; else OTHER="personal"; fi
+BOUNDARY_CAP="$(printf '%s' "$BOUNDARY" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')"
 DATE="$(date +%Y-%m-%d)"
 
-echo "Scaffolding '$WIKI_NAME' (brain: $BRAIN) at $VAULT_PATH"
+echo "Scaffolding '$WIKI_NAME' (boundary: $BOUNDARY) at $VAULT_PATH"
 echo "  engine: $ENGINE_URL"
 
 mkdir -p "$VAULT_PATH"
@@ -80,8 +80,8 @@ done
 
 render() {
   sed -e "s|{{WIKI_NAME}}|$WIKI_NAME|g" \
-      -e "s|{{BRAIN}}|$BRAIN|g" \
-      -e "s|{{BRAIN_CAP}}|$BRAIN_CAP|g" \
+      -e "s|{{BOUNDARY}}|$BOUNDARY|g" \
+      -e "s|{{BOUNDARY_CAP}}|$BOUNDARY_CAP|g" \
       -e "s|{{OTHER}}|$OTHER|g" \
       -e "s|{{GIT_EMAIL}}|$GIT_EMAIL|g" \
       -e "s|{{DATE}}|$DATE|g" \
@@ -103,7 +103,7 @@ if [ "$LINK_SKILLS" -eq 1 ]; then
 fi
 
 git -C "$VAULT_PATH" add -A
-git -C "$VAULT_PATH" commit -q -m "Scaffold $WIKI_NAME from wiki-engine (brain: $BRAIN)"
+git -C "$VAULT_PATH" commit -q -m "Scaffold $WIKI_NAME from wiki-engine (boundary: $BOUNDARY)"
 
 cat <<EOF
 

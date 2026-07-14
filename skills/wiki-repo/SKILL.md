@@ -1,6 +1,6 @@
 ---
 name: wiki-repo
-description: Ingest or refresh ONE repo's wiki page in the wiki vault ($WIKI_PATH) with git-ref provenance. Use when documenting a repository for the brain, or when a repo's existing wiki page is stale (its recorded ref/sha differs from HEAD). Single repo only — no cross-repo synthesis.
+description: Ingest or refresh ONE repo's wiki page in the wiki vault ($WIKI_PATH) with git-ref provenance. Use when documenting a repository for the vault, or when a repo's existing wiki page is stale (its recorded ref/sha differs from HEAD). Single repo only — no cross-repo synthesis.
 status: active
 summary: ingest/refresh one repo's wiki page with git-ref provenance.
 updated: 2026-07-13
@@ -33,7 +33,7 @@ Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's c
        ref: <tag>
        sha: <sha>
        ingested: <today>
-   brain: personal
+   boundary: personal
    ```
    Body sections: **Purpose · Stack · Structure/entry points · Interfaces · How to extend/integrate · Gotchas**.
    Add **≥2 `[[wikilinks]]`** (to related repos/concepts). Keep it a *map*, not a transcript.
@@ -41,5 +41,5 @@ Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's c
 6. Report what changed and the new `ref`/`sha`.
 
 ## Rules
-- `brain: personal`; **no secrets** copied into the page (no `.env` values, keys, tokens).
+- `boundary: personal`; **no secrets** copied into the page (no `.env` values, keys, tokens).
 - In-session only. Do not schedule, hook, or background-spawn anything. See [[lesson-no-claude-in-hooks]].

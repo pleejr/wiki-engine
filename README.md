@@ -1,6 +1,6 @@
 # wiki-engine
 
-Reusable machinery for an LLM-Wiki / Karpathy-pattern second brain, maintained **in-session by Claude Code** (first-party, plan-covered — no orchestrator). Extracted from `pleejr-wiki` so the engine can be managed once and pinned per wiki — engine updates never silently drift across vaults.
+Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-session by Claude Code** (first-party, plan-covered — no orchestrator). Extracted from `pleejr-wiki` so the engine can be managed once and pinned per wiki — engine updates never silently drift across vaults.
 
 ## What's here
 
@@ -19,7 +19,7 @@ Clone this engine standalone, then run the scaffolder:
 ```
 git clone <this-repo-url> ~/Documents/repos/wiki-engine
 ~/Documents/repos/wiki-engine/bin/new-wiki.sh \
-  --path ~/Documents/repos/work-wiki --brain work --email you@company.com --git-name "Your Name"
+  --path ~/Documents/repos/work-wiki --boundary work --email you@company.com --git-name "Your Name"
 ```
 
 It creates the vault repo, pins this engine as the `engine/` submodule, renders the `scaffold/` templates (thin `CLAUDE.md`, `index.md`, `log.md`, node folders), and symlinks the skills into `~/.claude/skills`. It then prints the manual next steps it deliberately does **not** automate: setting `$WIKI_PATH`, wiring `~/.claude/CLAUDE.md`, and adding a git remote. Run `new-wiki.sh --help` for options.
@@ -36,6 +36,6 @@ Then **seed the empty vault** from your existing environment — run the `wiki-o
 
 ## Boundary note
 
-The engine holds no content, identity, or secrets — it's safe to share across a `personal` and a `work` brain. **Content never crosses:** each vault keeps its own `brain`, and any personal↔work move is a deliberate manual export. Reuse the engine; never reuse a vault's content.
+The engine holds no content, identity, or secrets — it's safe to share across a `personal` and a `work` vault. **Content never crosses:** each vault keeps its own `boundary`, and any personal↔work move is a deliberate manual export. Reuse the engine; never reuse a vault's content.
 
 See `SCHEMA.md` for the full spec.

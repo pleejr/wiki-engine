@@ -1,6 +1,6 @@
 ---
 name: wiki-context
-description: Load relevant brain context from the wiki vault ($WIKI_PATH) for the current task — index-first, lazy, with a repo freshness check. Use at the start of a work session or whenever you need context about a repo, project, prior decision, or preference. Loads only what's relevant; never the whole wiki.
+description: Load relevant context from the wiki vault ($WIKI_PATH) for the current task — index-first, lazy, with a repo freshness check. Use at the start of a work session or whenever you need context about a repo, project, prior decision, or preference. Loads only what's relevant; never the whole wiki.
 status: active
 summary: index-first, lazy context router with repo freshness check.
 updated: 2026-07-13
@@ -9,7 +9,7 @@ used_by: []
 
 # wiki-context — the context router
 
-Pull in just-enough brain context without inhaling the vault. This is the token-saver.
+Pull in just-enough context without inhaling the vault. This is the token-saver.
 
 **Vault**: `$WIKI_PATH` — the vault root; must be set.
 
