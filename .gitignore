@@ -1,2 +1,5 @@
+# Obsidian state — the engine is machinery, not a vault; never track it here
+.obsidian/
+
 # OS cruft
 .DS_Store
