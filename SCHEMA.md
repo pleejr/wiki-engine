@@ -92,8 +92,10 @@ Open a wiki repo directly as an Obsidian vault (no conversion). Attachments → 
 Wikilinks + Graph View + Dataview (frontmatter) work natively.
 
 **Line wrapping.** Pages are **hard-wrapped at ~100 chars** (line-level git diffs + readable `blame`).
-For that source to render as flowing prose, Obsidian must use **strict line breaks** (otherwise its
-default treats every newline as a break and paragraphs look broken). This travels with the vault: keep
-`.obsidian/` git-ignored **except** `.obsidian/app.json`, which is committed with
-`{ "strictLineBreaks": true }`. The scaffolder writes both; the exception lives in the vault `.gitignore`
-as `.obsidian/*` + `!.obsidian/app.json`. No per-machine toggling needed.
+For that source to render as flowing prose in Obsidian, the **"Strict line breaks" setting must be OFF**
+(`strictLineBreaks: false`). Despite the name, `true` makes Obsidian honor *every* single newline as a
+hard break, so hard-wrapped paragraphs render broken; `false` (the default) collapses single newlines and
+wraps naturally. This travels with the vault: keep `.obsidian/` git-ignored **except**
+`.obsidian/app.json`, which is committed with `{ "strictLineBreaks": false }`. The scaffolder writes both;
+the exception lives in the vault `.gitignore` as `.obsidian/*` + `!.obsidian/app.json`. No per-machine
+toggling needed.
