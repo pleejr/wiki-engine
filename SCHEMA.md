@@ -66,7 +66,9 @@ Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be s
 - **`lint.sh`** — the umbrella lint (`checkpoint` runs it): memory notes + frontmatter-property validity (wikilink props must be quoted block lists) + soft-wrap drift + skills-catalog drift, aggregated. Run this before committing; exit 1 on any failure.
 - **`gen-skills-index.sh`** — regenerate the `index.md` skills catalog from `skills/*/SKILL.md` frontmatter, spliced between `<!-- skills:start -->` / `<!-- skills:end -->` sentinels. `--check` fails on drift; `--stdout` prints the block. Run after adding/editing a skill.
 - **`lint-memory.sh`** — validate `memory/*.md`: required frontmatter, valid `type`, ≥2 wikilinks, dead-link and index-drift warnings. `--strict` fails on warnings. This is the memory node's freshness check.
-- **`new-wiki.sh`** — scaffold a new consuming wiki (repo + engine submodule + rendered templates + skill symlinks).
+- **`new-wiki.sh`** — scaffold a new consuming wiki (repo + engine submodule + rendered templates + skill symlinks). Node folders come from `scaffold/node-dirs.txt` (the authoritative framework list).
+- **`adopt.sh`** — bring an existing vault up to the engine's current framework: idempotently ensure every `node-dirs.txt` folder exists. Run after bumping the engine pin (a pin bump updates skills/SCHEMA/bin, **not** vault folders). `--check` reports without creating.
+- **`engine-version.sh`** — report the vault's pinned engine vs latest `origin/main` (deterministic git, no LLM). `wiki-context` runs it at session start and offers to update. Exit 0 current · 1 update available · 2 offline/error.
 - **`reflow.sh`** — normalize Markdown to the soft-wrap convention (one line per paragraph/list item); `--check` flags drift. Word-preserving; leaves frontmatter/code/tables/lists structure intact.
 
 ## How a wiki consumes this engine

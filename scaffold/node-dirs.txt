@@ -1,0 +1,15 @@
+# Node folders every vault carries — the engine's authoritative framework list.
+# new-wiki.sh creates these at scaffold time; adopt.sh ensures they exist when an
+# existing vault bumps the engine. One folder per line; blank / #comment lines ignored.
+memory
+notes
+concepts
+entities
+repos
+projects
+comparisons
+queries
+raw/articles
+raw/papers
+raw/transcripts
+raw/assets

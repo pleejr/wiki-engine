@@ -8,9 +8,11 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 - `SCHEMA.md` — node model, three layers, page conventions, memory lifecycle.
 - `CLAUDE.md` — generic context router a wiki imports from its own thin `CLAUDE.md`.
 - `bin/` — deterministic maintenance tools (no LLM):
-  - `new-wiki.sh` + `scaffold/` — scaffold a new consuming wiki in one command.
-  - `gen-skills-index.sh` — regenerate a wiki's `index.md` skills catalog from `SKILL.md` frontmatter.
-  - `lint-memory.sh` — validate a wiki's `memory/` notes (frontmatter, wikilinks, drift).
+  - `new-wiki.sh` + `scaffold/` — scaffold a new consuming wiki in one command (node folders from `scaffold/node-dirs.txt`).
+  - `adopt.sh` — ensure an existing vault has the engine's current node folders (run after bumping the pin).
+  - `engine-version.sh` — report pinned vs latest engine; `wiki-context` runs it at session start.
+  - `lint.sh` — umbrella lint (memory + frontmatter-property + soft-wrap + catalog); `checkpoint` runs it.
+  - `gen-skills-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation, memory validation, soft-wrap normalization.
 
 ## New wiki (recommended)
 
