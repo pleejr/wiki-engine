@@ -26,9 +26,9 @@ Each consuming wiki declares its own boundary in its top-level `CLAUDE.md` (see 
 Plus general knowledge in `entities/`, `concepts/`, `comparisons/`, `queries/`.
 
 ### Memory is a lifecycle, not just a node
-- **Raw** = Claude Code native memory (`~/.claude/projects/*/memory/`) — disposable, NOT versioned here.
-- **Curated** = `memory/` notes (`type: memory|lesson|decision|preference`) — versioned, linked.
-- **Always-on** = the thin `CLAUDE.md` slice (identity, boundary, how-to-use) — the only front-loaded memory.
+- **Raw** = Claude Code native memory (`~/.claude/projects/*/memory/`) — disposable, NOT versioned here. Distilled into Curated, **then pruned** (`checkpoint`/`wiki-onboard`) so the vault stays the single authority and native can't drift into a competing source. Never prune a native note before its durable content is captured in the vault.
+- **Curated** = `memory/` notes (`type: memory|lesson|decision|preference`) — versioned, linked. The authority.
+- **Always-on** = the thin `CLAUDE.md` slice (identity, boundary, how-to-use) — the only front-loaded memory; anything that must load every session lives here, not in native.
 
 ## Page conventions
 

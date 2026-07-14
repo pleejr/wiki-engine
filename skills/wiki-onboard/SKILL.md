@@ -22,6 +22,7 @@ Run **once**, right after `new-wiki.sh` (or after adopting the engine in an exis
 1. **Inventory, then confirm.** Survey the sources below and present a short proposed manifest (memories to distill, repos to ingest, projects to stub). **Ask before creating many pages.**
 
 2. **Memories → `memory/`.** Read Claude Code native memory (`~/.claude/projects/*/memory/*.md` and its `MEMORY.md` index) plus any preferences in `~/.claude/CLAUDE.md`. Distill **durable** facts into curated notes with the right `type` (`preference` · `decision` · `lesson` · `memory`), each with frontmatter (`title, created, updated, type, status, tags, sources, brain`) and **≥2 `[[wikilinks]]`**. Native memory is raw scratch — promote the keepers, drop the transient. Same distillation as `checkpoint`, done in bulk.
+   - **Then prune the raw source.** Once a native note's durable content is in the vault, remove it from native memory and drop its `MEMORY.md` index line, so the vault is the single authority. **Never delete native content you haven't first captured.** Anything that must load *every* session (core behavioral guidance) belongs in `CLAUDE.md`, not left in native — move it there, then prune. Deletion is a guided in-session action; confirm before removing, never hook it. See [[lesson-no-claude-in-hooks]].
 
 3. **Repos → `repos/`.** For each repo you actively work in, invoke **`wiki-repo`** (one per run) to create its page with git-ref provenance. Don't hand-write repo pages here.
 
