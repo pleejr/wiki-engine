@@ -72,7 +72,7 @@ git -C "$VAULT_PATH" config user.email "$GIT_EMAIL"
 
 git -C "$VAULT_PATH" submodule add -q "$ENGINE_URL" engine
 
-for d in memory concepts entities repos projects comparisons queries \
+for d in memory notes concepts entities repos projects comparisons queries \
          raw/articles raw/papers raw/transcripts raw/assets; do
   mkdir -p "$VAULT_PATH/$d"
   touch "$VAULT_PATH/$d/.gitkeep"
