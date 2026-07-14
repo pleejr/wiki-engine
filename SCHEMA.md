@@ -80,8 +80,10 @@ Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be s
 
 ### Versioning & migration
 
-- **Additive changes** (a new node folder, a new tool, a new convention) adopt cleanly: bump the pin and run `bin/adopt.sh`. This is the common case and needs no migration.
-- **Breaking changes** — removing or renaming a node, or changing the frontmatter schema (e.g. a key rename like `brain:` → `boundary:`) — are **NOT** handled by `adopt.sh` (it only *ensures* folders exist; it never removes, renames, or rewrites content). Each such change needs a **dedicated, idempotent migration** shipped with it (a `bin/migrate-*.sh` or a documented one-time step) plus a **major-version signal** so a vault knows a bump is breaking, not routine. Until that machinery exists, treat any node removal/rename or schema change as a manual, reviewed migration per vault — never a silent `adopt`.
+The engine is versioned with [SemVer](https://semver.org/) **git tags** (`v1.2.3`), each with a `CHANGELOG.md` entry. `bin/engine-version.sh` (run by `wiki-context` at session start) reports the pinned tag vs latest, classifies the bump MAJOR/minor/patch, and flags MAJOR bumps as breaking. Every push to the engine runs `.github/workflows/ci.yml` — shell-syntax check, soft-wrap check, and a scaffolder→lint→adopt smoke test — so a broken HEAD can't reach a vault's next adopt.
+
+- **PATCH / MINOR — additive** (a fix, or a new node folder / tool / convention): adopt cleanly — bump the pin and run `bin/adopt.sh`. The common case; no migration.
+- **MAJOR — breaking** — removing or renaming a node, or changing the frontmatter schema (e.g. a key rename like `brain:` → `boundary:`) — is **NOT** handled by `adopt.sh` (it only *ensures* folders exist; it never removes, renames, or rewrites content). Each such change needs a **dedicated, idempotent migration** shipped with it (a `bin/migrate-*.sh` or a documented one-time step) and a **major-version tag** so a vault knows the bump is breaking, not routine. Until that migration machinery exists, treat any node removal/rename or schema change as a manual, reviewed migration per vault — never a silent `adopt`.
 
 ## Obsidian
 

@@ -1,0 +1,36 @@
+name: engine-ci
+
+# Gate engine changes before any vault adopts them: a broken engine HEAD would break
+# every consuming vault's next `adopt`. Runs the same deterministic checks the tools
+# ship with — no LLM, no `claude`, plain scripts only.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax (bash -n)
+        run: for f in bin/*.sh; do bash -n "$f"; done
+
+      - name: Engine docs are soft-wrapped
+        run: ./bin/reflow.sh --check $(find . -type d -name .git -prune -o \( -name '*.md' -o -name '*.tmpl' \) -print)
+
+      - name: Scaffolder + lint smoke test
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global protocol.file.allow always
+          VAULT="$RUNNER_TEMP/testvault"
+          ./bin/new-wiki.sh --path "$VAULT" --boundary personal \
+            --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills
+          ./bin/lint.sh --wiki "$VAULT"
+          ./bin/adopt.sh --check --wiki "$VAULT"
