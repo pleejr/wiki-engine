@@ -76,7 +76,12 @@ Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be s
 1. Add this repo as a submodule (e.g. at `engine/`) and pin a SHA.
 2. Set `$WIKI_PATH` to the wiki root; symlink `~/.claude/skills/*` to the engine's `skills/*`.
 3. Give the wiki a thin `CLAUDE.md` that states its boundary/identity and imports `engine/CLAUDE.md`.
-4. Bump the submodule pointer when you want the wiki to adopt a newer engine — updates are opt-in per wiki, so engine changes never silently drift across vaults.
+4. Bump the submodule pointer when you want the wiki to adopt a newer engine — updates are opt-in per wiki, so engine changes never silently drift across vaults. After bumping, run `bin/adopt.sh`.
+
+### Versioning & migration
+
+- **Additive changes** (a new node folder, a new tool, a new convention) adopt cleanly: bump the pin and run `bin/adopt.sh`. This is the common case and needs no migration.
+- **Breaking changes** — removing or renaming a node, or changing the frontmatter schema (e.g. a key rename like `brain:` → `boundary:`) — are **NOT** handled by `adopt.sh` (it only *ensures* folders exist; it never removes, renames, or rewrites content). Each such change needs a **dedicated, idempotent migration** shipped with it (a `bin/migrate-*.sh` or a documented one-time step) plus a **major-version signal** so a vault knows a bump is breaking, not routine. Until that machinery exists, treat any node removal/rename or schema change as a manual, reviewed migration per vault — never a silent `adopt`.
 
 ## Obsidian
 
