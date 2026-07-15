@@ -99,6 +99,7 @@ The memory design's *capture* axis: record what you worked on so you don't have 
   ```
 
 - **Boundary caveat:** it records the repo you were in (names/subjects, not contents). Point `WIKI_PATH` at the boundary-appropriate vault, and don't enable the hook where even filenames/commit subjects are sensitive. Disable pieces with `RAG_CAPTURE_FILES=0` / `RAG_CAPTURE_COMMITS=0`.
+- **Chat/transcript content is never captured.** Opt in to recording the transcript **path** (a pointer only) with `RAG_CAPTURE_TRANSCRIPT_PATH=1`, so review-and-promote can open the `.jsonl` in-session to distill from the real conversation — applying the boundary/secret gate, never bulk-copying it. The content itself never enters the vault or the index.
 - **Curation still matters:** raw accumulates noise and contradictions and never reaches the always-on `CLAUDE.md`. Review-and-promote (and `checkpoint`) remain the judgment gate; auto-capture only removes the *mechanical* burden, not the curation.
 
 ## How a wiki consumes this engine

@@ -2,6 +2,13 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = fixes/docs. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
+## [1.3.2] — 2026-07-15
+
+Patch — opt-in addition.
+
+### Added
+- `rag-capture.sh`: opt-in **transcript path pointer**. With `RAG_CAPTURE_TRANSCRIPT_PATH=1`, records the session's `transcript_path` (from the hook JSON or `--transcript`) as a `Transcript: <path>` line — a **pointer only, never content** — so review-and-promote can open the `.jsonl` in-session to distill from the real conversation, with the boundary/secret gate. Off by default; chat content still never enters the vault or index. `wiki-context` review-and-promote documents the safe use of the pointer.
+
 ## [1.3.1] — 2026-07-15
 
 Patch — fix.

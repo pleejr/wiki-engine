@@ -17,6 +17,10 @@
 # commit SUBJECTS, and an optional --note. NEVER file contents or diffs (secret +
 # boundary safety). Disable pieces with RAG_CAPTURE_COMMITS=0 / RAG_CAPTURE_FILES=0.
 #
+# Chat/transcript CONTENT is never captured. Opt in to recording the transcript
+# PATH (a pointer only, so review-and-promote can open it in-session to distill)
+# with RAG_CAPTURE_TRANSCRIPT_PATH=1; the path comes from the hook JSON or --transcript.
+#
 # Two modes, auto-selected:
 #   - cwd IS a git repo        -> capture that one repo.
 #   - cwd is a WORKSPACE ROOT  -> scan immediate child dirs and capture each repo you
@@ -37,21 +41,29 @@ set -euo pipefail
 WIKI="${WIKI_PATH:-}"
 REPO=""
 NOTE=""
+TRANSCRIPT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --wiki) WIKI="$2"; shift 2;;
     --repo) REPO="$2"; shift 2;;
     --note) NOTE="$2"; shift 2;;
+    --transcript) TRANSCRIPT="$2"; shift 2;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 1;;
   esac
 done
 
-# SessionEnd hooks pass JSON on stdin; pull cwd from it if --repo wasn't given.
-if [ -z "$REPO" ] && [ ! -t 0 ] && command -v python3 >/dev/null 2>&1; then
-  REPO="$(python3 -c 'import sys,json
-try: print(json.load(sys.stdin).get("cwd",""))
-except Exception: pass' 2>/dev/null || true)"
+# SessionEnd hooks pass JSON on stdin. Read it once, pull cwd (repo) and
+# transcript_path. We record only the transcript PATH (a pointer), never content,
+# and only when RAG_CAPTURE_TRANSCRIPT_PATH=1.
+if [ ! -t 0 ] && command -v python3 >/dev/null 2>&1; then
+  hook_vals="$(python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: d={}
+print(d.get("cwd",""))
+print(d.get("transcript_path",""))' 2>/dev/null || true)"
+  [ -z "$REPO" ] && REPO="$(printf '%s\n' "$hook_vals" | sed -n 1p)"
+  [ -z "$TRANSCRIPT" ] && TRANSCRIPT="$(printf '%s\n' "$hook_vals" | sed -n 2p)"
 fi
 
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
@@ -122,6 +134,11 @@ fi
 {
   printf '%s\n' "$entries"
   [ -n "$NOTE" ] && printf '\nNote (%s): %s\n' "$TS" "$NOTE"
+  # Opt-in transcript POINTER (path only, never content). review-and-promote may open
+  # it in-session to distill — applying the boundary/secret gate; never bulk-copy it.
+  if [ "${RAG_CAPTURE_TRANSCRIPT_PATH:-0}" = "1" ] && [ -n "$TRANSCRIPT" ]; then
+    printf '\nTranscript (%s): %s\n' "$TS" "$TRANSCRIPT"
+  fi
 } >> "$FILE"
 
 echo "rag-capture: appended session entry to raw/sessions/$(basename "$FILE")"
