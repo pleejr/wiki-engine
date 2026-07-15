@@ -87,6 +87,8 @@ The vault is retrieved index-first by the human-readable map + `[[links]]`; that
 
 The memory design's *capture* axis: record what you worked on so you don't have to remember to. `rag-capture.sh` appends a metadata entry to `$WIKI/raw/sessions/YYYY-MM.md` — timestamp, repo/branch/HEAD, changed file **names**, recent commit **subjects**, optional `--note`. **Never file contents, diffs, or secrets.** `rag-build` indexes it, so a captured session is recallable next session with zero curation; the `wiki-context` **review-and-promote** step then proposes (human-gated) which raw entries graduate to `memory/`, and prunes the promoted ones.
 
+- **Single repo vs workspace root.** If the captured dir is itself a git repo, it captures that one. If it's a **parent of several repos** (the common "cd to the workspace, then launch" pattern), it scans the immediate children and captures each repo you **touched** this session — dirty working tree, or a commit within `RAG_CAPTURE_SINCE` hours (default 12) — one `##` chunk per repo, skipping untouched repos. Without this, a parent-level session would capture nothing (the parent isn't a repo).
+
 - **This is the one thing that may run from a hook** — because it is *deterministic and never invokes `claude`*. Wire it to a Claude Code **SessionEnd** hook to make capture automatic. It runs git + writes a file, then exits; no agent, no recursion. This is the safe inverse of the `.ai-os` fork bomb (whose hook ran `claude -p`). See [[lesson-no-claude-in-hooks]]. Example hook (`~/.claude/settings.json`):
 
   ```json

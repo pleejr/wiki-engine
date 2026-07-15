@@ -2,6 +2,13 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = fixes/docs. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
+## [1.3.1] — 2026-07-15
+
+Patch — fix.
+
+### Fixed
+- `rag-capture.sh` now handles a **workspace root** (a parent dir of several repos, the common "launch at the parent" pattern). Previously that dir isn't itself a git repo, so capture recorded nothing useful. It now scans immediate child dirs and captures each repo **touched** this session — dirty working tree, or a commit within `RAG_CAPTURE_SINCE` hours (default 12) — one `##` chunk per repo, skipping untouched ones. A single-repo cwd still captures just that repo.
+
 ## [1.3.0] — 2026-07-15
 
 Additive — adopt with `bin/adopt.sh` (creates `raw/sessions/`).

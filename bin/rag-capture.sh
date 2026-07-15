@@ -16,8 +16,16 @@
 # Records ONLY metadata: timestamp, repo/branch/HEAD, changed file NAMES, recent
 # commit SUBJECTS, and an optional --note. NEVER file contents or diffs (secret +
 # boundary safety). Disable pieces with RAG_CAPTURE_COMMITS=0 / RAG_CAPTURE_FILES=0.
-# Note: it captures the repo you were in; point WIKI_PATH at the boundary-appropriate
-# vault and don't enable the hook where even filenames/commit subjects are sensitive.
+#
+# Two modes, auto-selected:
+#   - cwd IS a git repo        -> capture that one repo.
+#   - cwd is a WORKSPACE ROOT  -> scan immediate child dirs and capture each repo you
+#     (parent of many repos)      TOUCHED this session (dirty tree, or a commit within
+#                                 RAG_CAPTURE_SINCE hours, default 12). Untouched repos
+#                                 are skipped, so it stays signal not noise.
+# Note: it captures the repo(s) you were in; point WIKI_PATH at the boundary-appropriate
+# vault and don't enable the hook where even filenames/commit subjects are sensitive —
+# especially at a parent that mixes personal + work repos.
 #
 # Usage:
 #   rag-capture.sh                         capture cwd's git state to $WIKI_PATH
@@ -63,37 +71,57 @@ if [ ! -f "$FILE" ]; then
     "$BOUND" "$(date +%Y-%m)" > "$FILE"
 fi
 
-# Build a fenced block (reflow-safe: fences are left intact) of pure metadata.
-suffix=""
-body=""
-if git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
-  top="$(git -C "$REPO" rev-parse --show-toplevel 2>/dev/null)"
-  name="$(basename "$top")"
-  branch="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-  head="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo '?')"
-  suffix=" — $name@$branch ($head)"
+# emit_repo DIR — print one reflow-safe "## <ts> — repo@branch (head)" entry with a
+# fenced metadata block (repo/branch/head, changed file names, recent commit subjects).
+emit_repo() {
+  local d="$1" name branch head body changed commits
+  name="$(basename "$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || echo "$d")")"
+  branch="$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+  head="$(git -C "$d" rev-parse --short HEAD 2>/dev/null || echo '?')"
   body="repo: $name  branch: $branch  head: $head"
   if [ "${RAG_CAPTURE_FILES:-1}" = "1" ]; then
-    changed="$(git -C "$REPO" status --porcelain 2>/dev/null | sed 's/^/  /')"
+    changed="$(git -C "$d" status --porcelain 2>/dev/null | sed 's/^/  /')"
     [ -n "$changed" ] && body="$body
 changes:
 $changed"
   fi
   if [ "${RAG_CAPTURE_COMMITS:-1}" = "1" ]; then
-    commits="$(git -C "$REPO" log -5 --pretty='  %h %s' 2>/dev/null)"
+    commits="$(git -C "$d" log -5 --pretty='  %h %s' 2>/dev/null)"
     [ -n "$commits" ] && body="$body
 recent commits:
 $commits"
   fi
+  printf '\n## %s — %s@%s (%s)\n\n```\n%s\n```\n' "$TS" "$name" "$branch" "$head" "$body"
+}
+
+# touched DIR — 0 if the repo has uncommitted changes or a commit within the window
+# (RAG_CAPTURE_SINCE hours, default 12) — i.e. worth capturing this session.
+touched() {
+  [ -n "$(git -C "$1" status --porcelain 2>/dev/null)" ] && return 0
+  [ -n "$(git -C "$1" log -1 --since="${RAG_CAPTURE_SINCE:-12} hours ago" --pretty=%h 2>/dev/null)" ] && return 0
+  return 1
+}
+
+entries=""
+if git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
+  # cwd is inside a git repo — capture just it
+  entries="$(emit_repo "$REPO")"
 else
-  suffix=" — $REPO (no git)"
-  body="dir: $REPO (not a git repo)"
+  # workspace root (parent of several repos) — capture each TOUCHED child repo
+  found=0
+  for d in "$REPO"/*/; do
+    [ -d "${d}.git" ] || continue
+    if touched "$d"; then entries="$entries$(emit_repo "$d")"; found=$((found + 1)); fi
+  done
+  if [ "$found" -eq 0 ]; then
+    entries="$(printf '\n## %s — workspace: %s (no touched repos)\n\n```\ndir: %s\nno child repos with changes or commits in the last %s h\n```\n' \
+      "$TS" "$(basename "$REPO")" "$REPO" "${RAG_CAPTURE_SINCE:-12}")"
+  fi
 fi
 
 {
-  printf '\n## %s%s\n\n' "$TS" "$suffix"
-  printf '```\n%s\n```\n' "$body"
-  [ -n "$NOTE" ] && printf '\nNote: %s\n' "$NOTE"
+  printf '%s\n' "$entries"
+  [ -n "$NOTE" ] && printf '\nNote (%s): %s\n' "$TS" "$NOTE"
 } >> "$FILE"
 
 echo "rag-capture: appended session entry to raw/sessions/$(basename "$FILE")"
