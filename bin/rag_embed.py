@@ -13,7 +13,7 @@
 # Config precedence: env var > .rag/config.json > built-in default.
 import os, sys, json, urllib.request, urllib.error
 
-DEFAULT_MODEL = "minishlab/potion-base-8M"
+DEFAULT_MODEL = "BAAI/bge-base-en-v1.5"
 
 
 def _config(wiki):
@@ -37,28 +37,37 @@ class Embedder:
                       or cfg.get("model") or DEFAULT_MODEL)
         self.url = os.environ.get("RAG_EMBED_URL", "http://localhost:11434/api/embeddings")
         self.key = os.environ.get("RAG_API_KEY", "")
+        # pin the library when known (config written by rag-setup, or env), so build
+        # and query never probe the wrong backend; otherwise auto-detect.
+        self.lib_pref = os.environ.get("RAG_LOCAL_LIB") or cfg.get("lib")
         self.lib = None
         if self.backend == "local":
             self._init_local()
 
-    def _init_local(self):
-        try:
-            from model2vec import StaticModel
-            self._m = StaticModel.from_pretrained(self.model); self.lib = "model2vec"; return
-        except Exception:
-            pass
-        try:
+    def _load(self, lib):
+        if lib == "fastembed":
             from fastembed import TextEmbedding
-            self._m = TextEmbedding(model_name=self.model); self.lib = "fastembed"; return
-        except Exception:
-            pass
-        try:
+            self._m = TextEmbedding(model_name=self.model)
+        elif lib == "model2vec":
+            from model2vec import StaticModel
+            self._m = StaticModel.from_pretrained(self.model)
+        elif lib == "sentence-transformers":
             from sentence_transformers import SentenceTransformer
-            self._m = SentenceTransformer(self.model); self.lib = "sentence-transformers"; return
-        except Exception as e:
-            sys.exit("error: no local embedder available (%s).\n"
-                     "  Provision the vault's runtime:  engine/bin/rag-setup.sh\n"
-                     "  or use an endpoint: RAG_EMBED_API=ollama RAG_EMBED_URL=..." % e)
+            self._m = SentenceTransformer(self.model)
+        else:
+            raise ImportError("unknown embedder lib: %s" % lib)
+
+    def _init_local(self):
+        order = [self.lib_pref] if self.lib_pref else ["fastembed", "model2vec", "sentence-transformers"]
+        errs = []
+        for lib in order:
+            try:
+                self._load(lib); self.lib = lib; return
+            except Exception as e:
+                errs.append("%s (%s)" % (lib, e))
+        sys.exit("error: no local embedder available — %s.\n"
+                 "  Provision the vault's runtime:  engine/bin/rag-setup.sh\n"
+                 "  or use an endpoint: RAG_EMBED_API=ollama RAG_EMBED_URL=..." % "; ".join(errs))
 
     def embed(self, texts):
         texts = [t[:6000] for t in texts]

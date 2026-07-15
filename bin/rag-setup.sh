@@ -9,8 +9,13 @@
 # offline thereafter. Runs a small CPU model, never `claude` — see [[lesson-no-claude-in-hooks]].
 #
 # Config:
-#   RAG_PIP_PKG      pip package(s) to install   (default: model2vec)
-#   RAG_LOCAL_MODEL  model to prefetch           (default: minishlab/potion-base-8M)
+#   RAG_PIP_PKG      pip package(s) to install   (default: fastembed)
+#   RAG_LOCAL_MODEL  model to prefetch           (default: BAAI/bge-base-en-v1.5)
+#
+# Default is fastembed + bge-base (contextual, 768-dim, quantized ONNX ~210MB, CPU,
+# offline) — the best-quality-within-reason local retriever. Lighter alt:
+# RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M (~30MB, static).
+# Heavier: RAG_LOCAL_MODEL=BAAI/bge-large-en-v1.5 (~1.2GB, slower on CPU).
 #
 # Usage:
 #   rag-setup.sh                provision $WIKI_PATH
@@ -34,8 +39,8 @@ done
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "error: python3 required" >&2; exit 1; }
 
-PKG="${RAG_PIP_PKG:-model2vec}"
-MODEL="${RAG_LOCAL_MODEL:-minishlab/potion-base-8M}"
+PKG="${RAG_PIP_PKG:-fastembed}"
+MODEL="${RAG_LOCAL_MODEL:-BAAI/bge-base-en-v1.5}"
 VENV="$WIKI/.rag/venv"
 
 mkdir -p "$WIKI/.rag"

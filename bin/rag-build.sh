@@ -54,6 +54,19 @@ RAGDIR = os.path.join(WIKI, ".rag")
 INDEX  = os.path.join(RAGDIR, "index.jsonl")
 SKIP_DIRS = {".git", "engine", ".obsidian", ".rag"}
 
+def current_model():
+    m = os.environ.get("RAG_LOCAL_MODEL") or os.environ.get("RAG_EMBED_MODEL")
+    if m:
+        return m
+    cfgp = os.path.join(RAGDIR, "config.json")
+    if os.path.isfile(cfgp):
+        try:
+            return json.load(open(cfgp, encoding="utf-8")).get("model")
+        except Exception:
+            pass
+    return "BAAI/bge-base-en-v1.5"   # keep in sync with rag_embed.DEFAULT_MODEL
+CURMODEL = current_model()
+
 def vault_boundary():
     p = os.path.join(WIKI, "CLAUDE.md")
     if not os.path.isfile(p):
@@ -84,9 +97,12 @@ def parse(path):
     body_start = i
     chunks, cur, cur_head, cur_line = [], [], None, body_start + 1
     def flush():
-        txt = "\n".join(cur).strip()
+        k = 0                                   # skip leading blank lines so the
+        while k < len(cur) and cur[k].strip() == "":  # recorded line points at real
+            k += 1                              # content (exact for ## sections)
+        txt = "\n".join(cur[k:]).strip()
         if txt:
-            chunks.append((cur_head or (title or os.path.basename(path)), cur_line, txt))
+            chunks.append((cur_head or (title or os.path.basename(path)), cur_line + k, txt))
     for n in range(body_start, len(lines)):
         ln = lines[n]
         if title is None and ln.startswith("# "):
@@ -106,7 +122,7 @@ if os.path.isfile(INDEX) and not FORCE:
             rec = json.loads(line)
         except Exception:
             continue
-        old.setdefault(rec["file"], {"sha": rec.get("sha"), "recs": []})["recs"].append(rec)
+        old.setdefault(rec["file"], {"sha": rec.get("sha"), "model": rec.get("model"), "recs": []})["recs"].append(rec)
 
 files = []
 for p in glob.glob(os.path.join(WIKI, "**", "*.md"), recursive=True):
@@ -124,7 +140,7 @@ for rel, p in files:
         skipped += 1
         print("  skip (boundary %s != %s): %s" % (boundary, VBOUND, rel))
         continue
-    if rel in old and old[rel]["sha"] == sha:
+    if rel in old and old[rel]["sha"] == sha and old[rel]["model"] == CURMODEL:
         records.extend(old[rel]["recs"]); reused += len(old[rel]["recs"]); continue
     if not chunks:
         continue
@@ -133,7 +149,7 @@ for rel, p in files:
     vecs = emb.embed([c[2] for c in chunks])
     for (head, line, text), vec in zip(chunks, vecs):
         records.append({"file": rel, "line": line, "heading": head,
-                        "sha": sha, "text": text[:600], "vector": vec})
+                        "sha": sha, "model": CURMODEL, "text": text[:600], "vector": vec})
         embedded += 1
 
 os.makedirs(RAGDIR, exist_ok=True)
