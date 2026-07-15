@@ -21,6 +21,9 @@ jobs:
       - name: Shell syntax (bash -n)
         run: for f in bin/*.sh; do bash -n "$f"; done
 
+      - name: Python syntax (py_compile)
+        run: python3 -m py_compile bin/*.py
+
       - name: Engine docs are soft-wrapped
         run: ./bin/reflow.sh --check $(find . -type d -name .git -prune -o \( -name '*.md' -o -name '*.tmpl' \) -print)
 
@@ -31,6 +34,6 @@ jobs:
           git config --global protocol.file.allow always
           VAULT="$RUNNER_TEMP/testvault"
           ./bin/new-wiki.sh --path "$VAULT" --boundary personal \
-            --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills
+            --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills --no-rag
           ./bin/lint.sh --wiki "$VAULT"
           ./bin/adopt.sh --check --wiki "$VAULT"

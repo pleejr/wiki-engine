@@ -6,8 +6,7 @@
 # replaces the markdown — it just finds which pages to open. `wiki-context` calls this
 # automatically so you can start prompting without naming pages.
 #
-# Config (same env as rag-build.sh):
-#   RAG_EMBED_URL / RAG_EMBED_MODEL / RAG_EMBED_API / RAG_API_KEY
+# Uses the vault's own .rag/venv CPU embedder (rag_embed.py resolves backend/model).
 #
 # Usage:
 #   recall.sh "why is the gpu node hot"     top matches (human-readable)
@@ -17,6 +16,7 @@
 #   echo "query" | recall.sh                read query from stdin
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKI="${WIKI_PATH:-}"
 TOPN=5
 JSON=0
@@ -30,54 +30,47 @@ while [ $# -gt 0 ]; do
     *) QUERY="${QUERY:+$QUERY }$1"; shift;;
   esac
 done
-[ -n "$QUERY" ] || QUERY="$(cat)"           # fall back to stdin
+[ -n "$QUERY" ] || QUERY="$(cat)"
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
 [ -n "$QUERY" ] || { echo "error: empty query" >&2; exit 1; }
-command -v python3 >/dev/null 2>&1 || { echo "error: python3 required" >&2; exit 1; }
 
 INDEX="$WIKI/.rag/index.jsonl"
 [ -f "$INDEX" ] || { echo "error: no index at $INDEX — run rag-build.sh first" >&2; exit 1; }
 
-export RAG_WIKI="$WIKI" RAG_QUERY="$QUERY" RAG_TOPN="$TOPN" RAG_JSON="$JSON"
-export RAG_EMBED_URL="${RAG_EMBED_URL:-http://localhost:11434/api/embeddings}"
-export RAG_EMBED_MODEL="${RAG_EMBED_MODEL:-nomic-embed-text}"
-export RAG_EMBED_API="${RAG_EMBED_API:-ollama}"
-export RAG_API_KEY="${RAG_API_KEY:-}"
+PYBIN="$WIKI/.rag/venv/bin/python"
+if [ -x "$PYBIN" ]; then
+  export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1   # model cached by rag-setup — stay offline + quiet
+else
+  PYBIN="$(command -v python3 || true)"
+fi
+[ -n "$PYBIN" ] || { echo "error: python3 required" >&2; exit 1; }
 
-python3 - <<'PY'
-import os, sys, json, math, urllib.request, urllib.error
+export RAG_WIKI="$WIKI" RAG_BINDIR="$SCRIPT_DIR" RAG_QUERY="$QUERY" RAG_TOPN="$TOPN" RAG_JSON="$JSON"
+
+"$PYBIN" - <<'PY'
+import os, sys, json, math
+sys.path.insert(0, os.environ["RAG_BINDIR"])
+from rag_embed import Embedder
 
 WIKI = os.environ["RAG_WIKI"]
-Q     = os.environ["RAG_QUERY"]
-TOPN  = int(os.environ["RAG_TOPN"])
-JSON  = os.environ["RAG_JSON"] == "1"
-URL   = os.environ["RAG_EMBED_URL"]; MODEL = os.environ["RAG_EMBED_MODEL"]
-API   = os.environ["RAG_EMBED_API"]; KEY   = os.environ["RAG_API_KEY"]
+Q    = os.environ["RAG_QUERY"]
+TOPN = int(os.environ["RAG_TOPN"])
+JSON = os.environ["RAG_JSON"] == "1"
 INDEX = os.path.join(WIKI, ".rag", "index.jsonl")
-
-def embed(text):
-    body = {"model": MODEL, "input": text} if API == "openai" else {"model": MODEL, "prompt": text}
-    req = urllib.request.Request(URL, data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"})
-    if KEY: req.add_header("Authorization", "Bearer " + KEY)
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            data = json.load(r)
-    except urllib.error.URLError as e:
-        sys.exit("error: embedding endpoint %s unreachable (%s)" % (URL, e))
-    return data["data"][0]["embedding"] if API == "openai" else data["embedding"]
 
 def cosine(a, b):
     dot = sum(x*y for x, y in zip(a, b))
     na = math.sqrt(sum(x*x for x in a)); nb = math.sqrt(sum(y*y for y in b))
     return dot / (na*nb) if na and nb else 0.0
 
-qv = embed(Q)
+qv = Embedder(WIKI).embed([Q])[0]
 scored = []
 for line in open(INDEX, encoding="utf-8"):
-    try: rec = json.loads(line)
-    except Exception: continue
+    try:
+        rec = json.loads(line)
+    except Exception:
+        continue
     scored.append((cosine(qv, rec["vector"]), rec))
 scored.sort(key=lambda t: t[0], reverse=True)
 top = scored[:TOPN]

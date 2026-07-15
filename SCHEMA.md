@@ -70,16 +70,17 @@ Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be s
 - **`adopt.sh`** — bring an existing vault up to the engine's current framework: idempotently ensure every `node-dirs.txt` folder exists. Run after bumping the engine pin (a pin bump updates skills/SCHEMA/bin, **not** vault folders). `--check` reports without creating.
 - **`engine-version.sh`** — report the vault's pinned engine vs latest `origin/main` (deterministic git, no LLM). `wiki-context` runs it at session start and offers to update. Exit 0 current · 1 update available · 2 offline/error.
 - **`reflow.sh`** — normalize Markdown to the soft-wrap convention (one line per paragraph/list item); `--check` flags drift. Word-preserving; leaves frontmatter/code/tables/lists structure intact.
-- **`rag-build.sh`** / **`recall.sh`** — optional **semantic recall** layer (see below).
+- **`rag-setup.sh`** / **`rag-build.sh`** / **`recall.sh`** — optional **semantic recall** layer (see below).
 
 ### Semantic recall (optional RAG layer)
 
-The vault is retrieved index-first by the human-readable map + `[[links]]`; that's lexical + hand-curated. `rag-build.sh` adds a *semantic* layer on top so the agent can find pages by **meaning** (a query about "cooling" surfaces a note that only says "thermals") without the user naming pages — they just prompt.
+The vault is retrieved index-first by the human-readable map + `[[links]]`; that's lexical + hand-curated. This layer adds a *semantic* one on top so the agent finds pages by **meaning** (a query about "cooling" surfaces a note that only says "thermals") without the user naming pages — they just prompt.
 
-- **Derived, not authoritative.** `rag-build.sh` chunks every page by `##` heading, embeds each chunk via a **local** endpoint (default Ollama `nomic-embed-text`; no cloud, no secrets), and writes `$WIKI/.rag/index.jsonl` — a **git-ignored, fully rebuildable** sidecar (`rm -rf .rag && rag-build.sh`). The markdown stays the single source of truth; the index only holds `file:line` pointers back into it.
+- **Packaged & self-contained.** `rag-setup.sh` creates a **git-ignored venv at `$WIKI/.rag/venv`**, installs a small CPU embedder (default `model2vec` + `minishlab/potion-base-8M`, ~30 MB, pure-numpy inference), prefetches the model, and writes `.rag/config.json`. `new-wiki.sh` runs it automatically (unless `--no-rag`), so *clone engine → generate vault → recall works* with **no server, no GPU, and nothing external** after the one-time install. Fully offline thereafter. No homelab, no cloud, no secrets. (An OpenAI/Ollama endpoint remains available via `RAG_EMBED_API`, but is not the default.)
+- **Derived, not authoritative.** `rag-build.sh` chunks every page by `##` heading, embeds each chunk in-process via `.rag/venv`, and writes `$WIKI/.rag/index.jsonl` — a **fully rebuildable** sidecar (`rm -rf .rag/index.jsonl && rag-build.sh`). The markdown stays the single source of truth; the index only holds `file:line` pointers back into it. `recall.sh` embeds a query and returns the nearest chunks.
 - **Boundary-filtered & incremental.** Skips any page whose frontmatter `boundary` mismatches the vault's; re-embeds only changed files on rebuild.
-- **The loop:** `checkpoint` distills markdown → `rag-build.sh` re-indexes → `wiki-context` runs `recall.sh` to auto-load the relevant slice. Optional end-to-end: a vault with no embedding endpoint simply never builds an index and falls back to the map.
-- **Hook-safe** in the fork-bomb sense: it calls an embedding model, never `claude`, and never spawns recursively — but like every skill it runs **in-session, never as a hook**. Config via `RAG_EMBED_URL` / `RAG_EMBED_MODEL` / `RAG_EMBED_API` (`ollama`|`openai`) / `RAG_API_KEY`.
+- **The loop:** `checkpoint` distills markdown → `rag-build.sh` re-indexes → `wiki-context` runs `recall.sh` to auto-load the relevant slice. Optional end-to-end: a vault provisioned with `--no-rag` (or where setup failed on a locked-down laptop) simply has no index and falls back to the map.
+- **Hook-safe** in the fork-bomb sense: it runs a small embedding model, never `claude`, and never spawns recursively — but like every skill it runs **in-session, never as a hook**. Backend/model resolve via `rag_embed.py` from `.rag/config.json` or `RAG_EMBED_API` / `RAG_LOCAL_MODEL` / `RAG_EMBED_URL` / `RAG_API_KEY`.
 
 ## How a wiki consumes this engine
 

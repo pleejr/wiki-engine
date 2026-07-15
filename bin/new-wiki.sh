@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-VAULT_PATH="" WIKI_NAME="" BOUNDARY="" GIT_EMAIL="" GIT_NAME="" ENGINE_URL="" LINK_SKILLS=1
+VAULT_PATH="" WIKI_NAME="" BOUNDARY="" GIT_EMAIL="" GIT_NAME="" ENGINE_URL="" LINK_SKILLS=1 RAG=1
 
 usage() {
   cat <<'USAGE'
@@ -30,6 +30,7 @@ Options:
   --git-name NAME    git user.name for this vault
   --engine-url URL   engine submodule source (default: this clone's origin)
   --no-link-skills   skip symlinking ~/.claude/skills/* -> engine skills
+  --no-rag           skip provisioning the self-contained semantic-recall runtime
   -h, --help         show this
 USAGE
 }
@@ -43,6 +44,7 @@ while [ $# -gt 0 ]; do
     --git-name) GIT_NAME="$2"; shift 2;;
     --engine-url) ENGINE_URL="$2"; shift 2;;
     --no-link-skills) LINK_SKILLS=0; shift;;
+    --no-rag) RAG=0; shift;;
     -h|--help) usage; exit 0;;
     *) echo "unknown arg: $1" >&2; usage; exit 1;;
   esac
@@ -105,6 +107,21 @@ fi
 git -C "$VAULT_PATH" add -A
 git -C "$VAULT_PATH" commit -q -m "Scaffold $WIKI_NAME from wiki-engine (boundary: $BOUNDARY)"
 
+# Self-contained semantic recall: provision the vault's .rag/venv CPU embedder and
+# build the initial index. Git-ignored (.rag/), non-fatal (a locked-down/offline
+# laptop still gets a working vault; run engine/bin/rag-setup.sh later).
+RAG_READY=0
+if [ "$RAG" -eq 1 ]; then
+  echo "Provisioning semantic recall (self-contained CPU embedder)…"
+  if "$ENGINE_ROOT/bin/rag-setup.sh" --wiki "$VAULT_PATH"; then
+    "$ENGINE_ROOT/bin/rag-build.sh" --wiki "$VAULT_PATH" || true
+    RAG_READY=1
+  else
+    echo "  ! rag-setup failed (offline or pip restricted) — skipped." >&2
+    echo "    Provision later with: $VAULT_PATH/engine/bin/rag-setup.sh" >&2
+  fi
+fi
+
 cat <<EOF
 
 Done. $WIKI_NAME is a git repo pinning wiki-engine at:
@@ -121,3 +138,8 @@ Next steps (not automated — machine/user choices):
   4. Seed the empty vault from your existing environment (memories, repos, projects):
        run the 'wiki-onboard' skill in a Claude Code session with WIKI_PATH set.
 EOF
+
+if [ "$RAG_READY" -eq 1 ]; then
+  echo "  Semantic recall is ready (self-contained .rag/venv); wiki-context auto-recalls."
+  echo "  It re-indexes on checkpoint; rebuild manually with engine/bin/rag-build.sh."
+fi
