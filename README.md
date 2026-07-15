@@ -1,6 +1,8 @@
 # wiki-engine
 
-Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-session by Claude Code** (first-party, plan-covered — no orchestrator). Extracted from `pleejr-wiki` so the engine can be managed once and pinned per wiki — engine updates never silently drift across vaults.
+Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-session by Claude Code** (first-party, plan-covered — no orchestrator). Extracted from `pleejr-wiki` so the engine can be managed once and pinned per wiki — engine updates never silently drift across vaults. Together a vault + this engine form **the wiki-engine loop** (capture → recall → review-and-promote): a curated-memory engine for coding agents.
+
+**Day-to-day usage: `USAGE.md`.** Full spec: `SCHEMA.md`. Releases: `CHANGELOG.md`.
 
 ## What's here
 
@@ -10,7 +12,8 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 - `bin/` — deterministic maintenance tools (no LLM):
   - `new-wiki.sh` + `scaffold/` — scaffold a new consuming wiki in one command (node folders from `scaffold/node-dirs.txt`).
   - `adopt.sh` — ensure an existing vault has the engine's current node folders (run after bumping the pin).
-  - `engine-version.sh` — report pinned vs latest engine; `wiki-context` runs it at session start.
+  - `engine-version.sh` · `doctor.sh` · `update.sh` — freshness of consumed components: pinned vs latest engine; full health report (engine + RAG deps + security + model); one-step update (same-MAJOR).
+  - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
   - `lint.sh` — umbrella lint (memory + frontmatter-property + soft-wrap + catalog); `checkpoint` runs it.
   - `gen-skills-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation, memory validation, soft-wrap normalization.
 
@@ -40,4 +43,4 @@ Then **seed the empty vault** from your existing environment — run the `wiki-o
 
 The engine holds no content, identity, or secrets — it's safe to share across a `personal` and a `work` vault. **Content never crosses:** each vault keeps its own `boundary`, and any personal↔work move is a deliberate manual export. Reuse the engine; never reuse a vault's content.
 
-See `SCHEMA.md` for the full spec.
+See `USAGE.md` for day-to-day use and `SCHEMA.md` for the full spec.

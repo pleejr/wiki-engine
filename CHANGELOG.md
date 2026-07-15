@@ -2,6 +2,14 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = fixes/docs. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
+## [1.4.2] — 2026-07-15
+
+Patch — docs.
+
+### Added
+- `USAGE.md` — day-to-day guide: the loop mental-model, a day in the loop, the skills, a full `bin/` command table, setup/activation (RAG + the capture hook), keeping-current, boundary/safety, and the env knobs. Complements `SCHEMA.md` (spec) and `README.md` (setup).
+- `README.md` refreshed (current tool list incl. RAG/capture/doctor/update; points at `USAGE.md`); scaffold README template links `engine/USAGE.md`.
+
 ## [1.4.1] — 2026-07-15
 
 Patch — sharper dependency signal + security.
