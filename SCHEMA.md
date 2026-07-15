@@ -69,7 +69,7 @@ Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be s
 - **`new-wiki.sh`** — scaffold a new consuming wiki (repo + engine submodule + rendered templates + skill symlinks). Node folders come from `scaffold/node-dirs.txt` (the authoritative framework list).
 - **`adopt.sh`** — bring an existing vault up to the engine's current framework: idempotently ensure every `node-dirs.txt` folder exists. Run after bumping the engine pin (a pin bump updates skills/SCHEMA/bin, **not** vault folders). `--check` reports without creating.
 - **`engine-version.sh`** — report the vault's pinned engine vs latest `origin/main` (deterministic git, no LLM). `wiki-context` runs it at session start and offers to update. Exit 0 current · 1 update available · 2 offline/error.
-- **`doctor.sh`** — one-shot freshness report across *all* consumed components: pinned engine (vs latest tag) + RAG venv deps (drift from `scaffold/rag-requirements.txt` and newer PyPI releases) + embedding model. Reports; changes nothing. On-demand or from the freshness CI cron.
+- **`doctor.sh`** — one-shot freshness report across *all* consumed components: pinned engine (vs latest tag) + RAG deps + embedding model. Deps go through `rag_deps_check.py`, which separates **actionable** (a *pinned* dep drifted/behind, or a `pip-audit` **vulnerability** anywhere in the RAG closure) from **informational** (transitive "newer available") — so the exit code stays a real signal, not steady-state noise. Reports only. On-demand or from the freshness CI cron.
 - **`update.sh`** — apply updates in one step: bump the engine to the latest tag *within the same MAJOR*, `adopt`, re-sync the RAG venv to the pinned deps. **Refuses a MAJOR bump** (needs a reviewed migration); leaves the pin staged, never auto-commits.
 - **`reflow.sh`** — normalize Markdown to the soft-wrap convention (one line per paragraph/list item); `--check` flags drift. Word-preserving; leaves frontmatter/code/tables/lists structure intact.
 - **`rag-setup.sh`** / **`rag-build.sh`** / **`recall.sh`** / **`rag-capture.sh`** — optional **semantic recall + auto-capture** layer (see below).
@@ -124,7 +124,7 @@ A vault consumes two versioned things: the **engine** (submodule, SemVer tags) a
 
 - **Per session** — `wiki-context` runs `engine-version.sh` and offers `update.sh`.
 - **On demand** — `doctor.sh` reports engine + deps + model in one shot; `update.sh` applies engine + dep updates in one step (same-MAJOR only).
-- **Automatic (CI, no `claude`)** — Dependabot bumps the workflow actions; a weekly `freshness.yml` cron flags newer releases of the pinned RAG deps by opening an issue. Neither auto-applies to a vault.
+- **Automatic (CI, no `claude`)** — Dependabot bumps the workflow actions; a weekly `freshness.yml` cron runs the shared `rag_deps_check.py` (with `pip-audit`) and opens an issue **only when actionable** — a pinned dep is behind or a vulnerability exists — not on routine transitive drift. Neither auto-applies to a vault.
 
 RAG deps are **pinned**, not floating: `rag-setup.sh` installs from `rag-requirements.txt` for reproducibility; bump the file deliberately (the cron/issue is the prompt) and re-provision with `rag-setup.sh --force`. Ingested `raw/articles|papers|transcripts` are immutable snapshots and need no updating.
 

@@ -2,6 +2,15 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = fixes/docs. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
+## [1.4.1] — 2026-07-15
+
+Patch — sharper dependency signal + security.
+
+### Changed
+- `bin/rag_deps_check.py` (new, shared by `doctor.sh` + the freshness cron): dep freshness now separates **actionable** from **informational**. Actionable (drives exit 1 / opens an issue): a *pinned* dep drifted from or is behind `rag-requirements.txt`, **or** `pip-audit` finds a vulnerability in the RAG requirements closure. Transitive "newer available" is **informational only** — so `doctor`'s exit and the weekly issue stop firing on routine transitive drift (no alert fatigue), while real risk (a CVE, incl. in transitive deps) still alerts.
+- `freshness.yml` uses the shared checker + `pip-audit`; opens/updates an issue only when actionable.
+- Security audit is scoped to the requirements closure (`pip-audit -r`), so it reports vulns in what the vault runs, never in the audit tool's own deps.
+
 ## [1.4.0] — 2026-07-15
 
 Additive — new freshness/update tooling; adopt with `bin/adopt.sh` (no vault changes required).

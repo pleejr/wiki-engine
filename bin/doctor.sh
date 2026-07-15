@@ -45,56 +45,11 @@ REQ="${RAG_REQUIREMENTS:-$ENGINE_ROOT/scaffold/rag-requirements.txt}"
 if [ ! -x "$VENV/bin/python" ]; then
   echo "not provisioned (no .rag/venv) — run engine/bin/rag-setup.sh to enable recall"
 else
-  # a) drift from the engine's pinned requirements (offline, cheap)
-  if [ -f "$REQ" ]; then
-    if drift="$("$VENV/bin/python" - "$REQ" <<'PY'
-import sys, re
-from importlib.metadata import version, PackageNotFoundError
-out = []
-for line in open(sys.argv[1]):
-    line = line.strip()
-    if not line or line.startswith('#'):
-        continue
-    m = re.match(r'([A-Za-z0-9_.\-]+)==([^;# ]+)', line)
-    if not m:
-        continue
-    name, want = m.group(1), m.group(2)
-    try:
-        have = version(name)
-    except PackageNotFoundError:
-        have = None
-    if have != want:
-        out.append("  %s: pinned %s, installed %s" % (name, want, have))
-if out:
-    print("DRIFT"); print("\n".join(out))
-else:
-    print("on pinned versions")
-PY
-)"; then
-      if printf '%s' "$drift" | head -1 | grep -q DRIFT; then
-        echo "venv drifted from $(basename "$REQ") — run rag-setup.sh to sync:"
-        printf '%s\n' "$drift" | tail -n +2
-        rc=1
-      else
-        echo "venv matches $(basename "$REQ")"
-      fi
-    fi
-  fi
-  # b) newer releases on PyPI (needs network)
-  if outdated="$("$VENV/bin/python" -m pip list --outdated --format=json 2>/dev/null)"; then
-    n="$(printf '%s' "$outdated" | "$VENV/bin/python" -c 'import sys,json;print(len(json.load(sys.stdin) or []))' 2>/dev/null || echo 0)"
-    if [ "${n:-0}" != "0" ]; then
-      echo "newer on PyPI ($n) — review before bumping rag-requirements.txt:"
-      printf '%s' "$outdated" | "$VENV/bin/python" -c 'import sys,json
-for p in json.load(sys.stdin): print("  %s: %s -> %s" % (p["name"],p["version"],p["latest_version"]))' 2>/dev/null
-      [ "$rc" -eq 0 ] && rc=1
-    else
-      echo "no newer releases on PyPI"
-    fi
-  else
-    echo "could not reach PyPI (offline?) — skipped the newer-release check"
-    [ "$rc" -eq 0 ] && rc=2
-  fi
+  # shared checker: actionable = pinned drift/outdated or a security vuln;
+  # transitive "newer" is informational only. Exit 0 healthy · 1 actionable · 2 offline.
+  "$VENV/bin/python" "$SCRIPT_DIR/rag_deps_check.py" --requirements "$REQ"; dc=$?
+  [ "$dc" -eq 1 ] && rc=1
+  [ "$dc" -eq 2 ] && [ "$rc" -eq 0 ] && rc=2
 fi
 
 # 3. model ----------------------------------------------------------------------

@@ -1,10 +1,10 @@
 name: freshness
 
-# Weekly automatic check that the RAG layer's pinned deps (scaffold/rag-requirements.txt)
-# aren't stale. Dependabot doesn't scan that non-standard requirements file, so this does:
-# it installs the pinned set, lists newer releases, writes a job summary, and opens (or
-# comments on) an issue when something is behind — deterministic, no `claude`. Applying
-# the bump stays a human edit to rag-requirements.txt (adoption is opt-in by design).
+# Weekly automatic health check of the RAG layer's pinned deps
+# (scaffold/rag-requirements.txt). Uses the same shared checker as doctor.sh, so
+# "actionable" means the same thing in both places: a PINNED dep is behind, or
+# pip-audit found a vulnerability anywhere in the tree. Transitive "newer available"
+# is informational and never opens an issue. Deterministic, no `claude`.
 
 on:
   schedule:
@@ -24,37 +24,37 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check pinned RAG deps for newer releases
+      - name: Check RAG deps (pinned freshness + security)
         id: check
         run: |
-          python -m pip install --quiet -r scaffold/rag-requirements.txt
-          python -m pip list --outdated --format=json > outdated.json
-          n="$(python -c 'import json;print(len(json.load(open("outdated.json")) or []))')"
-          echo "count=$n" >> "$GITHUB_OUTPUT"
+          python -m pip install --quiet -r scaffold/rag-requirements.txt pip-audit
+          set +e
+          out="$(python bin/rag_deps_check.py --requirements scaffold/rag-requirements.txt)"
+          code=$?
+          set -e
+          echo "$out"
+          printf '%s\n' "$out" > check.txt
           {
-            echo "## RAG dependency freshness"
-            if [ "$n" = "0" ]; then
-              echo "All pinned deps are current."
-            else
-              echo "$n package(s) have newer releases:"
-              python -c 'import json
-for p in json.load(open("outdated.json")): print("- **%s** %s -> %s" % (p["name"],p["version"],p["latest_version"]))'
-            fi
-          } | tee "$GITHUB_STEP_SUMMARY"
+            echo "## RAG dependency health"
+            echo '```'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
 
-      - name: Open / refresh an issue when behind
-        if: steps.check.outputs.count != '0'
+      - name: Open / refresh an issue only when actionable
+        if: steps.check.outputs.code == '1'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          title="RAG deps: newer releases available"
-          body="$(cat "$GITHUB_STEP_SUMMARY")
+          title="RAG deps: action needed (update or security)"
+          body="$(cat check.txt)
 
-          Bump versions in scaffold/rag-requirements.txt after review, then re-provision vaults with: engine/bin/rag-setup.sh --force"
+          Pinned bump: edit scaffold/rag-requirements.txt, then re-provision vaults with engine/bin/rag-setup.sh --force.
+          Security: fix the flagged package(s) regardless of pin."
           existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
           else
-            gh issue create --title "$title" --body "$body" 2>/dev/null \
-              || gh issue create --title "$title" --body "$body"
+            gh issue create --title "$title" --body "$body"
           fi
