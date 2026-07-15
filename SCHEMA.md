@@ -10,7 +10,7 @@ Each consuming wiki declares its own boundary in its top-level `CLAUDE.md` (see 
 
 ## Three layers
 
-- **Layer 1 — `raw/`**: immutable captured sources (`articles/`, `papers/`, `transcripts/`, `assets/`). Never edited after capture; carry `source_url`, `ingested`, `sha256`.
+- **Layer 1 — `raw/`**: captured sources. `articles/`, `papers/`, `transcripts/`, `assets/` are **immutable** ingested docs (carry `source_url`, `ingested`, `sha256`; never edited after capture). `sessions/` is the exception: **disposable** auto-capture scratch written by `rag-capture.sh` (see below) — promote keepers, then prune.
 - **Layer 2 — wiki pages**: agent-owned, synthesized (folders below).
 - **Navigation**: `index.md` (sectioned catalog + generated skills list) + `log.md` (chronological log).
 
@@ -26,7 +26,7 @@ Each consuming wiki declares its own boundary in its top-level `CLAUDE.md` (see 
 Plus general knowledge in `entities/`, `concepts/`, `comparisons/`, `queries/`, and freeform `notes/` (see page conventions).
 
 ### Memory is a lifecycle, not just a node
-- **Raw** = Claude Code native memory (`~/.claude/projects/*/memory/`) — disposable, NOT versioned here. Distilled into Curated, **then pruned** (`checkpoint`/`wiki-onboard`) so the vault stays the single authority and native can't drift into a competing source. Never prune a native note before its durable content is captured in the vault.
+- **Raw** = Claude Code native memory (`~/.claude/projects/*/memory/`) **plus** auto-captured session logs in `raw/sessions/` (from `rag-capture.sh`) — disposable input. Distilled into Curated, **then pruned** (`checkpoint`/`wiki-onboard`, and the `wiki-context` review-and-promote step) so the vault stays the single authority and raw can't drift into a competing source or dilute recall. Never prune before the durable content is captured in the vault.
 - **Curated** = `memory/` notes (`type: memory|lesson|decision|preference`) — versioned, linked. The authority.
 - **Always-on** = the thin `CLAUDE.md` slice (identity, boundary, how-to-use) — the only front-loaded memory; anything that must load every session lives here, not in native.
 
@@ -70,7 +70,7 @@ Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be s
 - **`adopt.sh`** — bring an existing vault up to the engine's current framework: idempotently ensure every `node-dirs.txt` folder exists. Run after bumping the engine pin (a pin bump updates skills/SCHEMA/bin, **not** vault folders). `--check` reports without creating.
 - **`engine-version.sh`** — report the vault's pinned engine vs latest `origin/main` (deterministic git, no LLM). `wiki-context` runs it at session start and offers to update. Exit 0 current · 1 update available · 2 offline/error.
 - **`reflow.sh`** — normalize Markdown to the soft-wrap convention (one line per paragraph/list item); `--check` flags drift. Word-preserving; leaves frontmatter/code/tables/lists structure intact.
-- **`rag-setup.sh`** / **`rag-build.sh`** / **`recall.sh`** — optional **semantic recall** layer (see below).
+- **`rag-setup.sh`** / **`rag-build.sh`** / **`recall.sh`** / **`rag-capture.sh`** — optional **semantic recall + auto-capture** layer (see below).
 
 ### Semantic recall (optional RAG layer)
 
@@ -81,6 +81,23 @@ The vault is retrieved index-first by the human-readable map + `[[links]]`; that
 - **Boundary-filtered & incremental.** Skips any page whose frontmatter `boundary` mismatches the vault's; re-embeds only changed files on rebuild.
 - **The loop:** `checkpoint` distills markdown → `rag-build.sh` re-indexes → `wiki-context` runs `recall.sh` to auto-load the relevant slice. Optional end-to-end: a vault provisioned with `--no-rag` (or where setup failed on a locked-down laptop) simply has no index and falls back to the map.
 - **Hook-safe** in the fork-bomb sense: it runs a small embedding model, never `claude`, and never spawns recursively — but like every skill it runs **in-session, never as a hook**. Backend/model resolve via `rag_embed.py` from `.rag/config.json` or `RAG_EMBED_API` / `RAG_LOCAL_MODEL` / `RAG_EMBED_URL` / `RAG_API_KEY`.
+- **Curated over raw.** `recall.sh` multiplicatively penalizes `raw/` chunks (`RAG_RAW_WEIGHT`, default `0.80`) so a curated note outranks auto-captured raw at similar similarity — the pile never drowns the good stuff.
+
+### Auto-capture (`rag-capture.sh`)
+
+The memory design's *capture* axis: record what you worked on so you don't have to remember to. `rag-capture.sh` appends a metadata entry to `$WIKI/raw/sessions/YYYY-MM.md` — timestamp, repo/branch/HEAD, changed file **names**, recent commit **subjects**, optional `--note`. **Never file contents, diffs, or secrets.** `rag-build` indexes it, so a captured session is recallable next session with zero curation; the `wiki-context` **review-and-promote** step then proposes (human-gated) which raw entries graduate to `memory/`, and prunes the promoted ones.
+
+- **This is the one thing that may run from a hook** — because it is *deterministic and never invokes `claude`*. Wire it to a Claude Code **SessionEnd** hook to make capture automatic. It runs git + writes a file, then exits; no agent, no recursion. This is the safe inverse of the `.ai-os` fork bomb (whose hook ran `claude -p`). See [[lesson-no-claude-in-hooks]]. Example hook (`~/.claude/settings.json`):
+
+  ```json
+  { "hooks": { "SessionEnd": [ { "hooks": [ {
+      "type": "command",
+      "command": "WIKI_PATH=/path/to/vault /path/to/vault/engine/bin/rag-capture.sh"
+  } ] } ] } }
+  ```
+
+- **Boundary caveat:** it records the repo you were in (names/subjects, not contents). Point `WIKI_PATH` at the boundary-appropriate vault, and don't enable the hook where even filenames/commit subjects are sensitive. Disable pieces with `RAG_CAPTURE_FILES=0` / `RAG_CAPTURE_COMMITS=0`.
+- **Curation still matters:** raw accumulates noise and contradictions and never reaches the always-on `CLAUDE.md`. Review-and-promote (and `checkpoint`) remain the judgment gate; auto-capture only removes the *mechanical* burden, not the curation.
 
 ## How a wiki consumes this engine
 

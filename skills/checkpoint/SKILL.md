@@ -18,13 +18,14 @@ Run this deliberately at the end of a work session. **Vault**: `$WIKI_PATH` — 
 - Append one dated line to `$WIKI_PATH/log.md`, tagged with the project.
 
 ## 2. Distill memory (raw → curated)
-- Review what emerged this session (and Claude Code's native per-project memory as raw input).
+- Review what emerged this session — Claude Code's native per-project memory **and** any `$WIKI_PATH/raw/sessions/` entries auto-captured by `rag-capture.sh` — as raw input.
 - Promote **durable** facts into `$WIKI_PATH/memory/` notes with the right `type`: `preference` (how I work) · `decision` (a chosen path + why) · `lesson` (a hard-won rule).
 - Give each ≥2 `[[wikilinks]]`; mark any note it supersedes as `status: superseded`.
 - Add/refresh the `$WIKI_PATH/index.md` entry.
 
 ## 3. Prune the raw source (keep the vault authoritative)
 - **Only after** a native note's durable content is captured in the vault, remove it from native memory (`~/.claude/projects/*/memory/*.md`) and drop its line from that dir's `MEMORY.md` index — so the vault is the single source of truth and native can't drift into a competing authority.
+- Same for **auto-captured `raw/sessions/` entries**: once a session's keeper is promoted to `memory/`/a project page, prune that session block so `raw/sessions` stays a short disposable buffer, not an ever-growing pile that dilutes recall. (Unlike immutable `raw/articles|papers|transcripts`, `raw/sessions` is disposable scratch.)
 - **Never delete native content you haven't first promoted.** If a native note isn't worth keeping, dropping it is fine; if it's worth keeping, it must land in the vault before you prune it.
 - Exception — the always-on layer: native `MEMORY.md` is auto-loaded every session, the vault is on-demand. Anything that must be present *every* session (core behavioral guidance) belongs in `CLAUDE.md`, not left in native as a workaround. Move it there, then prune.
 - Deletion is a **guided in-session action** — confirm before removing. Never wire pruning to a hook or background spawn. See [[lesson-no-claude-in-hooks]].

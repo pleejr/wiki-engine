@@ -23,7 +23,9 @@ Pull in just-enough context without inhaling the vault. This is the token-saver.
    - **On a mismatch**, invoke **`wiki-repo`** to refresh that page, then use the refreshed content.
    - Project and memory pages have no git signal — use as-is (they're refreshed by `checkpoint`/lint).
 5. **Load** the selected pages into context and proceed with the task.
+6. **Review & promote (raw → curated).** If `$WIKI_PATH/raw/sessions/` has entries newer than the last `log.md` line (i.e. auto-captured by `rag-capture.sh` since the last checkpoint), skim them and **propose** durable promotions — a `decision`/`lesson`/`preference` in `memory/`, or a project-page update — then **ask before writing**. This is the curation gate: raw is already recallable (see step 2), but promotion is what makes a fact canonical, linked, and eligible for the always-on `CLAUDE.md`. Respect the boundary and drop anything sensitive rather than promoting it. After a promotion lands in the vault, you may prune the promoted `raw/sessions` lines (guided, confirmed). **In-session only — never a hook or background spawn.** If there are no new raw entries, skip silently.
 
 ## Rules
 - Do not load pages you don't need. Do not preload all repos.
 - In-session only; no hooks/background spawns. See [[lesson-no-claude-in-hooks]].
+- Promotion and pruning are judgment calls made **with** the user — never automate them into a hook. Only `rag-capture.sh` (deterministic, no `claude`) may run from a hook.

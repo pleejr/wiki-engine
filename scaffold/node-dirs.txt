@@ -13,3 +13,4 @@ raw/articles
 raw/papers
 raw/transcripts
 raw/assets
+raw/sessions

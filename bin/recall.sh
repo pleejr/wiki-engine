@@ -64,6 +64,10 @@ def cosine(a, b):
     na = math.sqrt(sum(x*x for x in a)); nb = math.sqrt(sum(y*y for y in b))
     return dot / (na*nb) if na and nb else 0.0
 
+# Curated notes rank above the auto-captured raw/ pile: raw chunks get a
+# multiplicative penalty (RAG_RAW_WEIGHT, default 0.80) so a curated hit wins ties.
+RAW_W = float(os.environ.get("RAG_RAW_WEIGHT", "0.80"))
+
 qv = Embedder(WIKI).embed([Q])[0]
 scored = []
 for line in open(INDEX, encoding="utf-8"):
@@ -71,7 +75,10 @@ for line in open(INDEX, encoding="utf-8"):
         rec = json.loads(line)
     except Exception:
         continue
-    scored.append((cosine(qv, rec["vector"]), rec))
+    s = cosine(qv, rec["vector"])
+    if rec["file"] == "raw" or rec["file"].startswith("raw/"):
+        s *= RAW_W
+    scored.append((s, rec))
 scored.sort(key=lambda t: t[0], reverse=True)
 top = scored[:TOPN]
 
