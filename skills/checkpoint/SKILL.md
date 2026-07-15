@@ -32,6 +32,9 @@ Run this deliberately at the end of a work session. **Vault**: `$WIKI_PATH` — 
 ## 4. Lint before finishing
 - Run `engine/bin/lint.sh` (the umbrella: memory notes + frontmatter-property validity + soft-wrap drift + skills-catalog drift). Fix any failures before you consider the checkpoint done — don't commit a vault that fails lint.
 
+## 5. Refresh semantic recall (if enabled)
+- If the vault has a `.rag` index (`$WIKI_PATH/.rag/index.jsonl` exists), run `engine/bin/rag-build.sh` so this session's new/updated notes are recallable next session. This closes the loop: `checkpoint` distills markdown → `rag-build` re-indexes it (incremental; only changed files re-embed) → `wiki-context` auto-recalls it. Skip if the vault has no index or the embedding endpoint is down — recall is optional; the map still works. Deterministic (a local embedding model, never `claude`), so it's safe here, but like everything else this is **in-session, never a hook**.
+
 ## Rules
 - **In-session, on demand only. NEVER wire this to a hook or a background/recursive `claude` spawn** — that was the `.ai-os` fork-bomb. See [[lesson-no-claude-in-hooks]].
 - `boundary: personal`; no secrets; personal git identity.

@@ -70,6 +70,16 @@ Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be s
 - **`adopt.sh`** — bring an existing vault up to the engine's current framework: idempotently ensure every `node-dirs.txt` folder exists. Run after bumping the engine pin (a pin bump updates skills/SCHEMA/bin, **not** vault folders). `--check` reports without creating.
 - **`engine-version.sh`** — report the vault's pinned engine vs latest `origin/main` (deterministic git, no LLM). `wiki-context` runs it at session start and offers to update. Exit 0 current · 1 update available · 2 offline/error.
 - **`reflow.sh`** — normalize Markdown to the soft-wrap convention (one line per paragraph/list item); `--check` flags drift. Word-preserving; leaves frontmatter/code/tables/lists structure intact.
+- **`rag-build.sh`** / **`recall.sh`** — optional **semantic recall** layer (see below).
+
+### Semantic recall (optional RAG layer)
+
+The vault is retrieved index-first by the human-readable map + `[[links]]`; that's lexical + hand-curated. `rag-build.sh` adds a *semantic* layer on top so the agent can find pages by **meaning** (a query about "cooling" surfaces a note that only says "thermals") without the user naming pages — they just prompt.
+
+- **Derived, not authoritative.** `rag-build.sh` chunks every page by `##` heading, embeds each chunk via a **local** endpoint (default Ollama `nomic-embed-text`; no cloud, no secrets), and writes `$WIKI/.rag/index.jsonl` — a **git-ignored, fully rebuildable** sidecar (`rm -rf .rag && rag-build.sh`). The markdown stays the single source of truth; the index only holds `file:line` pointers back into it.
+- **Boundary-filtered & incremental.** Skips any page whose frontmatter `boundary` mismatches the vault's; re-embeds only changed files on rebuild.
+- **The loop:** `checkpoint` distills markdown → `rag-build.sh` re-indexes → `wiki-context` runs `recall.sh` to auto-load the relevant slice. Optional end-to-end: a vault with no embedding endpoint simply never builds an index and falls back to the map.
+- **Hook-safe** in the fork-bomb sense: it calls an embedding model, never `claude`, and never spawns recursively — but like every skill it runs **in-session, never as a hook**. Config via `RAG_EMBED_URL` / `RAG_EMBED_MODEL` / `RAG_EMBED_API` (`ollama`|`openai`) / `RAG_API_KEY`.
 
 ## How a wiki consumes this engine
 
