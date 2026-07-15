@@ -2,6 +2,20 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = fixes/docs. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
+## [1.4.0] — 2026-07-15
+
+Additive — new freshness/update tooling; adopt with `bin/adopt.sh` (no vault changes required).
+
+### Added — keep consumed components current
+- `scaffold/rag-requirements.txt` — **pins** the RAG CPU-embedder stack (fastembed/onnxruntime/numpy/tokenizers/huggingface_hub) so `.rag/venv` is reproducible, not floating. `rag-setup.sh` now installs from it (with `RAG_PIP_PKG` as an unpinned override).
+- `bin/doctor.sh` — one-shot freshness report: pinned engine vs latest tag + RAG venv drift from the requirements + newer PyPI releases + the embedding model. Deterministic; reports only.
+- `bin/update.sh` — apply engine + dep updates in one step: bump the engine to the latest tag *within the same MAJOR*, `adopt`, re-sync the RAG venv. **Refuses a MAJOR bump**; leaves the pin staged, never auto-commits.
+- `.github/dependabot.yml` — weekly bumps for the CI's GitHub Actions.
+- `.github/workflows/freshness.yml` — weekly cron that flags newer releases of the pinned RAG deps by opening/updating an issue (no `claude`).
+- `wiki-context` step 0 now offers `update.sh` (one-step) and points at `doctor.sh` for the fuller check.
+
+Design: *checking* can be automatic (session check, CI cron, Dependabot); *applying* to a vault stays opt-in.
+
 ## [1.3.2] — 2026-07-15
 
 Patch — opt-in addition.

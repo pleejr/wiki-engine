@@ -9,7 +9,8 @@
 # offline thereafter. Runs a small CPU model, never `claude` — see [[lesson-no-claude-in-hooks]].
 #
 # Config:
-#   RAG_PIP_PKG      pip package(s) to install   (default: fastembed)
+#   RAG_REQUIREMENTS pinned deps file  (default: engine scaffold/rag-requirements.txt)
+#   RAG_PIP_PKG      override: install this package instead of the pinned file (unpinned)
 #   RAG_LOCAL_MODEL  model to prefetch           (default: BAAI/bge-base-en-v1.5)
 #
 # Default is fastembed + bge-base (contextual, 768-dim, quantized ONNX ~210MB, CPU,
@@ -39,7 +40,8 @@ done
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "error: python3 required" >&2; exit 1; }
 
-PKG="${RAG_PIP_PKG:-fastembed}"
+ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REQ="${RAG_REQUIREMENTS:-$ENGINE_ROOT/scaffold/rag-requirements.txt}"
 MODEL="${RAG_LOCAL_MODEL:-BAAI/bge-base-en-v1.5}"
 VENV="$WIKI/.rag/venv"
 
@@ -50,10 +52,18 @@ if [ ! -x "$VENV/bin/python" ]; then
   python3 -m venv "$VENV"
 fi
 
-echo "rag-setup: installing $PKG (CPU embedder)"
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
-# shellcheck disable=SC2086
-"$VENV/bin/python" -m pip install --quiet $PKG
+if [ -n "${RAG_PIP_PKG:-}" ]; then
+  echo "rag-setup: installing $RAG_PIP_PKG (override — unpinned)"
+  # shellcheck disable=SC2086
+  "$VENV/bin/python" -m pip install --quiet $RAG_PIP_PKG
+elif [ -f "$REQ" ]; then
+  echo "rag-setup: installing pinned deps from $(basename "$REQ")"
+  "$VENV/bin/python" -m pip install --quiet -r "$REQ"
+else
+  echo "rag-setup: installing fastembed (no requirements file)"
+  "$VENV/bin/python" -m pip install --quiet fastembed
+fi
 
 echo "rag-setup: prefetching model $MODEL"
 RAG_BINDIR="$SCRIPT_DIR" RAG_EMBED_API=local RAG_LOCAL_MODEL="$MODEL" \

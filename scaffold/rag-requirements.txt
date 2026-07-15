@@ -1,0 +1,9 @@
+# Pinned CPU embedder stack for the RAG layer — rag-setup.sh installs this so the
+# vault's .rag/venv is reproducible, not "whatever pip resolved that day". Bump these
+# deliberately; doctor.sh reports drift + newer releases, Dependabot/the freshness CI
+# cron flag updates. To use a different embedder, set RAG_PIP_PKG (overrides this file).
+fastembed==0.7.4
+onnxruntime==1.19.2
+numpy==2.0.2
+tokenizers==0.22.2
+huggingface_hub==1.8.0

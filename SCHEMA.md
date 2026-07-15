@@ -69,6 +69,8 @@ Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be s
 - **`new-wiki.sh`** — scaffold a new consuming wiki (repo + engine submodule + rendered templates + skill symlinks). Node folders come from `scaffold/node-dirs.txt` (the authoritative framework list).
 - **`adopt.sh`** — bring an existing vault up to the engine's current framework: idempotently ensure every `node-dirs.txt` folder exists. Run after bumping the engine pin (a pin bump updates skills/SCHEMA/bin, **not** vault folders). `--check` reports without creating.
 - **`engine-version.sh`** — report the vault's pinned engine vs latest `origin/main` (deterministic git, no LLM). `wiki-context` runs it at session start and offers to update. Exit 0 current · 1 update available · 2 offline/error.
+- **`doctor.sh`** — one-shot freshness report across *all* consumed components: pinned engine (vs latest tag) + RAG venv deps (drift from `scaffold/rag-requirements.txt` and newer PyPI releases) + embedding model. Reports; changes nothing. On-demand or from the freshness CI cron.
+- **`update.sh`** — apply updates in one step: bump the engine to the latest tag *within the same MAJOR*, `adopt`, re-sync the RAG venv to the pinned deps. **Refuses a MAJOR bump** (needs a reviewed migration); leaves the pin staged, never auto-commits.
 - **`reflow.sh`** — normalize Markdown to the soft-wrap convention (one line per paragraph/list item); `--check` flags drift. Word-preserving; leaves frontmatter/code/tables/lists structure intact.
 - **`rag-setup.sh`** / **`rag-build.sh`** / **`recall.sh`** / **`rag-capture.sh`** — optional **semantic recall + auto-capture** layer (see below).
 
@@ -115,6 +117,16 @@ The engine is versioned with [SemVer](https://semver.org/) **git tags** (`v1.2.3
 
 - **PATCH / MINOR — additive** (a fix, or a new node folder / tool / convention): adopt cleanly — bump the pin and run `bin/adopt.sh`. The common case; no migration.
 - **MAJOR — breaking** — removing or renaming a node, or changing the frontmatter schema (e.g. a key rename like `brain:` → `boundary:`) — is **NOT** handled by `adopt.sh` (it only *ensures* folders exist; it never removes, renames, or rewrites content). Each such change needs a **dedicated, idempotent migration** shipped with it (a `bin/migrate-*.sh` or a documented one-time step) and a **major-version tag** so a vault knows the bump is breaking, not routine. Until that migration machinery exists, treat any node removal/rename or schema change as a manual, reviewed migration per vault — never a silent `adopt`.
+
+### Keeping consumed components current
+
+A vault consumes two versioned things: the **engine** (submodule, SemVer tags) and the **RAG runtime** (the `.rag/venv` deps pinned in `scaffold/rag-requirements.txt` + the embedding model). Freshness is layered so *checking* is automatic but *applying* stays opt-in:
+
+- **Per session** — `wiki-context` runs `engine-version.sh` and offers `update.sh`.
+- **On demand** — `doctor.sh` reports engine + deps + model in one shot; `update.sh` applies engine + dep updates in one step (same-MAJOR only).
+- **Automatic (CI, no `claude`)** — Dependabot bumps the workflow actions; a weekly `freshness.yml` cron flags newer releases of the pinned RAG deps by opening an issue. Neither auto-applies to a vault.
+
+RAG deps are **pinned**, not floating: `rag-setup.sh` installs from `rag-requirements.txt` for reproducibility; bump the file deliberately (the cron/issue is the prompt) and re-provision with `rag-setup.sh --force`. Ingested `raw/articles|papers|transcripts` are immutable snapshots and need no updating.
 
 ## Obsidian
 

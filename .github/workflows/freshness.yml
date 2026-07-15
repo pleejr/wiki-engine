@@ -1,0 +1,60 @@
+name: freshness
+
+# Weekly automatic check that the RAG layer's pinned deps (scaffold/rag-requirements.txt)
+# aren't stale. Dependabot doesn't scan that non-standard requirements file, so this does:
+# it installs the pinned set, lists newer releases, writes a job summary, and opens (or
+# comments on) an issue when something is behind — deterministic, no `claude`. Applying
+# the bump stays a human edit to rag-requirements.txt (adoption is opt-in by design).
+
+on:
+  schedule:
+    - cron: "0 14 * * 1"   # Mondays 14:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  rag-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check pinned RAG deps for newer releases
+        id: check
+        run: |
+          python -m pip install --quiet -r scaffold/rag-requirements.txt
+          python -m pip list --outdated --format=json > outdated.json
+          n="$(python -c 'import json;print(len(json.load(open("outdated.json")) or []))')"
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+          {
+            echo "## RAG dependency freshness"
+            if [ "$n" = "0" ]; then
+              echo "All pinned deps are current."
+            else
+              echo "$n package(s) have newer releases:"
+              python -c 'import json
+for p in json.load(open("outdated.json")): print("- **%s** %s -> %s" % (p["name"],p["version"],p["latest_version"]))'
+            fi
+          } | tee "$GITHUB_STEP_SUMMARY"
+
+      - name: Open / refresh an issue when behind
+        if: steps.check.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="RAG deps: newer releases available"
+          body="$(cat "$GITHUB_STEP_SUMMARY")
+
+          Bump versions in scaffold/rag-requirements.txt after review, then re-provision vaults with: engine/bin/rag-setup.sh --force"
+          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body" 2>/dev/null \
+              || gh issue create --title "$title" --body "$body"
+          fi
