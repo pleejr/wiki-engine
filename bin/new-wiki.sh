@@ -121,6 +121,10 @@ render "$ENGINE_ROOT/scaffold/log.md.tmpl"     > "$VAULT_PATH/log.md"
 render "$ENGINE_ROOT/scaffold/README.md.tmpl"  > "$VAULT_PATH/README.md"
 render "$ENGINE_ROOT/scaffold/gitignore.tmpl"  > "$VAULT_PATH/.gitignore"
 
+# Seed the skills catalog from the engine's actual skills so a fresh vault matches
+# whatever skill set this engine pins (the template block is just a placeholder).
+"$ENGINE_ROOT/bin/gen-skills-index.sh" --wiki "$VAULT_PATH" >/dev/null
+
 if [ "$LINK_SKILLS" -eq 1 ]; then
   mkdir -p "$HOME/.claude/skills"
   for s in "$ENGINE_ROOT"/skills/*/; do
