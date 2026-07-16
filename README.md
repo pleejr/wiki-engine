@@ -6,7 +6,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 
 ## What's here
 
-- `skills/` — the Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`.
+- `skills/` — the Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`.
 - `SCHEMA.md` — node model, three layers, page conventions, memory lifecycle.
 - `CLAUDE.md` — generic context router a wiki imports from its own thin `CLAUDE.md`.
 - `bin/` — deterministic maintenance tools (no LLM):
@@ -17,19 +17,28 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
   - `lint.sh` — umbrella lint (memory + frontmatter-property + soft-wrap + catalog); `checkpoint` runs it.
   - `gen-skills-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation, memory validation, soft-wrap normalization.
 
-## New wiki (recommended)
+## New wiki — one-shot adoption (recommended)
 
-Clone this engine standalone, then run the scaffolder:
+On a machine with no vault yet, clone this engine and let the `wiki-adopt` skill drive the whole flow (scaffold → wire the machine → seed) in a single session:
 
 ```
 git clone <this-repo-url> ~/Documents/repos/wiki-engine
+cd ~/Documents/repos/wiki-engine && claude
+> /wiki-adopt
+```
+
+It prompts for the vault's boundary/identity/remote, runs the scaffolder, wires the machine, and then runs `wiki-onboard` to seed the vault — usable in the very next session. Because *you* start the session there is no recursive `claude` spawn (the hard safety rule holds). This assumes a **single-vault machine** (one boundary); on a machine that hosts both a `personal` and a `work` vault, scaffold without the wiring flags and scope activation per-directory instead.
+
+### Or run the scaffolder directly
+
+```
 ~/Documents/repos/wiki-engine/bin/new-wiki.sh \
   --path ~/Documents/repos/work-wiki --boundary work --email you@company.com --git-name "Your Name"
 ```
 
-It creates the vault repo, pins this engine as the `engine/` submodule, renders the `scaffold/` templates (thin `CLAUDE.md`, `index.md`, `log.md`, node folders), and symlinks the skills into `~/.claude/skills`. It then prints the manual next steps it deliberately does **not** automate: setting `$WIKI_PATH`, wiring `~/.claude/CLAUDE.md`, and adding a git remote. Run `new-wiki.sh --help` for options.
+It creates the vault repo, pins this engine as the `engine/` submodule, renders the `scaffold/` templates (thin `CLAUDE.md`, `index.md`, `log.md`, node folders), symlinks the skills into `~/.claude/skills`, and provisions `.rag`. Run interactively (no flags) and it prompts for the required args. By default it prints the manual next steps — `$WIKI_PATH`, the `~/.claude/CLAUDE.md` import, the git remote — but the opt-in `--wire-shell`, `--wire-claude-md`, and `--remote`/`--create-remote` flags automate each (idempotent; single-vault machines only). Run `new-wiki.sh --help` for all options.
 
-Then **seed the empty vault** from your existing environment — run the `wiki-onboard` skill in a Claude Code session (with `$WIKI_PATH` set) to distill existing native memories, ingest the repos you work in, and stub project pages. It's a one-time bootstrap; `checkpoint` keeps the vault current thereafter.
+Then **seed the empty vault** — run the `wiki-onboard` skill in a Claude Code session (with `$WIKI_PATH` set) to distill existing native memories, ingest the repos you work in, and stub project pages. It's a one-time bootstrap; `checkpoint` keeps the vault current thereafter.
 
 ## Doing it by hand
 

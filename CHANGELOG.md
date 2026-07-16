@@ -2,6 +2,16 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = fixes/docs. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
+## [1.5.0] — 2026-07-16
+
+Additive — one-shot adoption on a fresh machine; adopt with `bin/adopt.sh` (no vault changes required).
+
+### Added
+- `skills/wiki-adopt/` — the adoption front door: run once from a standalone engine clone (you start the session, so no recursive `claude` spawn) to drive scaffold → wire the machine → seed. Gathers the vault's boundary/identity/remote, runs `new-wiki.sh` full-auto, points the session at the vault, then chains into `wiki-onboard`. Guarded for **single-vault machines only** (the wiring is global); a dual-boundary machine scaffolds without wiring and scopes activation per-directory.
+- `bin/new-wiki.sh` — now **prompts** for the required args (`--path`/`--boundary`/`--email`/`--git-name`) when run interactively, and gained opt-in machine-wiring flags: `--wire-shell [RC]` (append `export WIKI_PATH` to the shell rc), `--wire-claude-md` (append the always-on `@…/CLAUDE.md` import), and `--remote URL` / `--create-remote OWNER/NAME` (+`--visibility`) to add and push the git remote (`gh`). All wiring is idempotent — a pre-existing `WIKI_PATH` export or import line is left untouched with a warning. The closing summary lists what was auto-wired and prints only the steps still left manual.
+
+Design: the deterministic scaffold + wiring stays in `new-wiki.sh`; the skill adds conversational prompting and the in-session onboarding a bare script can't safely do (no `claude` spawn from a script/hook).
+
 ## [1.4.2] — 2026-07-15
 
 Patch — docs.

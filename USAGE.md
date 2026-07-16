@@ -30,6 +30,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 - **`wiki-repo`** — ingest or refresh ONE repo page with git provenance.
 - **`checkpoint`** — end-of-session: distill memory, update project + log, prune raw, lint, re-index.
 - **`wiki-onboard`** — one-time bulk seed of a fresh vault from existing native memory / repos / projects.
+- **`wiki-adopt`** — one-shot adoption on a fresh machine: scaffold + wire the machine + run onboarding, in one session. The front door on a new laptop.
 
 ## Commands (`bin/` — deterministic, no LLM; set `$WIKI_PATH` or pass `--wiki DIR`)
 
@@ -49,7 +50,8 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 
 ## Setup & activation
 
-- **New vault:** `bin/new-wiki.sh --path … --boundary personal|work --email …` (auto-provisions RAG unless `--no-rag`), then run `wiki-onboard` to seed it.
+- **New machine (one-shot):** clone the engine standalone, `cd` in, start Claude, run the **`wiki-adopt`** skill — it scaffolds, wires the machine (`WIKI_PATH` + `~/.claude/CLAUDE.md` import + remote), and seeds via `wiki-onboard`. Single-vault machines only.
+- **New vault (scaffolder):** `bin/new-wiki.sh --path … --boundary personal|work --email …` (prompts for anything omitted; auto-provisions RAG unless `--no-rag`; add `--wire-shell --wire-claude-md --create-remote OWNER/NAME` to automate activation), then run `wiki-onboard` to seed it.
 - **Turn on semantic recall (existing vault):** `engine/bin/rag-setup.sh && engine/bin/rag-build.sh`. Then just prompt — `wiki-context` recalls automatically.
 - **Turn on auto-capture:** add a SessionEnd hook to `~/.claude/settings.json` pointing at `rag-capture.sh` (deterministic — never calls `claude`). Add `RAG_CAPTURE_TRANSCRIPT_PATH=1` to also record the transcript *path* (pointer, not content):
 
