@@ -5,8 +5,9 @@
 #
 # This is what makes RAG a packaged, works-out-of-the-box feature: clone the engine,
 # run new-wiki.sh (which calls this), and recall works with no server, no GPU, and
-# nothing external after the one-time install. Needs pip + one model download; fully
-# offline thereafter. Runs a small CPU model, never `claude` — see [[lesson-no-claude-in-hooks]].
+# nothing external after the one-time install. Needs Python 3.10–3.13 + pip + one model
+# download; fully offline thereafter. (On other Pythons use the model2vec fallback
+# below.) Runs a small CPU model, never `claude` — see [[lesson-no-claude-in-hooks]].
 #
 # Config:
 #   RAG_REQUIREMENTS pinned deps file  (default: engine scaffold/rag-requirements.txt)
@@ -45,11 +46,34 @@ REQ="${RAG_REQUIREMENTS:-$ENGINE_ROOT/scaffold/rag-requirements.txt}"
 MODEL="${RAG_LOCAL_MODEL:-BAAI/bge-base-en-v1.5}"
 VENV="$WIKI/.rag/venv"
 
+# Printed when the pinned bge stack won't install (typically an unsupported Python) —
+# turns an opaque pip abort into the actual remedies. Recall is optional, so this is a
+# guided failure, not a crash.
+pinned_install_hint() {
+  local pv; pv="$("$VENV/bin/python" -c 'import platform;print(platform.python_version())' 2>/dev/null || echo '?')"
+  cat >&2 <<EOF
+rag-setup: pinned embedder install failed (venv Python $pv).
+  The pinned stack ($(basename "$REQ")) targets Python 3.10–3.13.
+  Remedies:
+    • Provision with a Python in 3.10–3.13 (put one on PATH as python3, then rerun).
+    • Or use the lightweight, onnxruntime-free embedder (works on any modern Python):
+        RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M \\
+          $ENGINE_ROOT/bin/rag-setup.sh --wiki "$WIKI"
+  Semantic recall is optional — the vault's lexical index + link graph work without it.
+EOF
+}
+
 mkdir -p "$WIKI/.rag"
 [ "$FORCE" -eq 1 ] && rm -rf "$VENV"
 if [ ! -x "$VENV/bin/python" ]; then
   echo "rag-setup: creating venv at .rag/venv"
   python3 -m venv "$VENV"
+fi
+
+# Proactive nudge: the pinned path needs Python 3.10+, so warn before a doomed install.
+if [ -z "${RAG_PIP_PKG:-}" ]; then
+  PYMM="$("$VENV/bin/python" -c 'import sys;print(sys.version_info[0]*100+sys.version_info[1])' 2>/dev/null || echo 0)"
+  [ "$PYMM" -lt 310 ] && echo "rag-setup: ⚠ venv Python is older than 3.10 — the pinned bge stack may not install; see the fallback if it fails." >&2
 fi
 
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
@@ -59,7 +83,7 @@ if [ -n "${RAG_PIP_PKG:-}" ]; then
   "$VENV/bin/python" -m pip install --quiet $RAG_PIP_PKG
 elif [ -f "$REQ" ]; then
   echo "rag-setup: installing pinned deps from $(basename "$REQ")"
-  "$VENV/bin/python" -m pip install --quiet -r "$REQ"
+  if ! "$VENV/bin/python" -m pip install --quiet -r "$REQ"; then pinned_install_hint; exit 1; fi
 else
   echo "rag-setup: installing fastembed (no requirements file)"
   "$VENV/bin/python" -m pip install --quiet fastembed

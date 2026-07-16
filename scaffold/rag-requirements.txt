@@ -2,8 +2,13 @@
 # vault's .rag/venv is reproducible, not "whatever pip resolved that day". Bump these
 # deliberately; doctor.sh reports drift + newer releases, Dependabot/the freshness CI
 # cron flag updates. To use a different embedder, set RAG_PIP_PKG (overrides this file).
-fastembed==0.7.4
-onnxruntime==1.19.2
-numpy==2.0.2
-tokenizers==0.22.2
-huggingface_hub==1.8.0
+#
+# Targets Python 3.10–3.13 (verified install + bge-base 768-dim embed on 3.11 and
+# 3.13). Python 3.9 is EOL (2025-10) and unsupported by this set — numpy>=2.1 dropped
+# it. On an unsupported/newer Python, use the lightweight onnxruntime-free fallback:
+#   RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M
+fastembed==0.8.0
+onnxruntime==1.27.0
+numpy==2.2.6
+tokenizers==0.23.1
+huggingface_hub==1.23.0

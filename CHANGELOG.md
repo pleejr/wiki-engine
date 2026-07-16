@@ -4,6 +4,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.5.3] — 2026-07-16
+
+Patch — make the optional RAG layer install on current Python (fixes adoption-time recall on 3.13).
+
+### Fixed
+- **Semantic recall couldn't provision on Python 3.13.** The pinned embedder stack (`onnxruntime==1.19.2`, `numpy==2.0.2`, …) predated 3.13 and had no wheels, so `rag-setup.sh` failed and the vault fell back to lexical recall. Bumped the pinned set to **fastembed 0.8.0 / onnxruntime 1.27.0 / numpy 2.2.6 / tokenizers 0.23.1 / huggingface_hub 1.23.0** — verified to install and embed bge-base (768-dim) on **both Python 3.11 and 3.13**.
+- `rag-setup.sh` now **guides on failure** instead of aborting opaquely: a proactive warning when the venv Python is < 3.10, and on a failed pinned install it prints the remedies (use Python 3.10–3.13, or the onnxruntime-free `model2vec`/potion fallback, whose choice persists in `.rag/config.json`). Recall is optional, so this stays a guided, non-fatal skip.
+
+### Changed
+- **Minimum Python for the (optional) RAG layer is now 3.10** — Python 3.9 is EOL (2025-10) and `numpy>=2.1` dropped it. Documented in README Prerequisites and `rag-requirements.txt`. The rest of the engine (skills, `bin/`, scaffolding) is unaffected — it needs only `bash` + `git`.
+
 ## [1.5.2] — 2026-07-16
 
 Patch — docs + license for the now-public repo.
