@@ -1,6 +1,6 @@
 # wiki-engine
 
-Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-session by Claude Code** (first-party, plan-covered — no orchestrator). Extracted from `pleejr-wiki` so the engine can be managed once and pinned per wiki — engine updates never silently drift across vaults. Together a vault + this engine form **the wiki-engine loop** (capture → recall → review-and-promote): a curated-memory engine for coding agents.
+Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-session by Claude Code** (first-party, plan-covered — no orchestrator). The engine is extracted from the vault it serves so it can be managed once and pinned per wiki — engine updates never silently drift across vaults. Together a vault + this engine form **the wiki-engine loop** (capture → recall → review-and-promote): a curated-memory engine for coding agents.
 
 **Day-to-day usage: `USAGE.md`.** Full spec: `SCHEMA.md`. Releases: `CHANGELOG.md`.
 
@@ -17,6 +17,25 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
   - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
   - `lint.sh` — umbrella lint (memory + frontmatter-property + soft-wrap + catalog); `checkpoint` runs it.
   - `gen-skills-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation, memory validation, soft-wrap normalization.
+
+## Prerequisites
+
+Have these in place on the machine *before* adopting:
+
+**Required**
+- **Claude Code** — installed and signed in (the skills run inside it; `claude --version` should work). The vault is driven from Claude Code sessions.
+- **git** — the vault is a git repo and pins this engine as a submodule. Any recent 2.x. macOS ships an old but workable `bash` 3.2; the scripts are 3.2-compatible.
+- **A POSIX shell environment** — macOS or Linux. The `bin/` tools are bash; skills are wired via symlinks into `~/.claude/skills/`, so a filesystem that supports symlinks.
+
+**For pushing the vault to a remote (recommended)**
+- **A git host account** (GitHub, GitLab, …) where the vault repo will live, and network access to it.
+- **The [`gh`](https://cli.github.com/) CLI, authenticated** (`gh auth status`) — only if you want `wiki-adopt` / `new-wiki.sh --create-remote` to *create and push* the remote for you. Authenticate `gh` against the org/account that should own the vault. Without `gh` you can still adopt and add a remote by hand (`--remote <url>`), or skip the remote entirely.
+- Cloning *this* engine needs no auth (the repo is public); auth is only for your own vault's remote.
+
+**Optional — semantic recall + auto-capture (the RAG layer)**
+- **Python 3.9+ with `venv`/`pip`** and one-time network access — `rag-setup.sh` provisions a self-contained `.rag/venv` CPU embedder (no server, GPU, or cloud). Skip it with `--no-rag`; the vault and its link-graph still work fully, you just lose semantic recall until you run `rag-setup.sh` later.
+
+**Boundary reminder:** decide the vault's boundary (`personal` | `work`) and the git identity (name/email) it should commit under up front — `wiki-adopt` will ask, and they get stamped into the vault. Keep work and personal on separate vaults (ideally separate machines); the engine holds no identity, so it's safe to share, but **content never crosses**.
 
 ## New wiki — one-shot adoption (recommended)
 
