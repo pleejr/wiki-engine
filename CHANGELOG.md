@@ -2,6 +2,17 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = fixes/docs. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
+## [1.5.2] — 2026-07-16
+
+Patch — docs + license for the now-public repo.
+
+### Added
+- `LICENSE` — MIT.
+- `README` **Prerequisites** section: what to have in place before adopting — Claude Code installed + signed in, git, a POSIX/symlink-capable shell (required); a git-host account + authenticated `gh` for remote creation (recommended; `--remote <url>` or none otherwise); Python 3.9+ for the optional RAG layer; and the up-front boundary/identity decision.
+
+### Changed
+- Dropped the specific personal vault name from the README intro now that the repo is public (the engine holds no identity by design). Swept the tree: no identity/account references remain in committed content.
+
 ## [1.5.1] — 2026-07-16
 
 Patch — fix the cold-start bootstrap for `/wiki-adopt`.

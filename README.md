@@ -76,3 +76,7 @@ Then **seed the empty vault** — run the `wiki-onboard` skill in a Claude Code 
 The engine holds no content, identity, or secrets — it's safe to share across a `personal` and a `work` vault. **Content never crosses:** each vault keeps its own `boundary`, and any personal↔work move is a deliberate manual export. Reuse the engine; never reuse a vault's content.
 
 See `USAGE.md` for day-to-day use and `SCHEMA.md` for the full spec.
+
+## License
+
+MIT — see `LICENSE`.
