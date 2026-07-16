@@ -4,6 +4,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.5.4] — 2026-07-16
+
+Patch — extend the RAG layer to Python 3.14 and make interpreter selection self-healing.
+
+### Fixed
+- **RAG couldn't provision on Python 3.14** (a fresh machine's default `python3`). `onnxruntime`/`fastembed`/`tokenizers` already had 3.14 wheels; only numpy blocked it — no single release spans 3.10–3.14 (`2.2.6` has no 3.14 wheels, `2.5.x` requires ≥3.12). Split numpy with an environment marker (`numpy==2.2.6; python_version < "3.12"` / `numpy==2.5.1; python_version >= "3.12"`), so the pinned stack now installs + embeds bge-base (768-dim) on **3.11, 3.13, and 3.14** (all verified).
+- `rag_deps_check.py` (doctor + the freshness cron) now **evaluates the `python_version` marker**, so it only checks the numpy pin matching the venv's Python — no spurious "drift" on the bucket that doesn't apply.
+
+### Added
+- `rag-setup.sh` **self-heals the interpreter**: when the default `python3` is outside the supported 3.10–3.14 range, it auto-selects an in-range interpreter from PATH or pyenv (what you'd otherwise do by hand on a Python-3.14 machine) before creating the venv; if none exists it prints the model2vec fallback instead of aborting. Ceiling raised 3.13 → 3.14; README prereqs updated.
+- Rolls up the untagged `main` hygiene fix since v1.5.3: `bin/__pycache__/*.pyc` is no longer tracked (it re-dirtied the submodule in consuming vaults). Bumping a vault to v1.5.4 clears that noise.
+
 ## [1.5.3] — 2026-07-16
 
 Patch — make the optional RAG layer install on current Python (fixes adoption-time recall on 3.13).

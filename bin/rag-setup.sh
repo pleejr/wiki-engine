@@ -5,9 +5,10 @@
 #
 # This is what makes RAG a packaged, works-out-of-the-box feature: clone the engine,
 # run new-wiki.sh (which calls this), and recall works with no server, no GPU, and
-# nothing external after the one-time install. Needs Python 3.10–3.13 + pip + one model
-# download; fully offline thereafter. (On other Pythons use the model2vec fallback
-# below.) Runs a small CPU model, never `claude` — see [[lesson-no-claude-in-hooks]].
+# nothing external after the one-time install. Needs Python 3.10–3.14 + pip + one model
+# download; fully offline thereafter — and if the default python3 is out of that range,
+# it auto-selects an in-range interpreter from PATH/pyenv (else use the model2vec
+# fallback below). Runs a small CPU model, never `claude` — see [[lesson-no-claude-in-hooks]].
 #
 # Config:
 #   RAG_REQUIREMENTS pinned deps file  (default: engine scaffold/rag-requirements.txt)
@@ -45,17 +46,38 @@ ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REQ="${RAG_REQUIREMENTS:-$ENGINE_ROOT/scaffold/rag-requirements.txt}"
 MODEL="${RAG_LOCAL_MODEL:-BAAI/bge-base-en-v1.5}"
 VENV="$WIKI/.rag/venv"
+MIN_PY=310 MAX_PY=314   # supported Python range for the pinned bge stack (X*100+Y)
 
-# Printed when the pinned bge stack won't install (typically an unsupported Python) —
-# turns an opaque pip abort into the actual remedies. Recall is optional, so this is a
-# guided failure, not a crash.
+# major*100+minor for an interpreter (0 if it can't run).
+pyver() { "$1" -c 'import sys;print(sys.version_info[0]*100+sys.version_info[1])' 2>/dev/null || echo 0; }
+in_range() { [ "$1" -ge "$MIN_PY" ] && [ "$1" -le "$MAX_PY" ]; }
+
+# Self-healing interpreter pick for the pinned path: prefer python3 if it's in range,
+# else fall back to any in-range interpreter on PATH or under pyenv (does automatically
+# what you'd otherwise do by hand when the default python3 is newer than the ceiling).
+# Echoes the chosen interpreter, or "" if none in 3.10–MAX is found.
+choose_python() {
+  local v c p
+  v="$(pyver python3)"; if in_range "$v"; then echo python3; return; fi
+  for c in python3.14 python3.13 python3.12 python3.11 python3.10; do
+    command -v "$c" >/dev/null 2>&1 && { v="$(pyver "$c")"; in_range "$v" && { echo "$c"; return; }; }
+  done
+  if [ -d "$HOME/.pyenv/versions" ]; then
+    for p in "$HOME/.pyenv/versions"/*/bin/python; do
+      [ -x "$p" ] || continue; v="$(pyver "$p")"; in_range "$v" && { echo "$p"; return; }
+    done
+  fi
+  echo ""
+}
+
+# Printed when no usable interpreter / the pinned install fails — turns an opaque abort
+# into the actual remedies. Recall is optional, so this is a guided skip, not a crash.
 pinned_install_hint() {
-  local pv; pv="$("$VENV/bin/python" -c 'import platform;print(platform.python_version())' 2>/dev/null || echo '?')"
   cat >&2 <<EOF
-rag-setup: pinned embedder install failed (venv Python $pv).
-  The pinned stack ($(basename "$REQ")) targets Python 3.10–3.13.
+rag-setup: could not provision the pinned bge stack (needs Python 3.10–3.14; this
+  machine's python3 is $(python3 -V 2>&1 | awk '{print $2}') and no in-range interpreter was found).
   Remedies:
-    • Provision with a Python in 3.10–3.13 (put one on PATH as python3, then rerun).
+    • Install/select a Python in 3.10–3.14 (pyenv or Homebrew), then rerun.
     • Or use the lightweight, onnxruntime-free embedder (works on any modern Python):
         RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M \\
           $ENGINE_ROOT/bin/rag-setup.sh --wiki "$WIKI"
@@ -66,14 +88,17 @@ EOF
 mkdir -p "$WIKI/.rag"
 [ "$FORCE" -eq 1 ] && rm -rf "$VENV"
 if [ ! -x "$VENV/bin/python" ]; then
+  # The RAG_PIP_PKG override (e.g. model2vec) runs on any Python — use python3 as-is.
+  # The pinned bge path needs 3.10–3.14, so pick an in-range interpreter or guide out.
+  if [ -n "${RAG_PIP_PKG:-}" ]; then
+    PY=python3
+  else
+    PY="$(choose_python)"
+    [ -n "$PY" ] || { pinned_install_hint; exit 1; }
+    [ "$PY" != "python3" ] && echo "rag-setup: default python3 is out of range 3.10–3.14; using $PY ($("$PY" -V 2>&1 | awk '{print $2}'))"
+  fi
   echo "rag-setup: creating venv at .rag/venv"
-  python3 -m venv "$VENV"
-fi
-
-# Proactive nudge: the pinned path needs Python 3.10+, so warn before a doomed install.
-if [ -z "${RAG_PIP_PKG:-}" ]; then
-  PYMM="$("$VENV/bin/python" -c 'import sys;print(sys.version_info[0]*100+sys.version_info[1])' 2>/dev/null || echo 0)"
-  [ "$PYMM" -lt 310 ] && echo "rag-setup: ⚠ venv Python is older than 3.10 — the pinned bge stack may not install; see the fallback if it fails." >&2
+  "$PY" -m venv "$VENV"
 fi
 
 "$VENV/bin/python" -m pip install --quiet --upgrade pip

@@ -16,6 +16,23 @@ def norm(n):
     return n.lower().replace("_", "-")
 
 
+def _marker_ok(marker):
+    """Evaluate a `python_version <op> "X.Y"` environment marker against the running
+    interpreter (doctor.sh runs this with the vault's venv Python). Only the operators
+    we use in rag-requirements.txt are supported; an unrecognized marker is not filtered
+    (conservative — better a spurious check than a silently dropped pin)."""
+    if not marker:
+        return True
+    m = re.match(r'python_version\s*(<=|>=|==|!=|<|>)\s*["\']([0-9]+(?:\.[0-9]+)*)["\']',
+                 marker.strip())
+    if not m:
+        return True
+    op, want = m.group(1), tuple(int(x) for x in m.group(2).split("."))
+    cur = tuple(sys.version_info[:len(want)])
+    return {"<": cur < want, "<=": cur <= want, ">": cur > want,
+            ">=": cur >= want, "==": cur == want, "!=": cur != want}[op]
+
+
 def load_pins(path):
     pins = {}
     try:
@@ -23,7 +40,10 @@ def load_pins(path):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            m = re.match(r"([A-Za-z0-9_.\-]+)==([^;# ]+)", line)
+            req, _, marker = line.partition(";")
+            if not _marker_ok(marker):
+                continue  # pin for a different Python bucket — skip on this interpreter
+            m = re.match(r"([A-Za-z0-9_.\-]+)==([^;# ]+)", req)
             if m:
                 pins[norm(m.group(1))] = m.group(2)
     except FileNotFoundError:
