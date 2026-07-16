@@ -2,6 +2,14 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = fixes/docs. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
+## [1.5.1] — 2026-07-16
+
+Patch — fix the cold-start bootstrap for `/wiki-adopt`.
+
+### Fixed
+- **`/wiki-adopt` was undiscoverable on a fresh machine.** Claude Code discovers skills only from `~/.claude/skills/` and `<project>/.claude/skills/`, never a cloned repo's bare `skills/` dir — so `git clone` + `cd wiki-engine` did *not* expose the skill (the `v1.5.0` README instruction was wrong for the first run). Added **`bin/link-skills.sh`**: idempotent symlinker of the engine's skills into `~/.claude/skills/`, non-destructive (an existing link to this engine is kept; a foreign slot is warn+skipped, `--force` to repoint), never calls `claude`. `new-wiki.sh` now calls it instead of its own inline `ln` loop (one implementation, and it no longer silently hijacks a foreign symlink).
+- Docs corrected: the adoption flow is now `clone → bin/link-skills.sh → claude (any folder) → /wiki-adopt`, documented in `README`, `USAGE`, and the `wiki-adopt` skill.
+
 ## [1.5.0] — 2026-07-16
 
 Additive — one-shot adoption on a fresh machine; adopt with `bin/adopt.sh` (no vault changes required).

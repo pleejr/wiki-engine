@@ -12,6 +12,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 - `bin/` — deterministic maintenance tools (no LLM):
   - `new-wiki.sh` + `scaffold/` — scaffold a new consuming wiki in one command (node folders from `scaffold/node-dirs.txt`).
   - `adopt.sh` — ensure an existing vault has the engine's current node folders (run after bumping the pin).
+  - `link-skills.sh` — symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them (the bootstrap that makes `/wiki-adopt` available on a fresh machine; idempotent, warn+skips a foreign slot).
   - `engine-version.sh` · `doctor.sh` · `update.sh` — freshness of consumed components: pinned vs latest engine; full health report (engine + RAG deps + security + model); one-step update (same-MAJOR).
   - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
   - `lint.sh` — umbrella lint (memory + frontmatter-property + soft-wrap + catalog); `checkpoint` runs it.
@@ -19,15 +20,18 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 
 ## New wiki — one-shot adoption (recommended)
 
-On a machine with no vault yet, clone this engine and let the `wiki-adopt` skill drive the whole flow (scaffold → wire the machine → seed) in a single session:
+On a machine with no vault yet, clone this engine, link its skills so Claude Code can discover them, then let the `wiki-adopt` skill drive the whole flow (scaffold → wire the machine → seed) in a single session:
 
 ```
 git clone <this-repo-url> ~/Documents/repos/wiki-engine
-cd ~/Documents/repos/wiki-engine && claude
+~/Documents/repos/wiki-engine/bin/link-skills.sh   # bootstrap: ~/.claude/skills/* -> engine skills
+claude                                              # from ANY folder
 > /wiki-adopt
 ```
 
-It prompts for the vault's boundary/identity/remote, runs the scaffolder, wires the machine, and then runs `wiki-onboard` to seed the vault — usable in the very next session. Because *you* start the session there is no recursive `claude` spawn (the hard safety rule holds). This assumes a **single-vault machine** (one boundary); on a machine that hosts both a `personal` and a `work` vault, scaffold without the wiring flags and scope activation per-directory instead.
+The `link-skills.sh` step is required and easy to miss: Claude Code discovers skills only from `~/.claude/skills/` and `<project>/.claude/skills/`, **never** a cloned repo's bare `skills/` dir — so cloning the engine alone does not make `/wiki-adopt` available. After the one-time link the skill is global (folder-independent); thereafter `new-wiki.sh` keeps the links current on every scaffold.
+
+`/wiki-adopt` then prompts for the vault's boundary/identity/remote, runs the scaffolder, wires the machine, and runs `wiki-onboard` to seed the vault — usable in the very next session. Because *you* start the session there is no recursive `claude` spawn (the hard safety rule holds). This assumes a **single-vault machine** (one boundary); on a machine that hosts both a `personal` and a `work` vault, scaffold without the wiring flags and scope activation per-directory instead.
 
 ### Or run the scaffolder directly
 
@@ -43,7 +47,7 @@ Then **seed the empty vault** — run the `wiki-onboard` skill in a Claude Code 
 ## Doing it by hand
 
 1. `git submodule add <this-repo-url> engine` in the wiki repo; commit the pinned SHA.
-2. Point `~/.claude/skills/{wiki-repo,wiki-context,checkpoint}` symlinks at this engine's `skills/*`.
+2. Run `bin/link-skills.sh` to symlink `~/.claude/skills/*` at this engine's `skills/*` (or do it by hand).
 3. Set `$WIKI_PATH` to the wiki root (the skills resolve every path from it).
 4. Give the wiki a thin `CLAUDE.md`: its boundary/identity, then import `engine/CLAUDE.md`.
 5. Bump the submodule pointer to adopt a newer engine — opt-in, per wiki.

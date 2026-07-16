@@ -47,10 +47,11 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 | `lint.sh` | Umbrella lint (memory + frontmatter + soft-wrap + catalog); `checkpoint` runs it. |
 | `reflow.sh` · `gen-skills-index.sh` · `lint-memory.sh` | Soft-wrap normalize · skills-catalog · memory validation. |
 | `new-wiki.sh` | Scaffold a brand-new vault (see README). |
+| `link-skills.sh` | Symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them. The bootstrap that makes `/wiki-adopt` available on a fresh machine (idempotent; warn+skips a foreign slot, `--force` to repoint). |
 
 ## Setup & activation
 
-- **New machine (one-shot):** clone the engine standalone, `cd` in, start Claude, run the **`wiki-adopt`** skill — it scaffolds, wires the machine (`WIKI_PATH` + `~/.claude/CLAUDE.md` import + remote), and seeds via `wiki-onboard`. Single-vault machines only.
+- **New machine (one-shot):** clone the engine standalone, run `bin/link-skills.sh` (so Claude Code can discover the skills), start Claude from any folder, run the **`wiki-adopt`** skill — it scaffolds, wires the machine (`WIKI_PATH` + `~/.claude/CLAUDE.md` import + remote), and seeds via `wiki-onboard`. Single-vault machines only.
 - **New vault (scaffolder):** `bin/new-wiki.sh --path … --boundary personal|work --email …` (prompts for anything omitted; auto-provisions RAG unless `--no-rag`; add `--wire-shell --wire-claude-md --create-remote OWNER/NAME` to automate activation), then run `wiki-onboard` to seed it.
 - **Turn on semantic recall (existing vault):** `engine/bin/rag-setup.sh && engine/bin/rag-build.sh`. Then just prompt — `wiki-context` recalls automatically.
 - **Turn on auto-capture:** add a SessionEnd hook to `~/.claude/settings.json` pointing at `rag-capture.sh` (deterministic — never calls `claude`). Add `RAG_CAPTURE_TRANSCRIPT_PATH=1` to also record the transcript *path* (pointer, not content):

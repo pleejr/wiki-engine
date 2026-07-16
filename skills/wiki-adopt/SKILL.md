@@ -11,6 +11,8 @@ used_by: []
 
 The front door for adopting **the wiki-engine loop** on a machine that has none yet. Drives the whole flow: scaffold → wire the machine → seed. Run it **once**, in a Claude Code session started from a standalone clone of this engine (e.g. `cd wiki-engine && claude`, then invoke this skill). Because *you* start the session, onboarding runs in-session with no recursive `claude` spawn — the hard safety rule holds. `checkpoint` keeps the vault current thereafter.
 
+**Bootstrap:** if you can invoke this skill, it is already linked into `~/.claude/skills/`. On a truly cold machine that link is the one manual prerequisite — `git clone` the engine, then `bin/link-skills.sh` (Claude Code discovers skills only from `~/.claude/skills/` and `<project>/.claude/skills/`, never a repo's bare `skills/` dir). After that first link the skill is global and `new-wiki.sh` keeps the links current on every scaffold.
+
 **Precondition:** this is a *single-vault machine* (one boundary only). The wiring step points `WIKI_PATH` and the always-on `CLAUDE.md` import at the new vault globally — correct here, unsafe on a machine that also hosts the other boundary's vault (there, scaffold without `--wire-*` and scope activation per-directory).
 
 ## Boundary first (non-negotiable)

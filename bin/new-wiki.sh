@@ -126,12 +126,7 @@ render "$ENGINE_ROOT/scaffold/gitignore.tmpl"  > "$VAULT_PATH/.gitignore"
 "$ENGINE_ROOT/bin/gen-skills-index.sh" --wiki "$VAULT_PATH" >/dev/null
 
 if [ "$LINK_SKILLS" -eq 1 ]; then
-  mkdir -p "$HOME/.claude/skills"
-  for s in "$ENGINE_ROOT"/skills/*/; do
-    name="$(basename "$s")"
-    ln -sfn "$ENGINE_ROOT/skills/$name" "$HOME/.claude/skills/$name"
-  done
-  echo "  linked ~/.claude/skills/* -> $ENGINE_ROOT/skills/ (all engine skills)"
+  "$ENGINE_ROOT/bin/link-skills.sh"
 fi
 
 git -C "$VAULT_PATH" add -A
