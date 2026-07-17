@@ -4,6 +4,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.6.0] — 2026-07-17
+
+Minor — narrow the `claude`-spawn safety rule from a blanket ban to recursion guards. Touches the `CLAUDE.md` router and `SCHEMA.md`, so it ships as a pinned bump; adopt with `bin/adopt.sh`.
+
+### Changed
+- **Hard safety rule (`CLAUDE.md`)** reframed around the actual failure mode — *recursion and runaway agent generation* — rather than fearing headless `claude`. Unguarded `claude` spawn from a **lifecycle hook** stays a hard no (the structural fork-bomb trap the `.ai-os` SessionEnd incident hit, ~13.7k sessions). Deliberate headless spawns (human/cron `claude -p` one-shots, subagents) are now permitted **when bounded**: a re-entry sentinel (`CLAUDE_SPAWN_DEPTH`, refuse above a small N), a concurrency cap (lockfile / count), and guaranteed termination (no self-requeuing watch loop). Deterministic hooks (git/file/`curl`, e.g. `rag-capture.sh`) are unchanged — no guard needed, since they can't recurse into `claude`.
+- **`SCHEMA.md`** — `rag-capture.sh` note aligned to the revised framing: it runs from a hook with no guard at all, and a guarded `claude` spawn is now the other permitted hook case.
+
 ## [1.5.4] — 2026-07-16
 
 Patch — extend the RAG layer to Python 3.14 and make interpreter selection self-healing.
