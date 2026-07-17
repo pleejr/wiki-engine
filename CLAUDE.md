@@ -16,6 +16,8 @@ Shared machinery for an LLM-Wiki / Karpathy-pattern vault: the node model, page 
 
 ## Hard safety rule
 
-- **NEVER invoke `claude` from a hook or any background/recursive spawn.** The `.ai-os` SessionEnd hook did this and fork-bombed (~13.7k sessions). Ingest / refresh / checkpoint / distill are **in-session, on-demand** actions only. See [[lesson-no-claude-in-hooks]].
+- **Never spawn `claude` from a lifecycle hook without a re-entry guard — that is the fork-bomb trap.** The `.ai-os` SessionEnd hook ran `claude -p`; each child re-fired SessionEnd on exit → another `claude`, and so on (~13.7k sessions before it was caught). The danger is *structural*: the hook's trigger and its spawn are the same event. The real target is **detecting recursion and runaway agent generation**, not fearing headless `claude`.
+- **Deliberate headless spawns are fine when bounded.** A human- or cron-initiated `claude -p` one-shot, or a subagent, is legitimate provided it: (1) carries a re-entry sentinel (e.g. increment `CLAUDE_SPAWN_DEPTH` and refuse above a small N); (2) is concurrency-bounded (lockfile / count cap); and (3) terminates — no self-requeuing watch loop. A hook may spawn `claude` **only** if it also cannot fire on an event its child can re-trigger *and* carries the sentinel.
+- **Deterministic hooks need no guard** — git, file writes, `curl` (e.g. `rag-capture.sh`) can't recurse into `claude`, so wire them freely. Ingest / refresh / checkpoint / distill still default to **in-session, on-demand**; automate them headlessly only with the guards above. See [[lesson-no-claude-in-hooks]].
 
 Full conventions + node model: **`SCHEMA.md`** (in this engine). The vault's history: its **`log.md`**.
