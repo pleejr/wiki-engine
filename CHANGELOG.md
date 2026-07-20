@@ -4,6 +4,22 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.13.0] — 2026-07-20
+
+Minor — fold the version banner into `session-boot.sh` so it reflects the **current** session's check, and retire the separate banner hook. Additive/behavioral (a `bin/` change + removed `adopt.d/` step); adopt with `bin/adopt.sh` or `update.sh`, no migration — but see the note on removing the old standalone banner hook.
+
+The v1.12.0 banner was its own SessionStart hook that read the staleness cache `session-preflight.sh` writes. Claude Code runs SessionStart hooks without ordering guarantees, so the banner raced the preflight that feeds it and could read a cache a sibling was still writing — showing a **stale verdict** (e.g. `✓ up to date` when a newer tag already existed). Folding the two into one process fixes it at no extra latency (preflight runs every start regardless).
+
+### Changed
+- **`bin/session-boot.sh`** now runs `apply-adopt.sh` → `session-preflight.sh` → banner render in one pass and emits a single hook-JSON: `systemMessage` (the banner, to the user) + `hookSpecificOutput.additionalContext` (the adopt/preflight detail, to the model). Because preflight writes the cache immediately before the banner reads it, the banner always reflects this session's check. Falls back to plain stdout (model context) without `jq`.
+- **`bin/session-banner.sh`** is now a **pure renderer** — prints the banner text to stdout, no JSON, no hook semantics. `session-boot.sh` calls it and wraps the result in `systemMessage`.
+
+### Removed
+- **`adopt.d/40-session-banner-hook.sh`** — the banner is no longer a separate hook; `session-boot.sh` (already the single entrypoint) emits it. Removing the step stops new/bumped vaults from wiring a standalone banner hook.
+
+### Note — removing the old standalone banner hook
+A vault that adopted v1.12.0–v1.12.1 has a standalone `session-banner.sh` SessionStart hook wired. Adopt is add-only and won't remove it, but it no longer double-surfaces: `session-banner.sh` now prints plain text, and SessionStart routes a hook's plain stdout to the *model's* context, not the user — so the stale hook degrades to harmless context noise, not a visible second banner. Remove it from `settings.json` for tidiness (the `session-boot` hook now owns the banner).
+
 ## [1.12.1] — 2026-07-20
 
 Patch — the status line is now **opt-in**, not auto-wired. With the `v1.12.0` banner as the default user-visible surface, auto-wiring the `v1.11.0` status line too double-surfaced the same verdict. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
