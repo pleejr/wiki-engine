@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.13.1] — 2026-07-20
+
+Patch — `engine-version.sh` measures staleness **tag-to-tag**, not against `origin/main`'s HEAD, so untagged commits past the latest tag no longer read as a phantom update. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **`bin/engine-version.sh`** compared the pinned commit against `origin/main`'s HEAD, so an untagged docs/CI commit sitting past the latest tag (e.g. the `release.yml` workflow) reported `pinned v1.13.0, latest v1.13.0-1-g<sha> — update available` — a phantom `⚠` the `v1.13.0` banner then surfaced every session, with nothing to adopt (`update.sh` only advances tag→tag). It now compares the pinned tag against the **latest release tag reachable on origin/main** (`git tag -l 'v*' --merged FETCH_HEAD | sort -V | tail -1`): equal ⇒ up to date even when untagged commits sit ahead; strictly newer tag ⇒ the real update; higher pinned tag ⇒ ahead/no action. The staleness the banner/status line show now matches what `update.sh` would actually adopt.
+
 ## [1.13.0] — 2026-07-20
 
 Minor — fold the version banner into `session-boot.sh` so it reflects the **current** session's check, and retire the separate banner hook. Additive/behavioral (a `bin/` change + removed `adopt.d/` step); adopt with `bin/adopt.sh` or `update.sh`, no migration — but see the note on removing the old standalone banner hook.
