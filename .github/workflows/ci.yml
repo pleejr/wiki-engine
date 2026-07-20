@@ -19,7 +19,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Shell syntax (bash -n)
-        run: for f in bin/*.sh; do bash -n "$f"; done
+        run: |
+          for f in bin/*.sh adopt.d/*.sh; do
+            [ -e "$f" ] || continue   # adopt.d/ may be absent/empty on older trees
+            bash -n "$f"
+          done
 
       - name: Python syntax (py_compile)
         run: python3 -m py_compile bin/*.py
