@@ -4,6 +4,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.12.0] — 2026-07-20
+
+Minor — a **user-visible** version banner at session start via the hook `systemMessage` channel, so the verdict reaches the user cleanly without the statusLine. Additive (new `bin/` tool + an `adopt.d/` step); adopt with `bin/adopt.sh` or `update.sh`, no migration.
+
+The v1.11.0 statusLine surfaced the verdict on a persistent row, but the statusLine can be suppressed in a session (e.g. workspace-trust gating) and never renders for some setups. This adds a second, more robust surface that doesn't depend on the statusLine at all. It resolves the long-standing constraint that a SessionStart hook's plain stdout goes only to the model's context (invisible to the user) and its stderr is only user-visible via a non-zero exit that Claude Code renders under a `SessionStart hook error` heading: the **`systemMessage`** JSON field is shown to the user on **exit 0**, with no error heading — the sanctioned clean channel.
+
+### Added
+- **`bin/session-banner.sh`** — emits `{"suppressOutput":true,"systemMessage":"…"}` on stdout and exits 0, so Claude Code shows the user a one-line version banner (`wiki-engine <ver> ✓ · claude code <ver> ✓`, or a `⚠` line when stale) in-session at start, with no interaction. Instant and network-free: engine version from `git describe`, Claude Code version from `$CLAUDE_CODE_EXECPATH`, staleness from the cache `session-preflight.sh` writes (empty cache = all current). Degrades to plain stdout without `jq`. Deterministic; never runs `claude`; always exits 0.
+- **`adopt.d/40-session-banner-hook.sh`** — adoption step that wires `session-banner.sh` as a `SessionStart` hook (matcher `startup|resume`) via `ensure-hook.sh`, so a fresh install or pin bump surfaces the banner with no manual `settings.json` edit.
+
+### Notes
+- Complements, does not replace, the v1.11.0 statusLine: the statusLine is a *persistent* indicator; the banner is a *one-shot* start-of-session announcement. Both read the same `session-preflight.sh` cache, so they always agree. A vault can wire either or both.
+
 ## [1.11.1] — 2026-07-20
 
 Patch — `ensure-hook.sh` no longer duplicates a hook when the user's matcher is *broader* than the one being wired. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
