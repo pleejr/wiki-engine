@@ -9,10 +9,11 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 Minor — add `bin/session-preflight.sh`, a version check for a SessionStart hook. Additive (new `bin/` tool); adopt with `bin/adopt.sh` and wire the hook per below.
 
 ### Added
-- **`bin/session-preflight.sh`** — run from a vault's `SessionStart` hook, it reports two things and, when either is stale, prints an ACTION-REQUIRED block telling the assistant to **ask the user before updating** (the hook never prompts or changes anything):
+- **`bin/session-preflight.sh`** — run from a vault's `SessionStart` hook; deterministic and **never runs the `claude` binary** (version from install metadata, not `claude --version`, so it satisfies the no-`claude`-in-a-hook rule) and always exits 0 so it can't block session start. It reports two things and, when either is stale, prints an ACTION-REQUIRED block telling the assistant to **ask the user before updating** (the hook never prompts or changes anything):
   1. **Claude Code** — installed vs latest stable (official release endpoint), best-effort by install method (Homebrew cask · npm global); on confirm the assistant runs the matching upgrade + advises a restart.
   2. **wiki-engine** — pinned submodule vs `origin/main`, delegated to the sibling `engine-version.sh`; on confirm the assistant runs `update.sh` and commits the bump.
-  Deterministic and **never runs the `claude` binary** — version comes from install metadata, not `claude --version`, so it satisfies the no-`claude`-in-a-hook rule. Always exits 0 so it can't block session start. Wire it:
+
+  Wire it:
   ```json
   "SessionStart": [{ "matcher": "startup", "hooks": [
     { "type": "command", "command": "WIKI_PATH=/path/to/vault /path/to/vault/engine/bin/session-preflight.sh" }
