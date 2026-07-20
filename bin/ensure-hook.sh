@@ -5,6 +5,14 @@
 # backs the file up before any write. Matches the target hook by exact command string,
 # so re-running is a no-op once wired.
 #
+# Matcher coverage: a hook is "already wired" when the exact command is present under a
+# matcher whose event-token set (split on `|`, an empty/absent matcher = match-all)
+# COVERS — is a superset of, or equal to — the requested matcher. So requesting
+# `startup|resume` when the user already runs the command under `startup|resume|clear`
+# is a no-op, not a second entry that runs the command twice. (Add-only can't collapse
+# the inverse — an existing matcher NARROWER than the request — without editing the
+# user's hook, so that partial-overlap case still appends; broaden the request instead.)
+#
 # Deterministic — plain jq + file writes, NEVER runs `claude` (safe from a hook per the
 # engine's hard rule). Exits 0 whether it changed anything or not, so it can't block a
 # session start; a genuine error (bad JSON, unwritable file) exits non-zero instead.
@@ -56,17 +64,31 @@ fi
 updated="$(
   printf '%s' "$current" | jq --arg ev "$EVENT" --arg m "$MATCHER" --arg cmd "$COMMAND" --arg sm "$STATUS" '
     def newhook: {type:"command", command:$cmd} + (if $sm == "" then {} else {statusMessage:$sm} end);
-    .hooks = (.hooks // {})
+    # matcher -> token set; null means "match all" (empty/absent matcher)
+    def toks($x): (($x // "") | if . == "" then null else split("|") end);
+    ($m | if . == "" then null else split("|") end) as $want
+    | .hooks = (.hooks // {})
     | .hooks[$ev] = (.hooks[$ev] // [])
-    # ensure a matcher entry exists ("" matches an entry that omits .matcher too)
-    | (if any(.hooks[$ev][]; (.matcher // "") == $m) then .
-       else .hooks[$ev] += [ (if $m == "" then {hooks:[]} else {matcher:$m, hooks:[]} end) ] end)
-    # add the command into that matcher entry if not already present (by exact command)
-    | .hooks[$ev] |= map(
-        if (.matcher // "") == $m then
-          .hooks = (.hooks // [])
-          | (if any(.hooks[]; .command == $cmd) then . else .hooks += [newhook] end)
-        else . end)
+    # Already satisfied? Exact command present under a matcher that COVERS $want
+    # (its token set is a superset, or it is match-all). If so, leave the file untouched.
+    | if any(.hooks[$ev][];
+          ( toks(.matcher) as $et
+            | if $et == null then true            # entry matches all events
+              elif $want == null then false        # want=all but entry is specific
+              else ($want - $et) == [] end )       # want tokens ⊆ entry tokens
+          and any((.hooks // [])[]; .command == $cmd) )
+      then .
+      else
+        # ensure a matcher entry exists ("" matches an entry that omits .matcher too)
+        (if any(.hooks[$ev][]; (.matcher // "") == $m) then .
+         else .hooks[$ev] += [ (if $m == "" then {hooks:[]} else {matcher:$m, hooks:[]} end) ] end)
+        # add the command into that matcher entry if not already present (by exact command)
+        | .hooks[$ev] |= map(
+            if (.matcher // "") == $m then
+              .hooks = (.hooks // [])
+              | (if any(.hooks[]; .command == $cmd) then . else .hooks += [newhook] end)
+            else . end)
+      end
   '
 )" || { echo "ensure-hook: jq transform failed on $SETTINGS" >&2; exit 2; }
 

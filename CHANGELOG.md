@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.11.1] — 2026-07-20
+
+Patch — `ensure-hook.sh` no longer duplicates a hook when the user's matcher is *broader* than the one being wired. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **`bin/ensure-hook.sh`** matched an existing hook only by an *exact* matcher string, so wiring the engine's canonical `startup|resume` into a vault whose `session-boot.sh` hook used a broader `startup|resume|clear` added a **second** entry — running the boot hook (and its preflight) twice per startup. It is now **coverage-aware**: a hook counts as already wired when the exact command is present under a matcher whose event-token set (split on `|`; empty/absent = match-all) is a **superset of, or equal to**, the requested one. Still strictly add-only — the inverse case (an existing matcher *narrower* than the request) can't be collapsed without editing the user's hook, so it still appends; broaden the request instead.
+
 ## [1.11.0] — 2026-07-20
 
 Minor — the version preflight's verdict is now **user-visible** via a Claude Code status line, not just fed to the assistant's context. Additive (new `bin/` tools + an `adopt.d/` step); adopt with `bin/adopt.sh` or `update.sh`, no migration.
