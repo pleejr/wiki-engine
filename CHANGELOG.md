@@ -4,6 +4,21 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.7.0] — 2026-07-20
+
+Minor — add `bin/session-preflight.sh`, a version check for a SessionStart hook. Additive (new `bin/` tool); adopt with `bin/adopt.sh` and wire the hook per below.
+
+### Added
+- **`bin/session-preflight.sh`** — run from a vault's `SessionStart` hook, it reports two things and, when either is stale, prints an ACTION-REQUIRED block telling the assistant to **ask the user before updating** (the hook never prompts or changes anything):
+  1. **Claude Code** — installed vs latest stable (official release endpoint), best-effort by install method (Homebrew cask · npm global); on confirm the assistant runs the matching upgrade + advises a restart.
+  2. **wiki-engine** — pinned submodule vs `origin/main`, delegated to the sibling `engine-version.sh`; on confirm the assistant runs `update.sh` and commits the bump.
+  Deterministic and **never runs the `claude` binary** — version comes from install metadata, not `claude --version`, so it satisfies the no-`claude`-in-a-hook rule. Always exits 0 so it can't block session start. Wire it:
+  ```json
+  "SessionStart": [{ "matcher": "startup", "hooks": [
+    { "type": "command", "command": "WIKI_PATH=/path/to/vault /path/to/vault/engine/bin/session-preflight.sh" }
+  ]}]
+  ```
+
 ## [1.6.0] — 2026-07-17
 
 Minor — narrow the `claude`-spawn safety rule from a blanket ban to recursion guards. Touches the `CLAUDE.md` router and `SCHEMA.md`, so it ships as a pinned bump; adopt with `bin/adopt.sh`.

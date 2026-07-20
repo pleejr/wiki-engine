@@ -14,6 +14,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
   - `adopt.sh` — ensure an existing vault has the engine's current node folders (run after bumping the pin).
   - `link-skills.sh` — symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them (the bootstrap that makes `/wiki-adopt` available on a fresh machine; idempotent, warn+skips a foreign slot).
   - `engine-version.sh` · `doctor.sh` · `update.sh` — freshness of consumed components: pinned vs latest engine; full health report (engine + RAG deps + security + model); one-step update (same-MAJOR).
+  - `session-preflight.sh` — SessionStart-hook version check: Claude Code (installed vs latest stable) + the pinned engine; on staleness prints an ACTION-REQUIRED block telling the assistant to ask before updating. Deterministic, never runs `claude`.
   - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
   - `lint.sh` — umbrella lint (memory + frontmatter-property + soft-wrap + catalog); `checkpoint` runs it.
   - `gen-skills-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation, memory validation, soft-wrap normalization.
