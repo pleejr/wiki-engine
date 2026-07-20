@@ -1,0 +1,36 @@
+name: release
+
+# Publish a GitHub Release automatically whenever a version tag is pushed, using that
+# version's CHANGELOG.md section as the notes — so git tags and GitHub Releases never
+# drift apart again (they had: tags ran to v1.12.1 while Releases stopped at v1.6.0).
+# Deterministic, no `claude`. Idempotent: skips if the release already exists.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required to create a Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release from the CHANGELOG section
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ver="${TAG#v}"
+          notes="$(awk -v ver="$ver" '$0 ~ "^## \\["ver"\\]"{f=1;next} /^## \[/{f=0} f' CHANGELOG.md)"
+          [ -n "$notes" ] || notes="Release $TAG"
+          suffix="$(printf '%s\n' "$notes" | grep -m1 -E '\S' | sed -E 's/^(Minor|Patch|Major) — //; s/\.$//' | cut -c1-60)"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG already exists — skipping"
+          else
+            printf '%s\n' "$notes" | gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG — ${suffix:-release}" --notes-file -
+          fi
