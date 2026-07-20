@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # ensure-statusline.sh — idempotently ensure a `statusLine` command is set in a
-# settings.json. The status-line sibling of ensure-hook.sh, and the primitive behind the
-# statusline adoption step (adopt.d/30-statusline.sh). Claude Code allows exactly ONE
-# statusLine, so this cannot be additive the way hooks are; instead it is CONSERVATIVE:
+# settings.json. The status-line sibling of ensure-hook.sh, and the primitive for opt-in
+# statusline wiring — the status line is NOT auto-adopted (the banner via session-banner.sh
+# is the default surface); run this yourself, or from your own adopt.d step, to enable it.
+# Claude Code allows exactly ONE statusLine, so this cannot be additive the way hooks are;
+# instead it is CONSERVATIVE:
 #
 #   * no statusLine present            -> set ours
 #   * ours already present (by marker) -> update the command in place (self-heal path)

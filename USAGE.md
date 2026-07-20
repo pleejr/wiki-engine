@@ -67,7 +67,10 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 
 `doctor.sh` reports what's behind; `update.sh` applies engine + dep updates in one step (same-MAJOR only — a MAJOR bump needs a reviewed migration). Automatic *checking* runs in CI (Dependabot for actions, a weekly `freshness.yml` cron that opens an issue only on actionable dep/security drift); *applying* to a vault always stays opt-in. RAG deps are pinned in `scaffold/rag-requirements.txt` — bump deliberately, then `rag-setup.sh --force`.
 
-`session-preflight.sh` reports Claude Code + engine staleness at session start, but a SessionStart hook can only feed that to the assistant's context (the UI never draws it), so it may go unspoken. The **status line** surfaces it directly: `statusline.sh` renders a persistent bottom row (working dir · model · a color-coded `⚠` when an update is pending — amber for a normal update, red for a MAJOR/breaking one), reading a cache the preflight writes so it never touches the network on the hot path. Auto-wired by `adopt.d/30-statusline.sh` (add-only via `ensure-statusline.sh`: it sets ours when no status line exists and self-heals the path, but never clobbers a status line you configured yourself).
+`session-preflight.sh` reports Claude Code + engine staleness at session start and writes a compact cache (`${CLAUDE_CONFIG_DIR:-~/.claude}/.wiki-engine-status`; empty = all current). A hook's *plain* stdout only reaches the assistant's context, so two **user-visible** surfaces read that cache instead — both network-free, and they always agree:
+
+- **Banner** (`session-banner.sh`) — the default. A one-shot `systemMessage` line shown to the user at session start (`wiki-engine <ver> ✓ · claude code <ver> ✓`, or a `⚠` line when stale). Auto-wired by `adopt.d/40-session-banner-hook.sh`.
+- **Status line** (`statusline.sh`) — **opt-in**. A persistent bottom row (`dir · model` + a color-coded `⚠` — amber for a normal update, red for MAJOR). Not auto-wired; enable it yourself with `ensure-statusline.sh` (add-only — sets it only when no status line exists, self-heals the path, never clobbers a status line you configured yourself).
 
 ## Boundary & safety (non-negotiable)
 

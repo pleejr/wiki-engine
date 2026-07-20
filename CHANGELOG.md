@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.12.1] — 2026-07-20
+
+Patch — the status line is now **opt-in**, not auto-wired. With the `v1.12.0` banner as the default user-visible surface, auto-wiring the `v1.11.0` status line too double-surfaced the same verdict. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Removed
+- **`adopt.d/30-statusline.sh`** — the step that auto-wired `statusline.sh` as a `statusLine`. Removing it stops new/bumped vaults from getting a status line by default; the **banner** (`session-banner.sh`, `adopt.d/40`) remains the auto-wired default. `statusline.sh` and `ensure-statusline.sh` **stay shipped** — a vault that wants the persistent row wires it manually (`ensure-statusline.sh`). This only stops *auto-adoption*; an existing status line a vault already wired is untouched (adopt is add-only and never removes).
+
+### Changed
+- **`USAGE.md`** now documents both surfaces — banner (default) vs status line (opt-in) — and drops the stale "a hook can't reach the UI" framing (a hook *can*, via `systemMessage`; see `v1.12.0`). **`ensure-statusline.sh`** header notes it is opt-in tooling, not an adoption step.
+
 ## [1.12.0] — 2026-07-20
 
 Minor — a **user-visible** version banner at session start via the hook `systemMessage` channel, so the verdict reaches the user cleanly without the statusLine. Additive (new `bin/` tool + an `adopt.d/` step); adopt with `bin/adopt.sh` or `update.sh`, no migration.
