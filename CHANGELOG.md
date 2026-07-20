@@ -4,6 +4,20 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.11.0] — 2026-07-20
+
+Minor — the version preflight's verdict is now **user-visible** via a Claude Code status line, not just fed to the assistant's context. Additive (new `bin/` tools + an `adopt.d/` step); adopt with `bin/adopt.sh` or `update.sh`, no migration.
+
+A SessionStart hook can only surface `session-preflight.sh`'s staleness report by adding it to the assistant's context (Claude Code never draws hook stdout in the UI), so whether the user ever hears "an update is available" depends on the assistant choosing to relay it — and it may not. The status line closes that gap with a persistent, always-drawn surface.
+
+### Added
+- **`bin/statusline.sh`** — the engine's status-line renderer. Prints one bottom row (working dir · model · a color-coded `⚠` when stale — **amber** for a normal update, **red** for a MAJOR/breaking one). Reads its staleness text from a cache `session-preflight.sh` writes, so it does **no network** on the hot path and stays cheap enough to re-render constantly. Degrades gracefully without `jq` or a cache, honors `NO_COLOR`, and always exits 0 (a failing status-line command must not disrupt the session). Deterministic; never runs `claude`.
+- **`bin/ensure-statusline.sh`** — the status-line sibling of `ensure-hook.sh`. Because Claude Code allows exactly **one** status line, this can't be additive like hooks; it is conservative instead: sets ours when none exists, self-heals ours if the script path drifts (matched by `--marker`), and **never clobbers a foreign status line** the user configured themselves. Backs the file up before any write; `--check` dry-runs. Deterministic; never runs `claude`.
+- **`adopt.d/30-statusline.sh`** — adoption step that wires `statusline.sh` as the status line via `ensure-statusline.sh`, so a fresh install or pin bump surfaces the version verdict with no manual `settings.json` edit.
+
+### Changed
+- **`session-preflight.sh`** now also writes a compact one-line staleness summary to a per-machine cache (`${CLAUDE_CONFIG_DIR:-~/.claude}/.wiki-engine-status`; empty file = all current) for `statusline.sh` to read. Always (re)written each run, so resolving a stale pin clears the warning on the next session. Unchanged otherwise — still deterministic, still never runs the `claude` binary.
+
 ## [1.10.0] — 2026-07-20
 
 Minor — skills now track the pinned submodule, not the cold-start clone. Additive (new `adopt.d/` step); adopt with `bin/adopt.sh` or `update.sh`, no migration.

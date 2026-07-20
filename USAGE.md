@@ -67,6 +67,8 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 
 `doctor.sh` reports what's behind; `update.sh` applies engine + dep updates in one step (same-MAJOR only — a MAJOR bump needs a reviewed migration). Automatic *checking* runs in CI (Dependabot for actions, a weekly `freshness.yml` cron that opens an issue only on actionable dep/security drift); *applying* to a vault always stays opt-in. RAG deps are pinned in `scaffold/rag-requirements.txt` — bump deliberately, then `rag-setup.sh --force`.
 
+`session-preflight.sh` reports Claude Code + engine staleness at session start, but a SessionStart hook can only feed that to the assistant's context (the UI never draws it), so it may go unspoken. The **status line** surfaces it directly: `statusline.sh` renders a persistent bottom row (working dir · model · a color-coded `⚠` when an update is pending — amber for a normal update, red for a MAJOR/breaking one), reading a cache the preflight writes so it never touches the network on the hot path. Auto-wired by `adopt.d/30-statusline.sh` (add-only via `ensure-statusline.sh`: it sets ours when no status line exists and self-heals the path, but never clobbers a status line you configured yourself).
+
 ## Boundary & safety (non-negotiable)
 
 - Every vault declares `boundary: personal|work`. **No secrets** (keys, tokens, credentials) in any page. **Content never crosses vaults** — personal↔work is a deliberate manual export.

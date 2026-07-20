@@ -21,6 +21,8 @@ WIKI="${WIKI_PATH:-}"
 CC_ENDPOINT="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/stable"
 
 action=""   # accumulates ACTION-REQUIRED lines; empty => everything current
+summary=""  # compact one-line staleness summary for the status line (see statusline.sh)
+CACHE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.wiki-engine-status"
 
 echo "=== Session preflight (versions) ==="
 
@@ -53,6 +55,7 @@ else
   newest="$(printf '%s\n%s\n' "$installed" "$latest" | sort -V | tail -1)"
   if [ "$newest" = "$latest" ]; then
     echo "Claude Code: installed $installed, latest $latest — update available${method:+ ($method)}"
+    summary="CC $installed→$latest"
     action="${action}
 ACTION REQUIRED — Claude Code is out of date (installed $installed, latest $latest).
 Ask the user whether to update now. On confirmation run:
@@ -74,6 +77,11 @@ else
   # show its status line(s); drop its generic hint in favor of our update.sh one-liner
   printf '%s\n' "$ev_out" | grep -v '^  to update:'
   if [ "$ev_rc" -eq 1 ]; then
+    # compact "engine <pinned>→<latest>" for the status line; tag MAJOR so it renders red
+    eng_frag="$(printf '%s' "$ev_out" | sed -nE 's/.*pinned ([^,]+), latest ([^ ]+).*/engine \1→\2/p' | head -n1)"
+    [ -n "$eng_frag" ] || eng_frag="engine update available"
+    case "$ev_out" in *MAJOR*) eng_frag="$eng_frag MAJOR";; esac
+    summary="${summary:+$summary · }$eng_frag"
     if [ -n "$WIKI" ]; then
       upd="WIKI_PATH=$WIKI $SCRIPT_DIR/update.sh"; commit="git -C $WIKI commit -am 'Bump engine'"
     else
@@ -87,6 +95,12 @@ It advances the submodule to the latest tag (refuses a MAJOR bump) and STAGES th
 Then remind the user to review the CHANGELOG and commit:
   $commit"
   fi
+fi
+
+# status-line cache — always (re)write so a resolved staleness clears a prior warning. ---
+# statusline.sh reads this: one line = the compact summary, empty file = all current.
+if mkdir -p "$(dirname "$CACHE")" 2>/dev/null; then
+  printf '%s\n' "$summary" > "$CACHE" 2>/dev/null || true
 fi
 
 # actionable summary -------------------------------------------------------------------
