@@ -72,6 +72,7 @@ Skills resolve the vault from `$WIKI_PATH` (the consuming wiki's root; must be s
 - **`doctor.sh`** — one-shot freshness report across *all* consumed components: pinned engine (vs latest tag) + RAG deps + embedding model. Deps go through `rag_deps_check.py`, which separates **actionable** (a *pinned* dep drifted/behind, or a `pip-audit` **vulnerability** anywhere in the RAG closure) from **informational** (transitive "newer available") — so the exit code stays a real signal, not steady-state noise. Reports only. On-demand or from the freshness CI cron.
 - **`update.sh`** — apply updates in one step: bump the engine to the latest tag *within the same MAJOR*, `adopt`, re-sync the RAG venv to the pinned deps. **Refuses a MAJOR bump** (needs a reviewed migration); leaves the pin staged, never auto-commits.
 - **`reflow.sh`** — normalize Markdown to the soft-wrap convention (one line per paragraph/list item); `--check` flags drift. Word-preserving; leaves frontmatter/code/tables/lists structure intact.
+- **`vault-worktree.sh`** — concurrent-session write isolation. `ensure` gives a vault-writing session its own `git worktree` on a `wt/<session>` branch off `origin/main` (own dir + own HEAD, shared `.git`) so two Claude Code sessions can't clobber each other in the single shared `$WIKI_PATH` working tree; `gc` retires stale/orphaned worktrees (clean ones only). `checkpoint` calls it before writing; reads (`wiki-context`) stay on canonical. Deterministic (plain git, no LLM). Opt out with `WIKI_WORKTREE=0`. See "Concurrent-session isolation" below.
 - **`rag-setup.sh`** / **`rag-build.sh`** / **`recall.sh`** / **`rag-capture.sh`** — optional **semantic recall + auto-capture** layer (see below).
 
 ### Semantic recall (optional RAG layer)
@@ -103,6 +104,14 @@ The memory design's *capture* axis: record what you worked on so you don't have 
 - **Boundary caveat:** it records the repo you were in (names/subjects, not contents). Point `WIKI_PATH` at the boundary-appropriate vault, and don't enable the hook where even filenames/commit subjects are sensitive. Disable pieces with `RAG_CAPTURE_FILES=0` / `RAG_CAPTURE_COMMITS=0`.
 - **Chat/transcript content is never captured.** Opt in to recording the transcript **path** (a pointer only) with `RAG_CAPTURE_TRANSCRIPT_PATH=1`, so review-and-promote can open the `.jsonl` in-session to distill from the real conversation — applying the boundary/secret gate, never bulk-copying it. The content itself never enters the vault or the index.
 - **Curation still matters:** raw accumulates noise and contradictions and never reaches the always-on `CLAUDE.md`. Review-and-promote (and `checkpoint`) remain the judgment gate; auto-capture only removes the *mechanical* burden, not the curation.
+
+### Concurrent-session isolation (`vault-worktree.sh`)
+
+A vault is one git working tree at `$WIKI_PATH`. Two Claude Code sessions pointed at it share **one HEAD and one set of files on disk** — so `git checkout -b` in one session moves HEAD under the other, and simultaneous edits to the same page are **silent last-writer-wins on disk before git ever sees them** (no conflict, no recovery). This is a filesystem race, not a merge race; a lockfile or `pull --rebase` discipline fixes only the commit step, not the shared editing surface.
+
+- **Fix: a worktree per writing session.** `checkpoint` calls `vault-worktree.sh ensure` before it writes; each session gets its own `git worktree` (own directory + own HEAD, shared `.git`) on a `wt/<session>` branch off `origin/main`. Sessions are then fully independent, and any real overlap surfaces as a **visible merge/PR conflict** on integration instead of silent loss.
+- **Always-on, negligible cost.** Isolation is unconditional (not gated on detecting a second session — a missed detection reintroduces the exact clobber). Measured cost is ~0.4 s and <1 MB: only tracked text is checked out. The untracked `.rag/` index and the `engine/` submodule are **not** populated in a worktree — so skills run engine tooling from canonical `$WIKI_PATH/engine/bin/*` (targeting the worktree via `--wiki`) and rebuild RAG against canonical after integrating. Opt out per vault with `WIKI_WORKTREE=0`.
+- **Reads stay canonical.** `wiki-context` is read-only and reads `$WIKI_PATH` directly (a slightly stale HEAD is fine); only the write path needs a worktree. `gc` retires merged/stale worktrees and prunes orphans from crashed sessions, never discarding an uncommitted working tree.
 
 ## How a wiki consumes this engine
 

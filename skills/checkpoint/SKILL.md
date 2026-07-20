@@ -3,13 +3,22 @@ name: checkpoint
 description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, then distills durable facts from this session into memory/ notes. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session only — never a hook.
 status: active
 summary: "end-of-session: update project page + `log.md`, distill memory. In-session only."
-updated: 2026-07-13
+updated: 2026-07-20
 used_by: []
 ---
 
 # checkpoint — capture where I left off + distill memory
 
-Run this deliberately at the end of a work session. **Vault**: `$WIKI_PATH` — the vault root; must be set. Two jobs:
+Run this deliberately at the end of a work session. **Vault**: `$WIKI_PATH` — the vault root; must be set. Two jobs (§0 is setup):
+
+## 0. Isolate writes in a worktree (concurrency safety)
+
+Before editing any vault file, take an isolated working copy so a second concurrent session can't clobber your edits or move HEAD under you — two sessions otherwise share one `$WIKI_PATH` working tree (one HEAD, one set of files on disk), where `git checkout -b` in one disrupts the other and simultaneous writes to a page are silent last-writer-wins.
+
+- `WORK="$($WIKI_PATH/engine/bin/vault-worktree.sh ensure)"` — creates (or reuses) a per-session `git worktree` on its own `wt/<session>` branch off `origin/main` and prints its path; cheap (~0.4s, <1 MB, since only tracked text is checked out). Opt out with `WIKI_WORKTREE=0` (writes then go straight to `$WIKI_PATH`, the legacy behavior).
+- Make **all** edits, commits, and lint runs against `$WORK`, never `$WIKI_PATH` directly.
+- Run engine tooling from canonical (the `engine/` submodule is not checked out inside a worktree): e.g. `$WIKI_PATH/engine/bin/lint.sh --wiki "$WORK"`.
+- When this session's writes are committed, **integrate** the `wt/<session>` branch per the vault's git convention (fast-forward/merge to `main`, or push + open a PR), then `$WIKI_PATH/engine/bin/vault-worktree.sh gc` to retire it and prune any orphan worktrees from crashed sessions (clean ones only — it never discards uncommitted work).
 
 ## 1. Project state (if a project is active)
 - Open/create `$WIKI_PATH/projects/<slug>.md` (frontmatter `type: project`, `status: active|paused|done`, `repos: [[...]]`).
@@ -31,10 +40,10 @@ Run this deliberately at the end of a work session. **Vault**: `$WIKI_PATH` — 
 - Deletion is a **guided in-session action** — confirm before removing. Never wire pruning to a hook or background spawn. See [[lesson-no-claude-in-hooks]].
 
 ## 4. Lint before finishing
-- Run `engine/bin/lint.sh` (the umbrella: memory notes + frontmatter-property validity + soft-wrap drift + skills-catalog drift). Fix any failures before you consider the checkpoint done — don't commit a vault that fails lint.
+- Run `$WIKI_PATH/engine/bin/lint.sh --wiki "$WORK"` (the umbrella: memory notes + frontmatter-property validity + soft-wrap drift + skills-catalog drift), pointing it at the worktree from §0. Fix any failures before you consider the checkpoint done — don't commit a vault that fails lint.
 
 ## 5. Refresh semantic recall (if enabled)
-- If the vault has a `.rag` index (`$WIKI_PATH/.rag/index.jsonl` exists), run `engine/bin/rag-build.sh` so this session's new/updated notes are recallable next session. This closes the loop: `checkpoint` distills markdown → `rag-build` re-indexes it (incremental; only changed files re-embed) → `wiki-context` auto-recalls it. Skip if the vault has no index or the embedding endpoint is down — recall is optional; the map still works. Deterministic (a local embedding model, never `claude`), so it's safe here, but like everything else this is **in-session, never a hook**.
+- If the vault has a `.rag` index (`$WIKI_PATH/.rag/index.jsonl` exists), run `engine/bin/rag-build.sh` **against canonical `$WIKI_PATH` after the §0 worktree branch is integrated** (the `.rag/` index is untracked and lives only in the canonical checkout, not the worktree) so this session's new/updated notes are recallable next session. This closes the loop: `checkpoint` distills markdown → `rag-build` re-indexes it (incremental; only changed files re-embed) → `wiki-context` auto-recalls it. Skip if the vault has no index or the embedding endpoint is down — recall is optional; the map still works. Deterministic (a local embedding model, never `claude`), so it's safe here, but like everything else this is **in-session, never a hook**.
 
 ## Rules
 - **In-session, on demand only. NEVER wire this to a hook or a background/recursive `claude` spawn** — that was the `.ai-os` fork-bomb. See [[lesson-no-claude-in-hooks]].
