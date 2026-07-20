@@ -42,12 +42,25 @@ while IFS= read -r d; do
   fi
 done < "$DIRS_FILE"
 
+# Feature adoption (hooks etc.): run the versioned adopt.d steps via apply-adopt.sh.
+# This is what wires engine features that need more than a folder — e.g. the SessionStart
+# boot hook. Idempotent; --check reports pending steps without changing anything.
+run_feature_adopt() {
+  local aa="$SCRIPT_DIR/apply-adopt.sh"
+  [ -x "$aa" ] || return 0
+  if [ "$CHECK" -eq 1 ]; then "$aa" --wiki "$WIKI" --check || true
+  else "$aa" --wiki "$WIKI" --force || true; fi
+}
+
 if [ "$missing" -eq 0 ]; then
   echo "vault already matches the engine's node folders"
+  run_feature_adopt
   exit 0
 fi
 if [ "$CHECK" -eq 1 ]; then
+  run_feature_adopt
   echo "$missing folder(s) missing — run adopt.sh (no --check) to create them" >&2
   exit 1
 fi
 echo "adopted $missing new node folder(s); add an index.md section for each"
+run_feature_adopt
