@@ -4,6 +4,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.8.0] — 2026-07-20
+
+Minor — concurrent-session write isolation via git worktrees. Additive (new `bin/` tool + `checkpoint`/`wiki-context` behavior + a `SCHEMA.md` convention); adopt with `bin/adopt.sh`, no migration.
+
+### Added
+- **`bin/vault-worktree.sh`** — gives a vault-writing session its own `git worktree` on a `wt/<session>` branch off `origin/main` (own dir + own HEAD, shared `.git`), so two Claude Code sessions pointed at one `$WIKI_PATH` can't clobber each other's edits or move HEAD out from under one another. Two sessions otherwise share one working tree, where simultaneous page edits are silent last-writer-wins on disk *before* git sees them — a filesystem race a lockfile/`pull --rebase` doesn't fix. `ensure` (idempotent, prints the path to write in), `gc` (retire stale/orphaned worktrees, clean ones only), `list`. Deterministic (plain git, no `claude`). Measured cost ~0.4 s / <1 MB — only tracked text is checked out.
+
+### Changed
+- **`checkpoint`** now isolates writes first (new §0): `WORK="$($WIKI_PATH/engine/bin/vault-worktree.sh ensure)"`, make all edits/commits/lint against `$WORK`, run engine tooling from canonical (`lint.sh --wiki "$WORK"`) since the submodule isn't checked out in a worktree, then integrate the branch (merge/PR per the vault's convention) and `gc`. RAG rebuilds against canonical `$WIKI_PATH` after integration (the `.rag/` index is untracked, canonical-only).
+- **`wiki-context`** documents that reads stay on canonical `$WIKI_PATH` (read-only, no worktree needed).
+- **`SCHEMA.md`** — new "Concurrent-session isolation" note + a `vault-worktree.sh` tooling entry.
+- Isolation is **always-on** (opt out per vault with `WIKI_WORKTREE=0`), deliberately not gated on detecting a second session: a missed detection would reintroduce the exact clobber, and the cost is negligible.
+
 ## [1.7.0] — 2026-07-20
 
 Minor — add `bin/session-preflight.sh`, a version check for a SessionStart hook. Additive (new `bin/` tool); adopt with `bin/adopt.sh` and wire the hook per below.

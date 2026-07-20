@@ -3,7 +3,7 @@ name: wiki-context
 description: Load relevant context from the wiki vault ($WIKI_PATH) for the current task — index-first, lazy, with a repo freshness check. Use at the start of a work session or whenever you need context about a repo, project, prior decision, or preference. Loads only what's relevant; never the whole wiki.
 status: active
 summary: index-first, lazy context router with repo freshness check.
-updated: 2026-07-13
+updated: 2026-07-20
 used_by: []
 ---
 
@@ -26,6 +26,7 @@ Pull in just-enough context without inhaling the vault. This is the token-saver.
 6. **Review & promote (raw → curated).** If `$WIKI_PATH/raw/sessions/` has entries newer than the last `log.md` line (i.e. auto-captured by `rag-capture.sh` since the last checkpoint), skim them and **propose** durable promotions — a `decision`/`lesson`/`preference` in `memory/`, or a project-page update — then **ask before writing**. This is the curation gate: raw is already recallable (see step 2), but promotion is what makes a fact canonical, linked, and eligible for the always-on `CLAUDE.md`. Respect the boundary and drop anything sensitive rather than promoting it. If an entry carries a `Transcript: <path>` pointer and you need detail beyond the metadata, you **may open that `.jsonl` in-session** to distill from the actual conversation — but treat it as raw, secret-bearing input: apply the boundary/secret gate and **never bulk-copy** it into the vault, only distilled keepers. After a promotion lands in the vault, you may prune the promoted `raw/sessions` lines (guided, confirmed). **In-session only — never a hook or background spawn.** If there are no new raw entries, skip silently.
 
 ## Rules
+- Read from canonical `$WIKI_PATH` — this router is read-only, so it needs no worktree; write-path isolation for concurrent sessions is `checkpoint`'s job (via `vault-worktree.sh`). A slightly stale HEAD is fine for reads.
 - Do not load pages you don't need. Do not preload all repos.
 - In-session only; no hooks/background spawns. See [[lesson-no-claude-in-hooks]].
 - Promotion and pruning are judgment calls made **with** the user — never automate them into a hook. Only `rag-capture.sh` (deterministic, no `claude`) may run from a hook.
