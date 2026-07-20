@@ -18,6 +18,9 @@ A SessionStart hook can only surface `session-preflight.sh`'s staleness report b
 ### Changed
 - **`session-preflight.sh`** now also writes a compact one-line staleness summary to a per-machine cache (`${CLAUDE_CONFIG_DIR:-~/.claude}/.wiki-engine-status`; empty file = all current) for `statusline.sh` to read. Always (re)written each run, so resolving a stale pin clears the warning on the next session. Unchanged otherwise — still deterministic, still never runs the `claude` binary.
 
+### Fixed
+- **`engine-version.sh`** no longer reports "update available" when the pinned engine is *ahead* of `origin/main` (SHAs differ but `HEAD..origin/main` is empty — e.g. developing on an unpushed branch). It now reports "ahead — no action" and exits 0, instead of a spurious differ-with-0-behind downgrade. Latent before (a pin is normally never ahead), but the new status line made the false `⚠` persistent.
+
 ## [1.10.0] — 2026-07-20
 
 Minor — skills now track the pinned submodule, not the cold-start clone. Additive (new `adopt.d/` step); adopt with `bin/adopt.sh` or `update.sh`, no migration.

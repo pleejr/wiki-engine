@@ -31,6 +31,15 @@ if [ "$pinned_sha" = "$latest_sha" ]; then
   exit 0
 fi
 
+# The SHAs differ. "Update available" only if origin/main has commits the pin lacks; if
+# behind is 0 the pin is strictly AHEAD (e.g. developing on a branch not yet pushed) —
+# nothing to adopt. Otherwise a differ-with-0-behind reads as a spurious downgrade.
+behind="$(git -C "$ENGINE" rev-list --count HEAD..FETCH_HEAD 2>/dev/null || echo '?')"
+if [ "$behind" = "0" ]; then
+  echo "engine: pinned $pinned_ver is ahead of origin/main ($latest_ver) — no action"
+  exit 0
+fi
+
 # semver core (v1.2.3-4-gabc -> 1 2 3); empty if the ref isn't tagged
 core() { printf '%s' "$1" | sed -E 's/^v//; s/-.*$//'; }
 pc="$(core "$pinned_ver")"; lc="$(core "$latest_ver")"
@@ -45,8 +54,6 @@ case "$pinned_ver$latest_ver" in
     else level="patch"; fi
     ;;
 esac
-
-behind="$(git -C "$ENGINE" rev-list --count HEAD..FETCH_HEAD 2>/dev/null || echo '?')"
 
 if [ "$level" = "MAJOR" ]; then
   echo "engine: pinned $pinned_ver, latest $latest_ver — ⚠ MAJOR bump ($behind commit(s) behind): review CHANGELOG + migration BEFORE adopting"
