@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.10.0] — 2026-07-20
+
+Minor — skills now track the pinned submodule, not the cold-start clone. Additive (new `adopt.d/` step); adopt with `bin/adopt.sh` or `update.sh`, no migration.
+
+### Added
+- **`adopt.d/20-link-skills-submodule.sh`** — an adoption step that repoints `~/.claude/skills/*` at the vault's **pinned submodule** (`$ENGINE/skills`) whenever a slot doesn't already resolve there. Closes the skills-vs-pin drift: `link-skills.sh` (the cold-start bootstrap) symlinks skills at whatever clone it ran from — a standalone clone, before a vault exists — and nothing repointed them afterward, so `update.sh` (which bumps only the pin) left the *live* skills lagging the pinned engine. Now, because `session-boot.sh` runs `apply-adopt.sh` each session, a pin bump updates tooling **and** skills in lockstep. Idempotent and add-only: only the engine's own skills are touched (a foreign skill symlinked from another repo — e.g. `redteam` — is left alone), a real dir/file in a slot is never clobbered, and it prints only what it changed. Deterministic; never runs `claude`.
+
 ## [1.9.0] — 2026-07-20
 
 Minor — engine features that need hook wiring now **auto-adopt into the next session** instead of waiting on a manual `settings.json` edit. Additive (new `bin/` tools + an `adopt.d/` convention); adopt with `bin/adopt.sh` or `update.sh`. This closes the gap that left v1.7.0's `session-preflight.sh` shipped-but-unwired: the engine now owns a single durable entrypoint, and every later feature wires itself through it.
