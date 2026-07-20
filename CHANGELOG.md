@@ -4,6 +4,24 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.9.0] — 2026-07-20
+
+Minor — engine features that need hook wiring now **auto-adopt into the next session** instead of waiting on a manual `settings.json` edit. Additive (new `bin/` tools + an `adopt.d/` convention); adopt with `bin/adopt.sh` or `update.sh`. This closes the gap that left v1.7.0's `session-preflight.sh` shipped-but-unwired: the engine now owns a single durable entrypoint, and every later feature wires itself through it.
+
+The model: wire **one** SessionStart hook — `session-boot.sh` — and the engine owns the rest. On each session start it auto-applies any adoption steps the pinned engine introduced since this machine last adopted, then runs the version preflight. `adopt.sh`/`update.sh` wire that one hook (and self-heal it), so a fresh install or a pin bump needs no manual hook surgery.
+
+### Added
+- **`adopt.d/`** — versioned, **idempotent, add-only** adoption steps (one per feature that needs more than a folder — e.g. a hook). `apply-adopt.sh` runs them in filename order; each prints only what it changed. This is the general mechanism by which a shipped engine feature takes effect in the next session without manual wiring.
+- **`bin/ensure-hook.sh`** — the reusable primitive behind adoption: idempotently ensure a hook command is present in a `settings.json` (jq). **Add-only** — matches by exact command string (no dupes), co-locates into an existing matcher entry, backs the file up before any write, and never edits or removes an existing hook. `--check` dry-runs (reports, writes nothing, never creates the file). Deterministic; never runs `claude`.
+- **`bin/apply-adopt.sh`** — runs the `adopt.d/` steps against a vault/machine. Version-gated by a per-machine marker (`$WIKI/.engine-adopted`, gitignored) so it's a no-op once the current pin is adopted; `--force` re-runs, `--check` reports pending steps (exit 1 if any). Because every step is idempotent, the marker is only an optimization — a marker-less machine simply runs them once. Deterministic; always exits 0 (a hook must not block session start); a partial failure leaves the marker unset so the next session retries.
+- **`bin/session-boot.sh`** — the engine's single SessionStart entrypoint. Runs `apply-adopt.sh` (auto-wire pending features) then `session-preflight.sh` (report Claude Code + wiki-engine staleness). Wire **this one hook** and the engine owns everything after. Deterministic; never runs `claude`; always exits 0.
+- **`adopt.d/10-session-boot-hook.sh`** — the first adoption step: self-heals the `session-boot.sh` SessionStart hook (matcher `startup|resume`), so it is put back if ever missing (fresh machine, reset settings).
+
+### Changed
+- **`bin/adopt.sh`** now runs `apply-adopt.sh` after ensuring node folders, so "adopting" wires shipped features too — not just folders. `--check` reports pending feature-adoption steps alongside missing folders. **`update.sh` inherits this** (it calls `adopt.sh`), so a `tag→tag` bump both stages the pin and wires the new tag's features.
+- **`session-preflight.sh`** is now invoked *by* `session-boot.sh` rather than wired as its own hook. **Wiring `session-boot.sh` supersedes the v1.7.0 manual `session-preflight.sh` hook line** — the boot hook runs preflight for you. A vault that already wired preflight directly can keep it, or replace it with the boot hook (which also carries auto-adoption).
+- **Adopt the marker into `.gitignore`** — `$WIKI/.engine-adopted` is per-machine adoption state (settings.json is per-machine), so it should not be committed.
+
 ## [1.8.0] — 2026-07-20
 
 Minor — concurrent-session write isolation via git worktrees. Additive (new `bin/` tool + `checkpoint`/`wiki-context` behavior + a `SCHEMA.md` convention); adopt with `bin/adopt.sh`, no migration.
