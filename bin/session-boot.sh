@@ -2,7 +2,7 @@
 # session-boot.sh — the engine's single SessionStart entrypoint. Wire THIS one hook and
 # the engine owns the rest. In ONE deterministic pass it:
 #   1. apply-adopt.sh       — auto-wire features the pinned engine introduced.
-#   2. session-preflight.sh — check Claude Code + wiki-engine staleness; writes the cache.
+#   2. session-preflight.sh — check wiki-engine staleness; writes the cache.
 #   3. renders the version banner from the JUST-written cache (session-banner.sh) and
 #      emits it to the USER via the hook `systemMessage` field, while the adopt/preflight
 #      detail goes to the MODEL via `hookSpecificOutput.additionalContext`.
@@ -32,7 +32,7 @@ if [ -x "$SCRIPT_DIR/apply-adopt.sh" ]; then
 "
 fi
 
-# 2. Version staleness (Claude Code + wiki-engine). Side effect: (re)writes the cache.
+# 2. Version staleness (wiki-engine). Side effect: (re)writes the cache.
 if [ -x "$SCRIPT_DIR/session-preflight.sh" ]; then
   p="$(WIKI_PATH="$WIKI" "$SCRIPT_DIR/session-preflight.sh" 2>&1)" || true
   [ -n "${p:-}" ] && ctx="${ctx}${p}

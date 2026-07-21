@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.13.4] — 2026-07-21
+
+Patch — drop the Claude Code version from the SessionStart banner; v1.13.2 removed the *check* from `session-preflight.sh` but left the *display* in `session-banner.sh`, so `claude code …` kept rendering. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **`bin/session-banner.sh`** no longer computes or prints the `claude code <version>` segment. v1.13.2 dropped the Claude Code staleness *check* from `session-preflight.sh`, but the banner is rendered separately and independently read `$CLAUDE_CODE_EXECPATH` to append `· claude code <ver> ✓` — so the version the removal was meant to retire kept appearing every session. The banner now reports **only** wiki-engine (`wiki-engine <ver> ✓`, or `wiki-engine <ver> · ⚠ <frag>` when stale). Stale comments in `bin/session-boot.sh` that still named "Claude Code + wiki-engine" were corrected to match.
+
 ## [1.13.3] — 2026-07-21
 
 Patch — `vault-worktree.sh gc` can now retire a *specific* worktree on demand, and `ensure` is idempotent per session, so `checkpoint` stops leaking a worktree every run. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
