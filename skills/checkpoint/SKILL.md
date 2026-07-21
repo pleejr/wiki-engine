@@ -3,7 +3,7 @@ name: checkpoint
 description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, then distills durable facts from this session into memory/ notes. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session only — never a hook.
 status: active
 summary: "end-of-session: update project page + `log.md`, distill memory. In-session only."
-updated: 2026-07-20
+updated: 2026-07-21
 used_by: []
 ---
 
@@ -15,10 +15,10 @@ Run this deliberately at the end of a work session. **Vault**: `$WIKI_PATH` — 
 
 Before editing any vault file, take an isolated working copy so a second concurrent session can't clobber your edits or move HEAD under you — two sessions otherwise share one `$WIKI_PATH` working tree (one HEAD, one set of files on disk), where `git checkout -b` in one disrupts the other and simultaneous writes to a page are silent last-writer-wins.
 
-- `WORK="$($WIKI_PATH/engine/bin/vault-worktree.sh ensure)"` — creates (or reuses) a per-session `git worktree` on its own `wt/<session>` branch off `origin/main` and prints its path; cheap (~0.4s, <1 MB, since only tracked text is checked out). Opt out with `WIKI_WORKTREE=0` (writes then go straight to `$WIKI_PATH`, the legacy behavior).
+- `WORK="$($WIKI_PATH/engine/bin/vault-worktree.sh ensure)"` — creates (or reuses) a per-session `git worktree` on its own `wt/<session>` branch off `origin/main` and prints its path; cheap (~0.4s, <1 MB, since only tracked text is checked out). Idempotent within a session — it keys the worktree on `$CLAUDE_CODE_SESSION_ID`, so calling `ensure` again returns the *same* worktree instead of spawning a duplicate. Opt out with `WIKI_WORKTREE=0` (writes then go straight to `$WIKI_PATH`, the legacy behavior).
 - Make **all** edits, commits, and lint runs against `$WORK`, never `$WIKI_PATH` directly.
 - Run engine tooling from canonical (the `engine/` submodule is not checked out inside a worktree): e.g. `$WIKI_PATH/engine/bin/lint.sh --wiki "$WORK"`.
-- When this session's writes are committed, **integrate** the `wt/<session>` branch per the vault's git convention (fast-forward/merge to `main`, or push + open a PR), then `$WIKI_PATH/engine/bin/vault-worktree.sh gc` to retire it and prune any orphan worktrees from crashed sessions (clean ones only — it never discards uncommitted work).
+- When this session's writes are committed, **integrate** the `wt/<session>` branch per the vault's git convention (fast-forward/merge to `main`, or push + open a PR), then retire the worktree with `$WIKI_PATH/engine/bin/vault-worktree.sh gc "$WORK"` — passing the path retires *this* worktree immediately (the bare, argument-less `gc` only sweeps orphans older than `WIKI_WT_STALE_HOURS`, so it can never retire the one you just created). Both forms retire clean worktrees only — never discarding uncommitted work, and keeping the branch if it still holds unmerged commits. Run a bare `gc` too if you want to sweep orphans from crashed sessions.
 
 ## 1. Project state (if a project is active)
 - Open/create `$WIKI_PATH/projects/<slug>.md` (frontmatter `type: project`, `status: active|paused|done`, `repos: [[...]]`).

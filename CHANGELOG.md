@@ -4,6 +4,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.13.3] — 2026-07-21
+
+Patch — `vault-worktree.sh gc` can now retire a *specific* worktree on demand, and `ensure` is idempotent per session, so `checkpoint` stops leaking a worktree every run. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **`bin/vault-worktree.sh gc` never retired the current session's worktree.** `gc` age-gates on `WIKI_WT_STALE_HOURS` (default 48h), so a worktree `checkpoint` had just created was always "too fresh" to reap — the skill's §0 "integrate then `gc` to retire it" step was a silent no-op, and every checkpoint left its worktree (and branch) behind to accumulate until some run ≥48h later happened to sweep it. `gc` now accepts explicit target paths — `gc <path>…` retires exactly those **now**, regardless of age (clean-only; refuses paths outside `$WIKI_WORKTREE_ROOT`). Bare `gc` keeps the age-gated orphan sweep for crashed-session leftovers. `checkpoint` §0 now calls `gc "$WORK"`.
+- **`ensure` spawned a duplicate worktree when called more than once per session.** With no `WIKI_WT_SESSION`, each `ensure` minted a fresh `date-$$` slug, so a second call from `$WIKI_PATH` (rather than from inside the first worktree) created a second, orphaned worktree. `ensure` now defaults the session slug to `$CLAUDE_CODE_SESSION_ID`, so repeat calls within one session reuse a single worktree. Reattaches to an existing session branch (never resetting it) if a prior worktree was retired while holding unmerged commits.
+
+### Changed
+- **Branch deletion on retire is now merged-safe.** Retiring a worktree deletes its `wt/*` branch with `git branch -d` (merged-only) instead of `-D` (force), and logs+keeps the branch when it still holds unmerged commits — so committed-but-unintegrated work is no longer silently discarded, matching the "never discard uncommitted work" guarantee already applied to the working tree.
+
 ## [1.13.2] — 2026-07-21
 
 Patch — drop the Claude Code version check from `session-preflight.sh`; it crashed the SessionStart banner and duplicated the harness's own update prompt. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
