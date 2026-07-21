@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.13.2] — 2026-07-21
+
+Patch — drop the Claude Code version check from `session-preflight.sh`; it crashed the SessionStart banner and duplicated the harness's own update prompt. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **`bin/session-preflight.sh`** no longer checks the Claude Code binary's installed-vs-latest version (section 1). That block crashed the SessionStart banner with `line 58: installed�: unbound variable` and duplicated Claude Code's own built-in update prompt. Preflight now reports **only** wiki-engine staleness. Also drops the now-unused `CC_ENDPOINT` variable and the `curl` dependency — the script is git-only. The shared `summary` status-line var still composes correctly from the wiki-engine fragment alone.
+
 ## [1.13.1] — 2026-07-20
 
 Patch — `engine-version.sh` measures staleness **tag-to-tag**, not against `origin/main`'s HEAD, so untagged commits past the latest tag no longer read as a phantom update. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
