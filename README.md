@@ -6,7 +6,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 
 ## What's here
 
-- `skills/` — the Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`.
+- `skills/` — the Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`, `update`.
 - `SCHEMA.md` — node model, three layers, page conventions, memory lifecycle.
 - `CLAUDE.md` — generic context router a wiki imports from its own thin `CLAUDE.md`.
 - `bin/` — deterministic maintenance tools (no LLM):
