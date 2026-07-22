@@ -52,25 +52,25 @@ Then remind the user to review the CHANGELOG and commit:
   fi
 fi
 
-# skills catch-up nudge — deterministic, NO network (no fetch on session start). Only
-# fires when the `update` skill is installed. Two signals, both local:
-#   - first run: no skill set chosen yet (~/.claude/skill-tags absent) -> prompt to pick
-#   - staleness: last /update older than WIKI_CATCHUP_DAYS (default 7) -> suggest catching up
-# The `update` skill touches the catch-up marker each run; picking a set writes skill-tags.
+# consumer session-checks — a generic seam so a machine can fold ITS OWN extra checks into
+# this one banner without the engine knowing anything about them. Each executable drop-in in
+# ~/.claude/session-checks.d/ is run (deterministic; it MUST NOT call `claude`) and its output
+# folded in: first stdout line = a compact banner fragment (empty => nothing to report),
+# any remaining lines = action/notes for the assistant. This is how a consumer's skill repo
+# surfaces "first run / catch up" beside the engine's own freshness — the engine stays generic.
 CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-CATCHUP_MAX_DAYS="${WIKI_CATCHUP_DAYS:-7}"
-if [ -e "$CFG/skills/update" ]; then
-  if [ ! -f "$CFG/skill-tags" ]; then
-    summary="${summary:+$summary · }first run: /update"
-    action="${action}
-ACTION — first run on this machine: no skill set chosen yet. Ask the user to run the
-'update' skill (/update); it prompts for which skills to install and remembers the choice."
-  elif [ ! -f "$CFG/.wiki-catchup" ] || [ -n "$(find "$CFG/.wiki-catchup" -mtime +"$CATCHUP_MAX_DAYS" 2>/dev/null)" ]; then
-    summary="${summary:+$summary · }/update to catch up"
-    action="${action}
-NOTE — this machine hasn't caught up recently. Suggest the user run /update — it converges
-the installed skills to their chosen subset and reports any engine/vault updates."
-  fi
+CHECKS_D="$CFG/session-checks.d"
+if [ -d "$CHECKS_D" ]; then
+  for chk in "$CHECKS_D"/*.sh; do
+    [ -e "$chk" ] || continue
+    out="$(bash "$chk" 2>/dev/null)" || true
+    [ -n "$out" ] || continue
+    frag="$(printf '%s\n' "$out" | sed -n '1p')"
+    rest="$(printf '%s\n' "$out" | sed -n '2,$p')"
+    [ -n "$frag" ] && summary="${summary:+$summary · }$frag"
+    [ -n "$rest" ] && action="${action}
+$rest"
+  done
 fi
 
 # status-line cache — always (re)write so a resolved staleness clears a prior warning. ---

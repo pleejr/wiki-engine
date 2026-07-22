@@ -4,6 +4,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.17.0] — 2026-07-22
+
+Minor — a generic engine-only `update` skill, and a `session-checks.d` extension seam so a consumer surfaces its own session-start checks in the one banner. Replaces v1.16.0's skills-specific nudge with a generic drop-in mechanism (keeps the engine boundary-agnostic). Additive; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`skills/update`** — engine-only "catch up this machine's engine": `doctor` freshness → offer `update.sh` (on confirmation) → `wire-machine --check` → converge → relink the engine's own skills. Distributed by `link-skills.sh`. Generic — it never touches a consumer's separate skill repos or their tag system.
+- **`bin/session-preflight.sh` — `session-checks.d` seam:** runs executable drop-ins in `~/.claude/session-checks.d/` (deterministic; must not call `claude`) and folds each into the SessionStart banner (first stdout line = compact fragment, rest = action/notes). Lets a consumer skill repo surface its own "first run / catch up" beside engine freshness without the engine hardcoding it.
+
+### Changed
+- **`bin/session-preflight.sh`** — the v1.16.0 skills-specific catch-up block (which read `~/.claude/skill-tags`/`.wiki-catchup` and assumed a consumer `update` skill) is **replaced** by the generic `session-checks.d` seam. A consumer now ships that check as a drop-in; the engine stays generic.
+- **`USAGE.md` / `README.md`** document the `update` skill and the `session-checks.d` seam.
+
 ## [1.16.0] — 2026-07-22
 
 Minor — the session-start banner now nudges toward the `update` skill: a first-run "pick your skills" prompt and a staleness "catch up" hint, both computed **locally** (no fetch — offline-safe, no startup latency). Additive; adopt with `bin/adopt.sh` or `update.sh`.

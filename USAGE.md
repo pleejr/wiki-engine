@@ -31,6 +31,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 - **`checkpoint`** — end-of-session: distill memory, update project + log, prune raw, lint, re-index.
 - **`wiki-onboard`** — one-time bulk seed of a fresh vault from existing native memory / repos / projects.
 - **`wiki-adopt`** — idempotent adoption: scaffold a new vault **or** wire an already-cloned one, then seed. The front door on any new machine; safe to re-run.
+- **`update`** — engine-only machine catch-up: report + offer an engine version bump (`doctor`/`update.sh`), converge wiring (`wire-machine`), relink the engine's own skills. Generic — it never touches a consumer's separate skill repos; a consumer surfaces its own catch-up via a `session-checks.d` drop-in (below).
 
 ## Commands (`bin/` — deterministic, no LLM; set `$WIKI_PATH` or pass `--wiki DIR`)
 
@@ -72,6 +73,10 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 
 - **Banner** (`session-banner.sh`) — the default. A one-shot `systemMessage` line shown to the user at session start (`wiki-engine <ver> ✓ · claude code <ver> ✓`, or a `⚠` line when stale). Auto-wired by `adopt.d/40-session-banner-hook.sh`.
 - **Status line** (`statusline.sh`) — **opt-in**. A persistent bottom row (`dir · model` + a color-coded `⚠` — amber for a normal update, red for MAJOR). Not auto-wired; enable it yourself with `ensure-statusline.sh` (add-only — sets it only when no status line exists, self-heals the path, never clobbers a status line you configured yourself).
+
+## Extending the session-start banner (`session-checks.d`)
+
+The SessionStart banner reports engine freshness. A machine can fold in **its own** checks — e.g. a consumer skill repo reporting "first run / catch up" — without the engine knowing anything about them: drop an executable script in `~/.claude/session-checks.d/`. `session-preflight.sh` runs each (deterministic, **must not call `claude`**) and folds the output into the one banner — first stdout line = a compact banner fragment, remaining lines = action/notes for the assistant. Empty output = nothing to report. This keeps the engine generic while letting each layer surface its own state in a single banner.
 
 ## Boundary & safety (non-negotiable)
 
