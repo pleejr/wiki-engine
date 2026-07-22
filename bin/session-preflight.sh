@@ -52,6 +52,27 @@ Then remind the user to review the CHANGELOG and commit:
   fi
 fi
 
+# skills catch-up nudge — deterministic, NO network (no fetch on session start). Only
+# fires when the `update` skill is installed. Two signals, both local:
+#   - first run: no skill set chosen yet (~/.claude/skill-tags absent) -> prompt to pick
+#   - staleness: last /update older than WIKI_CATCHUP_DAYS (default 7) -> suggest catching up
+# The `update` skill touches the catch-up marker each run; picking a set writes skill-tags.
+CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+CATCHUP_MAX_DAYS="${WIKI_CATCHUP_DAYS:-7}"
+if [ -e "$CFG/skills/update" ]; then
+  if [ ! -f "$CFG/skill-tags" ]; then
+    summary="${summary:+$summary · }first run: /update"
+    action="${action}
+ACTION — first run on this machine: no skill set chosen yet. Ask the user to run the
+'update' skill (/update); it prompts for which skills to install and remembers the choice."
+  elif [ ! -f "$CFG/.wiki-catchup" ] || [ -n "$(find "$CFG/.wiki-catchup" -mtime +"$CATCHUP_MAX_DAYS" 2>/dev/null)" ]; then
+    summary="${summary:+$summary · }/update to catch up"
+    action="${action}
+NOTE — this machine hasn't caught up recently. Suggest the user run /update — it converges
+the installed skills to their chosen subset and reports any engine/vault updates."
+  fi
+fi
+
 # status-line cache — always (re)write so a resolved staleness clears a prior warning. ---
 # statusline.sh reads this: one line = the compact summary, empty file = all current.
 if mkdir -p "$(dirname "$CACHE")" 2>/dev/null; then
