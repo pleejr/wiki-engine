@@ -4,6 +4,15 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.18.0] — 2026-07-22
+
+Minor — a generic **external skill-source** mechanism so a machine can declare (and be offered) skill repos beyond the engine's own. Closes the cold-machine gap: a fresh machine with no skills cloned now gets offered to install them. Additive; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`bin/skill-sources.sh`** — clone + link a machine's declared external skill repos from `~/.claude/skill-sources` (`<git-remote> [dir]` lines; `<dir>` defaults to `~/Documents/repos/<basename>`). `--check` reports missing (no network). Generic — the engine names no repo; the machine declares them.
+- **`bin/session-preflight.sh`** now checks `~/.claude/skill-sources` (local, dir-existence only — no fetch) and, when a declared source isn't cloned, adds a banner fragment + an ACTION telling the assistant to offer `skill-sources.sh`. This is what offers to pull a consumer's skills on a cold machine.
+- **`skills/wiki-adopt`** gains step 4b — ask for external skill repos, record them in `~/.claude/skill-sources`, and install them via `skill-sources.sh` — seeding the mechanism at adoption so a cold machine self-serves.
+
 ## [1.17.0] — 2026-07-22
 
 Minor — a generic engine-only `update` skill, and a `session-checks.d` extension seam so a consumer surfaces its own session-start checks in the one banner. Replaces v1.16.0's skills-specific nudge with a generic drop-in mechanism (keeps the engine boundary-agnostic). Additive; adopt with `bin/adopt.sh` or `update.sh`.
