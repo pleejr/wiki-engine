@@ -4,6 +4,21 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.15.0] — 2026-07-22
+
+Minor — adoption is now **idempotent**: a new `wire-machine.sh` converge verb wires a machine to an already-cloned vault (the second/Nth-machine path), and `wiki-adopt` is reframed from one-shot to re-run-safe. Additive; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`bin/wire-machine.sh`** — idempotent "make THIS machine ready for the vault at `$WIKI_PATH`": engine-submodule init, skill links, `WIKI_PATH`, the always-on `CLAUDE.md` import, `.rag` runtime, and feature-adoption (via `adopt.sh`). Add-only and re-run-safe; `--check` previews and exits 0 when already converged. This is the previously-missing "wire an existing clone" verb — the second-machine case `wiki-adopt` used to dead-end on ("if a vault exists, stop").
+- **`bin/lint-docs.sh`** — usage-doc coverage gate (run in `engine-ci`): every skill is documented in `USAGE.md`, and every `bin/*.sh` `USAGE.md` references actually exists. Keeps adoption docs from drifting as verbs are added.
+- **`bin/link-skills.sh --check`** — dry-run reporting what would link/repoint (exit 1 if pending), so `wire-machine --check` reports skill-link state accurately instead of always "pending".
+
+### Changed
+- **`skills/wiki-adopt`** reframed one-shot → idempotent converge: it detects state and either scaffolds+wires (no vault yet) or just wires an existing clone (new step 3b), and is safe to re-run. Removed the "if a vault exists, stop" dead-end.
+- **`bin/new-wiki.sh`** delegates all machine wiring (skills, `WIKI_PATH`, `CLAUDE.md` import, `.rag`) to `wire-machine.sh` — one source of wiring truth shared by scaffold and adopt — and now also runs feature-adoption, so a freshly scaffolded vault gets the SessionStart boot hook wired.
+- **`.github/workflows/ci.yml`** runs `lint-docs.sh`.
+- **`USAGE.md` / `README.md`** document `wire-machine.sh`, the second-machine flow, and idempotent adoption.
+
 ## [1.14.0] — 2026-07-22
 
 Minor — the `index.md` Projects buckets are now generated from project-page frontmatter instead of hand-maintained, closing the drift gap that left three closed projects sitting under **Active**. Additive; adopt with `bin/adopt.sh` or `update.sh`.

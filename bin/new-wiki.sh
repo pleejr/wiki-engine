@@ -125,10 +125,6 @@ render "$ENGINE_ROOT/scaffold/gitignore.tmpl"  > "$VAULT_PATH/.gitignore"
 # whatever skill set this engine pins (the template block is just a placeholder).
 "$ENGINE_ROOT/bin/gen-skills-index.sh" --wiki "$VAULT_PATH" >/dev/null
 
-if [ "$LINK_SKILLS" -eq 1 ]; then
-  "$ENGINE_ROOT/bin/link-skills.sh"
-fi
-
 git -C "$VAULT_PATH" add -A
 git -C "$VAULT_PATH" commit -q -m "Scaffold $WIKI_NAME from wiki-engine (boundary: $BOUNDARY)"
 
@@ -146,42 +142,16 @@ elif [ -n "$REMOTE_URL" ]; then
   git -C "$VAULT_PATH" push -u -q origin main && REMOTE_DONE="pushed to $REMOTE_URL"
 fi
 
-# --- optional machine wiring (idempotent; single-vault machines only) ------------
-WIRE_DONE=()
-if [ "$WIRE_SHELL" -eq 1 ]; then
-  LINE="export WIKI_PATH=\"$VAULT_PATH\""
-  if [ -f "$SHELL_RC" ] && grep -q '^[[:space:]]*export WIKI_PATH=' "$SHELL_RC"; then
-    echo "  ! $SHELL_RC already exports WIKI_PATH — left as-is (edit by hand if it should point here)." >&2
-  else
-    printf '\n# wiki-engine vault\n%s\n' "$LINE" >> "$SHELL_RC"
-    WIRE_DONE+=("WIKI_PATH -> $SHELL_RC (open a new shell)")
-  fi
-fi
-if [ "$WIRE_CLAUDE_MD" -eq 1 ]; then
-  CMD="$HOME/.claude/CLAUDE.md"; IMPORT="@$VAULT_PATH/CLAUDE.md"
-  mkdir -p "$HOME/.claude"
-  if [ -f "$CMD" ] && grep -qF "$IMPORT" "$CMD"; then
-    echo "  ! $CMD already imports this vault — left as-is." >&2
-  else
-    printf '\n%s\n' "$IMPORT" >> "$CMD"
-    WIRE_DONE+=("always-on import -> $CMD")
-  fi
-fi
-
-# Self-contained semantic recall: provision the vault's .rag/venv CPU embedder and
-# build the initial index. Git-ignored (.rag/), non-fatal (a locked-down/offline
-# laptop still gets a working vault; run engine/bin/rag-setup.sh later).
-RAG_READY=0
-if [ "$RAG" -eq 1 ]; then
-  echo "Provisioning semantic recall (self-contained CPU embedder)…"
-  if "$ENGINE_ROOT/bin/rag-setup.sh" --wiki "$VAULT_PATH"; then
-    "$ENGINE_ROOT/bin/rag-build.sh" --wiki "$VAULT_PATH" || true
-    RAG_READY=1
-  else
-    echo "  ! rag-setup failed (offline or pip restricted) — skipped." >&2
-    echo "    Provision later with: $VAULT_PATH/engine/bin/rag-setup.sh" >&2
-  fi
-fi
+# --- machine wiring (delegated to the idempotent converge verb) ------------------
+# wire-machine.sh is the single source of wiring truth — skill links, WIKI_PATH, the
+# always-on CLAUDE.md import, the .rag recall runtime, and engine feature-adoption.
+# It is re-run-safe, so `wiki-adopt` reuses it to bring a second machine up from a clone.
+WIRE_ARGS=(--wiki "$VAULT_PATH")
+[ "$LINK_SKILLS" -eq 1 ] || WIRE_ARGS+=(--no-link-skills)
+[ "$RAG" -eq 1 ] || WIRE_ARGS+=(--no-rag)
+if [ "$WIRE_SHELL" -eq 1 ]; then WIRE_ARGS+=(--wire-shell "$SHELL_RC"); fi
+if [ "$WIRE_CLAUDE_MD" -eq 1 ]; then WIRE_ARGS+=(--wire-claude-md); fi
+"$ENGINE_ROOT/bin/wire-machine.sh" "${WIRE_ARGS[@]}"
 
 cat <<EOF
 
@@ -190,32 +160,15 @@ Done. $WIKI_NAME is a git repo pinning wiki-engine at:
 EOF
 
 [ -n "$REMOTE_DONE" ] && echo "  remote: $REMOTE_DONE"
-if [ "${#WIRE_DONE[@]}" -gt 0 ]; then
-  echo "  wired:"
-  for w in "${WIRE_DONE[@]}"; do echo "    - $w"; done
-fi
+echo "  (machine wiring reported above by wire-machine)"
 
 echo
-echo "Next steps (not automated — machine/user choices):"
+echo "Next steps:"
 n=1
-if [ "$WIRE_SHELL" -ne 1 ]; then
-  echo "  $n. Set the vault path for the skills:"
-  echo "       export WIKI_PATH=\"$VAULT_PATH\"      # add to ~/.zshrc or ~/.bashrc"; n=$((n+1))
-fi
-if [ "$WIRE_CLAUDE_MD" -ne 1 ]; then
-  echo "  $n. Wire the agent entry point — add to ~/.claude/CLAUDE.md:"
-  echo "       @$VAULT_PATH/CLAUDE.md"; n=$((n+1))
-fi
 if [ -z "$REMOTE_DONE" ]; then
   echo "  $n. Add a remote and push:"
   echo "       git -C \"$VAULT_PATH\" remote add origin <url>"
   echo "       git -C \"$VAULT_PATH\" push -u origin main"; n=$((n+1))
 fi
-echo "  $n. Seed the empty vault from your existing environment (memories, repos, projects):"
-echo "       run the 'wiki-onboard' skill in a Claude Code session with WIKI_PATH set,"
-echo "       or just run the 'wiki-adopt' skill which drives this whole flow end to end."
-
-if [ "$RAG_READY" -eq 1 ]; then
-  echo "  Semantic recall is ready (self-contained .rag/venv); wiki-context auto-recalls."
-  echo "  It re-indexes on checkpoint; rebuild manually with engine/bin/rag-build.sh."
-fi
+echo "  $n. Seed the vault from your existing environment (memories, repos, projects):"
+echo "       run the 'wiki-onboard' skill in a Claude Code session with WIKI_PATH set."

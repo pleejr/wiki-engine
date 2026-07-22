@@ -1,15 +1,15 @@
 ---
 name: wiki-adopt
-description: One-shot adoption of the wiki-engine on a fresh machine — gather the vault's boundary/identity/remote, scaffold the vault with new-wiki.sh (pinning this engine), wire the machine (WIKI_PATH + always-on CLAUDE.md import + git remote), then run onboarding to seed it. Run once from a standalone wiki-engine clone; the human starts the session, so there is no `claude` spawn. In-session only — never a hook.
+description: Idempotent adoption of the wiki-engine on a machine — bring up a vault whether or not one exists yet. No vault present → scaffold it (new-wiki.sh, pinning this engine) then wire + seed; vault already cloned (a second/Nth machine) → just wire the machine. Either path converges through wire-machine.sh (engine submodule + skill links + WIKI_PATH + always-on CLAUDE.md import + recall runtime + feature-adoption), and is safe to re-run. Run from a standalone wiki-engine clone; the human starts the session, so there is no `claude` spawn. In-session only — never a hook.
 status: active
-summary: one-shot: scaffold a new vault, wire the machine, and seed it — run once per machine.
+summary: idempotent: scaffold a new vault OR wire an already-cloned one, then seed — safe to re-run.
 updated: 2026-07-16
 used_by: []
 ---
 
 # wiki-adopt — stand up a vault on a new machine in one session
 
-The front door for adopting **the wiki-engine loop** on a machine that has none yet. Drives the whole flow: scaffold → wire the machine → seed. Run it **once**, in a Claude Code session started from a standalone clone of this engine (e.g. `cd wiki-engine && claude`, then invoke this skill). Because *you* start the session, onboarding runs in-session with no recursive `claude` spawn — the hard safety rule holds. `checkpoint` keeps the vault current thereafter.
+The front door for adopting **the wiki-engine loop** on a machine. It **converges** the machine to a working vault from whatever state it's in: scaffold a brand-new vault, or wire an already-cloned one (a second/Nth machine). Run it from a Claude Code session started at a standalone clone of this engine (e.g. `cd wiki-engine && claude`, then invoke this skill). Because *you* start the session, onboarding runs in-session with no recursive `claude` spawn — the hard safety rule holds. **Safe to re-run** — the wiring step (`wire-machine.sh`) is add-only and reports "already converged" when there's nothing to do. `checkpoint` keeps the vault's *content* current thereafter.
 
 **Bootstrap:** if you can invoke this skill, it is already linked into `~/.claude/skills/`. On a truly cold machine that link is the one manual prerequisite — `git clone` the engine, then `bin/link-skills.sh` (Claude Code discovers skills only from `~/.claude/skills/` and `<project>/.claude/skills/`, never a repo's bare `skills/` dir). After that first link the skill is global and `new-wiki.sh` keeps the links current on every scaffold.
 
@@ -21,11 +21,11 @@ The front door for adopting **the wiki-engine loop** on a machine that has none 
 
 ## Steps
 
-1. **Confirm the machine is single-vault** and locate the engine. This skill runs from a standalone clone; resolve `ENGINE=<that clone>` (the dir holding `bin/new-wiki.sh`). If a vault already exists here (`$WIKI_PATH` set and populated), stop — use `checkpoint`/`wiki-repo` incrementally instead.
+1. **Detect the machine's state** and locate the engine. This skill runs from a standalone clone; resolve `ENGINE=<that clone>` (the dir holding `bin/new-wiki.sh`). Then pick the path: **no vault dir yet** → scaffold + wire (step 3a); **vault already cloned** here (e.g. a second machine that ran `git clone`) → wire it (step 3b); **vault present and already wired** → `wire-machine.sh --check` reports it converged, so re-running is a safe no-op. Confirm the machine is single-vault (one boundary) before using the `--wire-*` flags.
 
 2. **Gather identity, proposing defaults from the environment.** Ask for anything not obvious; read `git config user.email`/`user.name` as default suggestions. Collect: `boundary`, vault `--path` (default `~/Documents/repos/<name>`), `name`, git `--email` and `--git-name`, and the git remote (an `OWNER/NAME` slug for `gh` **or** an existing URL, plus visibility). Echo the resolved plan back and get a yes before touching disk.
 
-3. **Scaffold + wire in one command.** Run `new-wiki.sh` full-auto:
+3a. **No vault yet — scaffold + wire in one command.** Run `new-wiki.sh` full-auto (it delegates all machine wiring to `wire-machine.sh`, so scaffold and wire share one code path):
    ```
    ENGINE/bin/new-wiki.sh --path <path> --name <name> --boundary <b> \
      --email <email> --git-name <name> \
@@ -33,11 +33,19 @@ The front door for adopting **the wiki-engine loop** on a machine that has none 
      --create-remote <OWNER/NAME> --visibility <private|public|internal>
    ```
    Use `--remote <url>` instead of `--create-remote` when the remote already exists;
-   drop both to skip the remote. This creates the repo, pins this engine as
-   `engine/`, renders the templates, symlinks the skills, provisions `.rag`, appends
-   `WIKI_PATH` to the shell rc, adds the always-on import to `~/.claude/CLAUDE.md`,
-   and pushes. All wiring is idempotent — a pre-existing `WIKI_PATH` export is left
-   untouched with a warning (reconcile by hand if so).
+   drop both to skip the remote. Creates the repo, pins this engine as `engine/`,
+   renders the templates, then wires the machine (skills, `WIKI_PATH`, the always-on
+   import, `.rag`, feature-adoption). Idempotent — a pre-existing `WIKI_PATH`/import
+   is left untouched.
+
+3b. **Vault already cloned — just wire this machine (idempotent converge).** The vault already exists on the remote and you `git clone`d it here; make the machine ready without re-scaffolding:
+   ```
+   ENGINE/bin/wire-machine.sh --wiki <path> --wire-shell --wire-claude-md
+   ```
+   Initializes the `engine/` submodule, links the skills, sets `WIKI_PATH` + the
+   always-on import, provisions `.rag`, and runs engine feature-adoption — every step
+   add-only and re-run-safe. Preview first with `--check`. Then **skip onboarding
+   (step 5)** — an existing vault is already seeded.
 
 4. **Point this session at the vault.** `export WIKI_PATH=<path>` for the remainder of the session (the shell-rc line only affects new shells). Confirm `ENGINE/bin/doctor.sh --wiki <path>` is clean.
 
@@ -47,6 +55,6 @@ The front door for adopting **the wiki-engine loop** on a machine that has none 
 
 ## Rules
 - **In-session, on demand only. NEVER wire to a hook or a background/recursive `claude` spawn** — that was the `.ai-os` fork-bomb. See [[lesson-no-claude-in-hooks]].
-- One-shot per machine. If a vault already exists, use `checkpoint`/`wiki-repo`.
+- **Idempotent — safe to re-run.** Scaffolding is create-new (`new-wiki.sh` refuses over an existing vault); wiring converges via `wire-machine.sh` (add-only, `--check`-able). For ongoing *content* curation use `checkpoint`/`wiki-repo`.
 - The `--wire-*` flags assume a single-vault machine; never run them where the other boundary's vault also lives.
 - Respect the boundary and the no-secrets rule at every step.
