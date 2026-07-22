@@ -6,6 +6,7 @@
 #                              list; catches Obsidian's "invalid properties"
 #   3. soft-wrap drift       — reflow.sh --check (hard wraps that would render broken)
 #   4. skills catalog drift  — gen-skills-index.sh --check
+#   5. projects catalog drift — gen-projects-index.sh --check
 #
 # Exit 1 if any check fails.
 #
@@ -82,6 +83,10 @@ fi
 # 4. skills catalog drift -------------------------------------------------------
 section "skills catalog"
 "$SCRIPT_DIR/gen-skills-index.sh" --check --wiki "$WIKI" || rc=1
+
+# 5. projects catalog drift -----------------------------------------------------
+section "projects catalog"
+"$SCRIPT_DIR/gen-projects-index.sh" --check --wiki "$WIKI" || rc=1
 
 echo
 [ "$rc" -eq 0 ] && echo "lint: all checks passed" || echo "lint: FAILURES above"

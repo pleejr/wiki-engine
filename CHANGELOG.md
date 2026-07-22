@@ -4,6 +4,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.14.0] — 2026-07-22
+
+Minor — the `index.md` Projects buckets are now generated from project-page frontmatter instead of hand-maintained, closing the drift gap that left three closed projects sitting under **Active**. Additive; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`bin/gen-projects-index.sh`** — regenerate the `index.md` Projects catalog (Planned/Active/Paused/Done) from `projects/*.md` frontmatter (`status`, `summary`), spliced between `<!-- projects:start -->` / `<!-- projects:end -->` sentinels — the same deterministic scan pattern as `gen-skills-index.sh`. `--check` fails on drift, `--stdout` prints the block, `--wiki DIR` targets another vault. An empty/fresh vault renders the four `_none_` buckets rather than erroring. An unknown `status:` value is surfaced under an `### Other` bucket rather than silently dropped.
+
+### Changed
+- **Project pages gain a `summary:` frontmatter field** (the one-line index hook) alongside `status:`; `SCHEMA.md` documents both as the source of the generated buckets. Closing a project is now just flipping `status: done` — the index follows on the next `checkpoint`/lint.
+- **`bin/lint.sh`** gains a 5th check — projects-catalog drift (`gen-projects-index.sh --check`) — so a stale index fails lint the same way a stale skills catalog does.
+- **`skills/checkpoint/SKILL.md`** now instructs regenerating the Projects buckets from frontmatter (§1 keep `status`/`summary` current, §4 run the generator) instead of hand-editing the index.
+- **`scaffold/index.md.tmpl`** ships the `<!-- projects:start/end -->` sentinels with empty buckets so a freshly scaffolded vault is generator-ready and passes lint out of the box.
+
 ## [1.13.4] — 2026-07-21
 
 Patch — drop the Claude Code version from the SessionStart banner; v1.13.2 removed the *check* from `session-preflight.sh` but left the *display* in `session-banner.sh`, so `claude code …` kept rendering. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
