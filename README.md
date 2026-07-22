@@ -11,8 +11,9 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 - `CLAUDE.md` — generic context router a wiki imports from its own thin `CLAUDE.md`.
 - `bin/` — deterministic maintenance tools (no LLM):
   - `new-wiki.sh` + `scaffold/` — scaffold a new consuming wiki in one command (node folders from `scaffold/node-dirs.txt`).
-  - `adopt.sh` — ensure an existing vault has the engine's current node folders (run after bumping the pin).
-  - `link-skills.sh` — symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them (the bootstrap that makes `/wiki-adopt` available on a fresh machine; idempotent, warn+skips a foreign slot).
+  - `adopt.sh` — ensure an existing vault has the engine's current node folders + run feature-adoption (run after bumping the pin).
+  - `wire-machine.sh` — idempotently make a machine ready for an existing vault (submodule init, skill links, `WIKI_PATH`, CLAUDE.md import, `.rag`, feature-adopt); `--check` previews. The "wire an existing clone" converge verb behind `wiki-adopt`, and the shared wiring path `new-wiki.sh` calls after scaffolding.
+  - `link-skills.sh` — symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them (the bootstrap that makes `/wiki-adopt` available on a fresh machine; idempotent, `--check`-able, warn+skips a foreign slot).
   - `engine-version.sh` · `doctor.sh` · `update.sh` — freshness of consumed components: pinned vs latest engine; full health report (engine + RAG deps + security + model); one-step update (same-MAJOR).
   - `session-preflight.sh` — SessionStart-hook version check: Claude Code (installed vs latest stable) + the pinned engine; on staleness prints an ACTION-REQUIRED block telling the assistant to ask before updating. Deterministic, never runs `claude`.
   - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
@@ -38,9 +39,9 @@ Have these in place on the machine *before* adopting:
 
 **Boundary reminder:** decide the vault's boundary (`personal` | `work`) and the git identity (name/email) it should commit under up front — `wiki-adopt` will ask, and they get stamped into the vault. Keep work and personal on separate vaults (ideally separate machines); the engine holds no identity, so it's safe to share, but **content never crosses**.
 
-## New wiki — one-shot adoption (recommended)
+## New machine — idempotent adoption (recommended)
 
-On a machine with no vault yet, clone this engine, link its skills so Claude Code can discover them, then let the `wiki-adopt` skill drive the whole flow (scaffold → wire the machine → seed) in a single session:
+On any new machine, clone this engine, link its skills so Claude Code can discover them, then let the `wiki-adopt` skill drive the flow — it **detects state and converges**: no vault yet → scaffold → wire → seed; a vault already cloned (a second/Nth machine) → just wire this machine, no re-scaffold. Safe to re-run.
 
 ```
 git clone <this-repo-url> ~/Documents/repos/wiki-engine
@@ -52,6 +53,15 @@ claude                                              # from ANY folder
 The `link-skills.sh` step is required and easy to miss: Claude Code discovers skills only from `~/.claude/skills/` and `<project>/.claude/skills/`, **never** a cloned repo's bare `skills/` dir — so cloning the engine alone does not make `/wiki-adopt` available. After the one-time link the skill is global (folder-independent); thereafter `new-wiki.sh` keeps the links current on every scaffold.
 
 `/wiki-adopt` then prompts for the vault's boundary/identity/remote, runs the scaffolder, wires the machine, and runs `wiki-onboard` to seed the vault — usable in the very next session. Because *you* start the session there is no recursive `claude` spawn (the hard safety rule holds). This assumes a **single-vault machine** (one boundary); on a machine that hosts both a `personal` and a `work` vault, scaffold without the wiring flags and scope activation per-directory instead.
+
+**Second machine (the vault already exists):** clone the vault, then converge the machine idempotently — either run `/wiki-adopt` (it detects the clone and only wires) or directly:
+
+```
+git clone <vault-remote> ~/Documents/repos/<vault>
+~/Documents/repos/<vault>/engine/bin/wire-machine.sh --wiki ~/Documents/repos/<vault> --wire-shell --wire-claude-md
+```
+
+`wire-machine.sh` initializes the `engine/` submodule, links skills, sets `WIKI_PATH` + the always-on import, provisions `.rag`, and runs feature-adoption — all add-only. Preview with `--check`; re-running is a safe no-op.
 
 ### Or run the scaffolder directly
 

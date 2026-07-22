@@ -30,7 +30,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 - **`wiki-repo`** — ingest or refresh ONE repo page with git provenance.
 - **`checkpoint`** — end-of-session: distill memory, update project + log, prune raw, lint, re-index.
 - **`wiki-onboard`** — one-time bulk seed of a fresh vault from existing native memory / repos / projects.
-- **`wiki-adopt`** — one-shot adoption on a fresh machine: scaffold + wire the machine + run onboarding, in one session. The front door on a new laptop.
+- **`wiki-adopt`** — idempotent adoption: scaffold a new vault **or** wire an already-cloned one, then seed. The front door on any new machine; safe to re-run.
 
 ## Commands (`bin/` — deterministic, no LLM; set `$WIKI_PATH` or pass `--wiki DIR`)
 
@@ -43,7 +43,8 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 | `doctor.sh` | Freshness/health report: engine + RAG deps (+ security) + model. Reports only. |
 | `update.sh` | One-step apply: bump engine to latest tag (same-MAJOR), adopt, re-sync deps. Refuses MAJOR; stages, no commit. |
 | `engine-version.sh` | Pinned vs latest engine tag (run by `wiki-context`). |
-| `adopt.sh` | Ensure the vault has the engine's current node folders (after a pin bump). |
+| `adopt.sh` | Ensure the vault has the engine's current node folders + run feature-adoption (after a pin bump). |
+| `wire-machine.sh` | Idempotent converge — make THIS machine ready for the vault at `$WIKI_PATH`: submodule, skill links, `WIKI_PATH`, CLAUDE.md import, `.rag`, feature-adopt. `--check` previews. The "wire an existing clone" verb behind `wiki-adopt`. |
 | `lint.sh` | Umbrella lint (memory + frontmatter + soft-wrap + catalog); `checkpoint` runs it. |
 | `reflow.sh` · `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` | Soft-wrap normalize · skills-catalog · projects-catalog · memory validation. |
 | `new-wiki.sh` | Scaffold a brand-new vault (see README). |
@@ -51,7 +52,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 
 ## Setup & activation
 
-- **New machine (one-shot):** clone the engine standalone, run `bin/link-skills.sh` (so Claude Code can discover the skills), start Claude from any folder, run the **`wiki-adopt`** skill — it scaffolds, wires the machine (`WIKI_PATH` + `~/.claude/CLAUDE.md` import + remote), and seeds via `wiki-onboard`. Single-vault machines only.
+- **New machine (idempotent adoption):** clone the engine standalone, run `bin/link-skills.sh` (so Claude Code can discover the skills), start Claude from any folder, run the **`wiki-adopt`** skill. It detects state and converges: **no vault** → scaffold + wire + seed; **vault already cloned** (a second/Nth machine) → just wire this machine — `bin/wire-machine.sh --wiki DIR --wire-shell --wire-claude-md` (preview with `--check`). Re-run-safe. Single-vault machines only.
 - **New vault (scaffolder):** `bin/new-wiki.sh --path … --boundary personal|work --email …` (prompts for anything omitted; auto-provisions RAG unless `--no-rag`; add `--wire-shell --wire-claude-md --create-remote OWNER/NAME` to automate activation), then run `wiki-onboard` to seed it.
 - **Turn on semantic recall (existing vault):** `engine/bin/rag-setup.sh && engine/bin/rag-build.sh`. Then just prompt — `wiki-context` recalls automatically.
 - **Turn on auto-capture:** add a SessionEnd hook to `~/.claude/settings.json` pointing at `rag-capture.sh` (deterministic — never calls `claude`). Add `RAG_CAPTURE_TRANSCRIPT_PATH=1` to also record the transcript *path* (pointer, not content):

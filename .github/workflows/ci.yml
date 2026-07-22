@@ -31,6 +31,9 @@ jobs:
       - name: Engine docs are soft-wrapped
         run: ./bin/reflow.sh --check $(find . -type d -name .git -prune -o \( -name '*.md' -o -name '*.tmpl' \) -print)
 
+      - name: Usage docs cover all skills + no stale command refs
+        run: ./bin/lint-docs.sh
+
       - name: Scaffolder + lint smoke test
         run: |
           git config --global user.email ci@example.com
