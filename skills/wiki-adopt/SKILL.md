@@ -49,6 +49,8 @@ The front door for adopting **the wiki-engine loop** on a machine. It **converge
 
 4. **Point this session at the vault.** `export WIKI_PATH=<path>` for the remainder of the session (the shell-rc line only affects new shells). Confirm `ENGINE/bin/doctor.sh --wiki <path>` is clean.
 
+4b. **Offer to install external skill repos (this is what a cold machine needs).** The engine ships only its own skills; a consumer's extra skills live in a separate repo. Ask the user whether they have one to install on this machine (e.g. their personal skills repo). For each git remote they give, append a line `<git-remote> [<dir>]` to `~/.claude/skill-sources`, then run `ENGINE/bin/skill-sources.sh` — it clones each declared source and runs its `bin/link.sh` (which links that repo's skills and any session-check drop-in it ships). Recording the source is also what lets the session-start banner offer to (re)install it later if it's ever missing. Skip if they have none.
+
 5. **Seed it — run `wiki-onboard`.** Invoke the `wiki-onboard` skill now (same session) to distill existing native memories, ingest the repos you work in, and stub in-flight project pages against the chosen boundary. That skill owns the curation; don't duplicate it here.
 
 6. **Report.** Summarize what was created and wired, and tell the user the vault is live for the next session (new shell picks up `WIKI_PATH`; the always-on import loads the router automatically).

@@ -50,6 +50,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 | `reflow.sh` · `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` | Soft-wrap normalize · skills-catalog · projects-catalog · memory validation. |
 | `new-wiki.sh` | Scaffold a brand-new vault (see README). |
 | `link-skills.sh` | Symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them. The bootstrap that makes `/wiki-adopt` available on a fresh machine (idempotent; warn+skips a foreign slot, `--force` to repoint). |
+| `skill-sources.sh` | Clone + link a machine's declared **external** skill repos (`~/.claude/skill-sources`, `<git-remote> [dir]` lines); `--check` reports missing (no network). Generic — the machine declares repos; the engine names none. `wiki-adopt` seeds the file; the session banner offers to run this when a declared source is missing (the cold-machine "install my skills" path). |
 
 ## Setup & activation
 

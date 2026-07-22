@@ -73,6 +73,27 @@ $rest"
   done
 fi
 
+# declared external skill sources not yet installed — generic (reads ~/.claude/skill-sources;
+# NO network, dir-existence only). On a cold machine that declared a skill repo but hasn't
+# cloned it, this is what offers to pull it. The engine names no repo — the machine declares.
+SRC_FILE="$CFG/skill-sources"
+if [ -f "$SRC_FILE" ]; then
+  miss=""
+  while read -r remote dir _rest; do
+    case "$remote" in ''|'#'*) continue;; esac
+    [ -n "$dir" ] || dir="$HOME/Documents/repos/$(basename "$remote" .git)"
+    case "$dir" in "~/"*) dir="$HOME/${dir#\~/}";; esac
+    [ -d "$dir/.git" ] || miss="${miss:+$miss, }$(basename "$dir")"
+  done < "$SRC_FILE"
+  if [ -n "$miss" ]; then
+    summary="${summary:+$summary · }skills not installed: $miss"
+    action="${action}
+ACTION — declared skill source(s) not installed: $miss. Offer to run
+  $SCRIPT_DIR/skill-sources.sh
+which clones and links them (it reads ~/.claude/skill-sources). Confirm before running — it clones over the network."
+  fi
+fi
+
 # status-line cache — always (re)write so a resolved staleness clears a prior warning. ---
 # statusline.sh reads this: one line = the compact summary, empty file = all current.
 if mkdir -p "$(dirname "$CACHE")" 2>/dev/null; then
