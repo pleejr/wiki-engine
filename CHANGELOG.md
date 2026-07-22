@@ -4,7 +4,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [1.15.0] — 2026-07-22
+## [1.16.0] — 2026-07-22
+
+Minor — the session-start banner now nudges toward the `update` skill: a first-run "pick your skills" prompt and a staleness "catch up" hint, both computed **locally** (no fetch — offline-safe, no startup latency). Additive; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`bin/session-preflight.sh`** gains a deterministic skills catch-up nudge, active only when the `update` skill is installed (`~/.claude/skills/update`). Two local signals: **first run** (no `~/.claude/skill-tags`) → prompt the user to pick a skill set via `/update`; **staleness** (last catch-up older than `WIKI_CATCHUP_DAYS`, default 7) → suggest `/update`. No network — it reads two markers the `update` skill maintains (`skill-tags`, `.wiki-catchup`), so session start stays instant and works offline. Surfaces in the session banner (via the existing status cache) and as an ACTION/NOTE line for the assistant.
+
+
 
 Minor — adoption is now **idempotent**: a new `wire-machine.sh` converge verb wires a machine to an already-cloned vault (the second/Nth-machine path), and `wiki-adopt` is reframed from one-shot to re-run-safe. Additive; adopt with `bin/adopt.sh` or `update.sh`.
 
