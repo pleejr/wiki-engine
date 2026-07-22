@@ -45,7 +45,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 | `engine-version.sh` | Pinned vs latest engine tag (run by `wiki-context`). |
 | `adopt.sh` | Ensure the vault has the engine's current node folders (after a pin bump). |
 | `lint.sh` | Umbrella lint (memory + frontmatter + soft-wrap + catalog); `checkpoint` runs it. |
-| `reflow.sh` · `gen-skills-index.sh` · `lint-memory.sh` | Soft-wrap normalize · skills-catalog · memory validation. |
+| `reflow.sh` · `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` | Soft-wrap normalize · skills-catalog · projects-catalog · memory validation. |
 | `new-wiki.sh` | Scaffold a brand-new vault (see README). |
 | `link-skills.sh` | Symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them. The bootstrap that makes `/wiki-adopt` available on a fresh machine (idempotent; warn+skips a foreign slot, `--force` to repoint). |
 

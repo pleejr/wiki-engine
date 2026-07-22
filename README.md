@@ -17,7 +17,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
   - `session-preflight.sh` — SessionStart-hook version check: Claude Code (installed vs latest stable) + the pinned engine; on staleness prints an ACTION-REQUIRED block telling the assistant to ask before updating. Deterministic, never runs `claude`.
   - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
   - `lint.sh` — umbrella lint (memory + frontmatter-property + soft-wrap + catalog); `checkpoint` runs it.
-  - `gen-skills-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation, memory validation, soft-wrap normalization.
+  - `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation (skills + projects), memory validation, soft-wrap normalization.
 
 ## Prerequisites
 

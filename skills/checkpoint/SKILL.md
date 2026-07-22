@@ -24,13 +24,14 @@ Before editing any vault file, take an isolated working copy so a second concurr
 - Open/create `$WIKI_PATH/projects/<slug>.md` (frontmatter `type: project`, `status: active|paused|done`, `repos: [[...]]`).
 - **Overwrite** the **Current state** section with where things stand; update **Next steps**.
 - **Append** (never overwrite) to **Key decisions** if a decision was made.
+- Keep the page's frontmatter `status:` (`active|paused|done`) and one-line `summary:` current — these drive the generated `index.md` Projects buckets (§4). Closing a project = flip `status: done`.
 - Append one dated line to `$WIKI_PATH/log.md`, tagged with the project.
 
 ## 2. Distill memory (raw → curated)
 - Review what emerged this session — Claude Code's native per-project memory **and** any `$WIKI_PATH/raw/sessions/` entries auto-captured by `rag-capture.sh` — as raw input.
 - Promote **durable** facts into `$WIKI_PATH/memory/` notes with the right `type`: `preference` (how I work) · `decision` (a chosen path + why) · `lesson` (a hard-won rule).
 - Give each ≥2 `[[wikilinks]]`; mark any note it supersedes as `status: superseded`.
-- Add/refresh the `$WIKI_PATH/index.md` entry.
+- Add/refresh the `$WIKI_PATH/index.md` memory entry. For **project** pages, don't hand-edit the index Projects buckets — regenerate them from frontmatter: `$WIKI_PATH/engine/bin/gen-projects-index.sh --wiki "$WORK"` (splices between the `<!-- projects:start/end -->` sentinels, same pattern as the skills catalog).
 
 ## 3. Prune the raw source (keep the vault authoritative)
 - **Only after** a native note's durable content is captured in the vault, remove it from native memory (`~/.claude/projects/*/memory/*.md`) and drop its line from that dir's `MEMORY.md` index — so the vault is the single source of truth and native can't drift into a competing authority.
@@ -40,7 +41,7 @@ Before editing any vault file, take an isolated working copy so a second concurr
 - Deletion is a **guided in-session action** — confirm before removing. Never wire pruning to a hook or background spawn. See [[lesson-no-claude-in-hooks]].
 
 ## 4. Lint before finishing
-- Run `$WIKI_PATH/engine/bin/lint.sh --wiki "$WORK"` (the umbrella: memory notes + frontmatter-property validity + soft-wrap drift + skills-catalog drift), pointing it at the worktree from §0. Fix any failures before you consider the checkpoint done — don't commit a vault that fails lint.
+- Run `$WIKI_PATH/engine/bin/lint.sh --wiki "$WORK"` (the umbrella: memory notes + frontmatter-property validity + soft-wrap drift + skills-catalog drift + projects-catalog drift), pointing it at the worktree from §0. Fix any failures before you consider the checkpoint done — don't commit a vault that fails lint.
 
 ## 5. Refresh semantic recall (if enabled)
 - If the vault has a `.rag` index (`$WIKI_PATH/.rag/index.jsonl` exists), run `engine/bin/rag-build.sh` **against canonical `$WIKI_PATH` after the §0 worktree branch is integrated** (the `.rag/` index is untracked and lives only in the canonical checkout, not the worktree) so this session's new/updated notes are recallable next session. This closes the loop: `checkpoint` distills markdown → `rag-build` re-indexes it (incremental; only changed files re-embed) → `wiki-context` auto-recalls it. Skip if the vault has no index or the embedding endpoint is down — recall is optional; the map still works. Deterministic (a local embedding model, never `claude`), so it's safe here, but like everything else this is **in-session, never a hook**.
