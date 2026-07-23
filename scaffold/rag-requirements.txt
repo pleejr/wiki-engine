@@ -3,16 +3,14 @@
 # deliberately; doctor.sh reports drift + newer releases, Dependabot/the freshness CI
 # cron flag updates. To use a different embedder, set RAG_PIP_PKG (overrides this file).
 #
-# Targets Python 3.10–3.14 (verified install + bge-base 768-dim embed on 3.11, 3.13,
-# 3.14). Python 3.9 is EOL (2025-10) and unsupported — numpy>=2.1 dropped it. numpy is
-# split by an environment marker because no single release spans 3.10–3.14: 2.2.6 has
-# no 3.14 wheels, 2.5.x requires >=3.12. doctor.sh's checker evaluates the marker, so
-# only the line matching the venv's Python counts. On an out-of-range Python, use the
-# lightweight onnxruntime-free fallback:
+# Targets Python 3.12–3.14 (verified install + bge-base 768-dim embed on 3.13). Older
+# Pythons are unsupported: numpy 2.5.x requires >=3.12, so 3.11 and below are dropped in
+# favor of a single numpy pin (no environment-marker split — the old 3.10–3.11 line
+# carried a stale numpy). On an out-of-range Python, use the lightweight onnxruntime-free
+# fallback:
 #   RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M
 fastembed==0.8.0
 onnxruntime==1.27.0
-numpy==2.2.6; python_version < "3.12"
-numpy==2.5.1; python_version >= "3.12"
+numpy==2.5.1
 tokenizers==0.23.1
-huggingface_hub==1.23.0
+huggingface_hub==1.24.0
