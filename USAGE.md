@@ -32,6 +32,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 - **`wiki-onboard`** — one-time bulk seed of a fresh vault from existing native memory / repos / projects.
 - **`wiki-adopt`** — idempotent adoption: scaffold a new vault **or** wire an already-cloned one, then seed. The front door on any new machine; safe to re-run.
 - **`update`** — engine-only machine catch-up: report + offer an engine version bump (`doctor`/`update.sh`), converge wiring (`wire-machine`), relink the engine's own skills. Generic — it never touches a consumer's separate skill repos; a consumer surfaces its own catch-up via a `session-checks.d` drop-in (below).
+- **`crossover`** — migrate pages to a vault on another machine over a copy-paste channel (export → import → finalize), with sha256-verified soft-delete + tombstone reference sweep. The deliberate manual boundary crossing; nothing is deleted at the origin until a returned receipt's hash matches.
 
 ## Commands (`bin/` — deterministic, no LLM; set `$WIKI_PATH` or pass `--wiki DIR`)
 

@@ -4,6 +4,15 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.19.0] — 2026-07-23
+
+Minor — a new **`crossover`** skill + `bin/crossover.sh` tool for migrating vault pages to another vault that never shares a machine (the deliberate manual boundary crossing), over a copy-paste text channel with end-to-end integrity. Additive; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`skills/crossover/SKILL.md`** — three-mode handshake (export → import → finalize) with a scope-classification gate (move / copy / stay) so consumption machinery is never moved, and a copy mode for dual-purpose pages that must stay at the origin.
+- **`bin/crossover.sh`** — deterministic transport: `export` emits a base64 paste block (single-line, fence-safe) with a per-item sha256 + a batch bundle hash, secret-scanning each file first; `import` re-verifies every hash, writes files, flips `boundary:` to the destination's, and emits a receipt; `finalize` **soft-deletes only on a bundle-hash match** and sweeps `[[links]]` to dated tombstones (never a silent deletion). Per-batch `.crossover/` ledgers make a migration resumable; a lossy paste fails closed so it can never authorize a wipe. No `git`, no `claude` — the calling session commits removals through the normal branch→PR flow (git history is the recovery path).
+- Documented in `USAGE.md` (Skills) and listed in `README.md`.
+
 ## [1.18.1] — 2026-07-22
 
 Patch — bump the pinned RAG embedder deps and collapse the numpy environment-marker split by raising the supported Python floor to 3.12. Backwards-compatible for the vault (node model / frontmatter unchanged); a vault whose `.rag/venv` is on Python 3.11 or below must recreate it on 3.12+ (`rag-setup.sh --force`). Adopt with `bin/adopt.sh` or `update.sh`.
