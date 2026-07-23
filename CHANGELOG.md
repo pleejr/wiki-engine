@@ -4,6 +4,15 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.18.1] — 2026-07-22
+
+Patch — bump the pinned RAG embedder deps and collapse the numpy environment-marker split by raising the supported Python floor to 3.12. Backwards-compatible for the vault (node model / frontmatter unchanged); a vault whose `.rag/venv` is on Python 3.11 or below must recreate it on 3.12+ (`rag-setup.sh --force`). Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Changed
+- **`scaffold/rag-requirements.txt`** — single `numpy==2.5.1` (was a 3.10–3.11 `2.2.6` / ≥3.12 `2.5.1` marker split; the old `<3.12` line carried a stale numpy `doctor.sh` kept flagging as a pending bump). `huggingface_hub` 1.23.0 → 1.24.0. Now targets Python 3.12–3.14 (verified install + bge-base 768-dim embed on 3.13); 3.11 and below are dropped because numpy 2.5.x requires >=3.12.
+- **`bin/rag-setup.sh`** — the self-healing interpreter floor `MIN_PY` is 3.10 → 3.12; the `choose_python` candidate list and the out-of-range hint/message strings are updated to 3.12–3.14 to match.
+- **`README.md`** — the RAG prerequisite is updated to Python 3.12–3.14.
+
 ## [1.18.0] — 2026-07-22
 
 Minor — a generic **external skill-source** mechanism so a machine can declare (and be offered) skill repos beyond the engine's own. Closes the cold-machine gap: a fresh machine with no skills cloned now gets offered to install them. Additive; adopt with `bin/adopt.sh` or `update.sh`.
