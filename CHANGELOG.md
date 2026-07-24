@@ -4,6 +4,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+Minor — a **`verified:` correctness signal** distinct from freshness, plus a reporter (the pleejr-wiki *engine-evidence-verified* project). Additive; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`verified:` frontmatter convention** (SCHEMA.md) — an optional block (`date` / `by` / `against`) asserting a human or agent confirmed a page's content correct, separate from freshness (`sources.sha` vs `HEAD`). A page can be fresh-but-unverified or verified-but-stale. **Invalidation is by provenance, not a clock:** a repo page's stamp is *current* only while `verified.against == sources.sha`, so a `wiki-repo` refresh auto-demotes it to stale — the signal can't outlive the content it vouched for, and the check stays offline/deterministic.
+- **`bin/verify-status.sh`** — reports verified / stale / unverified across `repos/` pages (plus any opt-in non-repo page carrying a `verified:` block). `--todo` emits the slugs needing a pass (the drainable work-list the upkeep loop will consume); `--check` exits 1 if any repo page is unverified or stale. No network, no `claude`.
+
 ## [1.20.0] — 2026-07-24
 
 Minor — `bin/lint.sh` gains two **vault-invariant gates** so the umbrella lint doubles as an enforced write-time gate (the first increment of the pleejr-wiki *engine-gates-at-zero* project: hold invariants at zero, no warn-baseline). Additive and backwards-compatible for any vault that already satisfies them; adopt with `bin/adopt.sh` or `update.sh`.
