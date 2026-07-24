@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+Minor — `bin/lint.sh` gains two **vault-invariant gates** so the umbrella lint doubles as an enforced write-time gate (the first increment of the pleejr-wiki *engine-gates-at-zero* project: hold invariants at zero, no warn-baseline). Additive and backwards-compatible for any vault that already satisfies them; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`bin/lint.sh`** — two new checks, both hard errors (exit 1):
+  - **boundary present** — every content-node page (the non-`raw/` node folders enumerated in `scaffold/node-dirs.txt`) must declare a `boundary:` in frontmatter. Generalizes the memory-only boundary check to projects/repos/concepts/entities/notes/comparisons/queries; root hubs (`CLAUDE.md`/`index.md`/`log.md`/`README.md`) and `raw/` captures are exempt (not nodes).
+  - **provenance present** — every `repos/` page must carry a `sources:` block with `ref:` + `sha:`, so freshness (recorded vs live `HEAD`) stays checkable.
+  - Both are universal invariants (no consumer-specific values), so they ship engine-default-on. Consumer-specific gates — a foreign-boundary denylist and link-integrity with a stub allowlist — are deferred behind a vault seam (they need per-vault config + a stub-vs-broken-link rule).
+
 ## [1.19.2] — 2026-07-24
 
 Patch — make the `crossover` payload survive real copy-paste. v1.19.0 emitted each file's base64 as one multi-thousand-character line, which terminals/chat clients mangle or truncate. Backwards-compatible on import; adopt with `bin/adopt.sh` or `update.sh`.

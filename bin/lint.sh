@@ -7,6 +7,18 @@
 #   3. soft-wrap drift       — reflow.sh --check (hard wraps that would render broken)
 #   4. skills catalog drift  — gen-skills-index.sh --check
 #   5. projects catalog drift — gen-projects-index.sh --check
+#   6. boundary present      — every content-node page (the non-raw node folders in
+#                              scaffold/node-dirs.txt) declares a boundary: — the
+#                              first line of defense for the vault's boundary rule
+#   7. provenance present    — every repos/ page carries a sources: block with
+#                              ref: + sha: (a version-keyed node must record what it
+#                              was ingested from, so freshness is checkable)
+#
+# Checks 6–7 are vault-invariant GATES: they must hold at zero, so lint.sh doubles
+# as the enforced write-time gate (vault CI + pre-commit) — see the pleejr-wiki
+# engine-gates-at-zero project. Universal invariants (no consumer-specific values),
+# so they ship engine-default-on; consumer-specific gates (a foreign-boundary
+# denylist, link-integrity with a stub allowlist) land later behind a vault seam.
 #
 # Exit 1 if any check fails.
 #
@@ -87,6 +99,61 @@ section "skills catalog"
 # 5. projects catalog drift -----------------------------------------------------
 section "projects catalog"
 "$SCRIPT_DIR/gen-projects-index.sh" --check --wiki "$WIKI" || rc=1
+
+# content-node pages: the flat, non-raw node folders the engine defines as the
+# vault's curated nodes. Root hubs (CLAUDE.md/index.md/log.md/README.md) and raw/
+# captures are deliberately NOT nodes, so they're exempt from the node invariants.
+NODE_DIRS=()
+NODE_DIRS_FILE="$SCRIPT_DIR/../scaffold/node-dirs.txt"
+if [ -f "$NODE_DIRS_FILE" ]; then
+  while IFS= read -r d; do
+    case "$d" in ''|'#'*|raw/*) continue;; esac
+    NODE_DIRS+=("$d")
+  done < "$NODE_DIRS_FILE"
+fi
+
+# read a page's frontmatter (between the first two --- fences) into a check.
+# fm_has KEY FILE  → true if a frontmatter line matches ^[ \t]*KEY (KEY a regex-safe literal)
+fm_has() {
+  awk -v key="$1" '
+    NR==1 && $0=="---" { infm=1; next }
+    infm && $0=="---"  { exit }
+    infm && $0 ~ ("^[ \t]*" key) { found=1; exit }
+    END { exit !found }
+  ' "$2"
+}
+
+# 6. boundary present on every content-node page --------------------------------
+section "boundary present"
+bp=0
+for d in "${NODE_DIRS[@]}"; do
+  for f in "$WIKI/$d"/*.md; do
+    [ -f "$f" ] || continue
+    if ! fm_has "boundary:" "$f"; then
+      printf '  ✗ %s — no boundary: in frontmatter\n' "${f#$WIKI/}"; bp=1; rc=1
+    fi
+  done
+done
+[ "$bp" -eq 0 ] && echo "ok: every content-node page declares a boundary"
+
+# 7. provenance present on every repo page --------------------------------------
+# A repos/ page is version-keyed: it must record a sources: block with ref: + sha:
+# so freshness (recorded ref/sha vs live HEAD) is checkable.
+section "provenance present"
+pp=0
+if [ -d "$WIKI/repos" ]; then
+  for f in "$WIKI/repos"/*.md; do
+    [ -f "$f" ] || continue
+    miss=""
+    fm_has "sources:" "$f" || miss="sources:"
+    fm_has "ref:"     "$f" || miss="$miss ref:"
+    fm_has "sha:"     "$f" || miss="$miss sha:"
+    if [ -n "$miss" ]; then
+      printf '  ✗ %s — missing provenance:%s\n' "${f#$WIKI/}" " $miss"; pp=1; rc=1
+    fi
+  done
+fi
+[ "$pp" -eq 0 ] && echo "ok: every repo page carries sources: ref/sha provenance"
 
 echo
 [ "$rc" -eq 0 ] && echo "lint: all checks passed" || echo "lint: FAILURES above"
