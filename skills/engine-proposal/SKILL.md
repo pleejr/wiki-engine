@@ -1,8 +1,8 @@
 ---
 name: engine-proposal
-description: This skill should be used when a wiki-engine CONSUMER vault discovers an engine improvement during normal work and wants to hand it UPSTREAM to the engine-dev vault — genericized and boundary-scrubbed so no consumer-private context leaks, and without creating any node in the consumer vault. It strips consumer identifiers (vault/org/repo names, usernames, emails, absolute paths, values, secrets), restates the problem in engine-generic terms, runs a deterministic boundary scan, and emits a self-contained copy-pastable kickoff block the engine-dev session can act on with zero consumer-vault access. Triggers: "engine-proposal", "propose an engine change", "propose this upstream", "send this idea to the engine-dev vault", "package this as an engine improvement", "scrub this and hand it to the engine", "this should live in the engine, not here". Distinct from crossover (which MOVES an existing canonical vault page to another vault with sha256 integrity + soft-delete + tombstones) — engine-proposal ORIGINATES a new, forward-only idea that never was and shouldn't become a consumer node: no integrity handshake, no origin deletion; the only shared surface is the boundary gate. Distinct from checkpoint (which curates content INTO this vault) — engine-proposal creates no consumer node by default. NOT for moving an existing note between vaults (use crossover) or recording a decision/lesson in this vault (use checkpoint).
+description: This skill should be used on BOTH ends of a wiki-engine improvement handoff. On the CONSUMER end: a vault discovers an engine improvement during normal work and hands it UPSTREAM to the engine-dev vault — genericized and boundary-scrubbed so no consumer-private context leaks, and without creating any node in the consumer vault. It strips consumer identifiers (vault/org/repo names, usernames, emails, absolute paths, values, secrets), restates the problem in engine-generic terms, runs a deterministic boundary scan, and emits a self-contained copy-pastable kickoff block. On the ENGINE-DEV end (intake): it drives a critical design-review pass over an arriving proposal before any shape is chosen, then files the project and records which findings were accepted or rejected. Triggers: "engine-proposal", "propose an engine change", "propose this upstream", "send this idea to the engine-dev vault", "package this as an engine improvement", "scrub this and hand it to the engine", "this should live in the engine, not here", "act on this proposal", "intake this engine proposal", "here is a HANDOFF block". Distinct from crossover (which MOVES an existing canonical vault page to another vault with sha256 integrity + soft-delete + tombstones) — engine-proposal ORIGINATES a new, forward-only idea that never was and shouldn't become a consumer node: no integrity handshake, no origin deletion; the only shared surface is the boundary gate. Distinct from checkpoint (which curates content INTO this vault) — engine-proposal creates no consumer node by default. NOT for moving an existing note between vaults (use crossover) or recording a decision/lesson in this vault (use checkpoint).
 status: active
-summary: "genericize + boundary-scrub a consumer vault's engine-improvement idea into a self-contained, scan-verified kickoff block for the engine-dev vault; creates no consumer node."
+summary: "genericize + boundary-scrub a consumer vault's engine-improvement idea into a self-contained, scan-verified kickoff block for the engine-dev vault (creates no consumer node); on the engine-dev end, design-review the arriving proposal before building."
 updated: 2026-07-24
 used_by: []
 ---
@@ -81,8 +81,33 @@ Any finding → revise the block (return to §2) and re-scan. Do not hand off un
 - **Optional** traceability only: `engine-proposal.sh stash --vault "$WIKI_PATH" --slug <slug>` writes the block to `.engine-proposal/<slug>.outbox` (git-ignored scratch). This is the *only* file this skill may create in the consumer vault — never a project or memory page.
 - Do **not** run checkpoint and do **not** create a project/memory/lesson node here. The engine-dev vault owns the resulting project, notes, lessons, and skill.
 
+## 6. Intake — receiving a proposal (engine-dev session)
+
+The other end of the handoff. A proposal arrives as a `HANDOFF` block; it is the **design input for the build**, so review it *before* choosing a shape — a gap found here costs a paragraph, the same gap found mid-build costs a format change with artifacts already in flight.
+
+**When to review.** Run the pass when the proposal touches a **wire/file format, a protocol, an on-disk contract, or a safety gate**, or when it flips a default. Skip it for additive doc/skill-text or a one-line fix — this is a gate on expensive-to-revise decisions, not a tax on every idea.
+
+**How to review.** Use a rigorous critique skill if this vault has one installed — check `~/.claude/skills/scrutinize` (this vault's is `scrutinize`; a vault may install it under another name, and the engine depends on none of them):
+
+```bash
+[ -e ~/.claude/skills/scrutinize ] && echo "review skill available" || echo "use the checklist below"
+```
+
+If none is installed, do the pass inline against this checklist — it is deliberately generic, and each line is a gap a real proposal has actually shipped with:
+
+- **Missing receiver state** — what must the *other* end know that the proposal never names? (identity, ordering, the shape of the whole from one part)
+- **Repeat / out-of-order / partial arrival** — is the operation idempotent? Does replaying a step *regress* something already good? A repair path that degrades on retry is worse than the failure it repairs.
+- **The new metadata's own failure** — if the field the design adds is itself damaged or absent, does the gate still fail closed, or does it silently trust the damage?
+- **Backwards compatibility** — what happens to artifacts already in flight from the previous version?
+- **Evidence vs mechanism** — does the cited evidence actually support the proposed axis? (a volume-driven failure is not fixed by a per-item size threshold)
+- **Defaults + capability** — what does the *default* do after the change, and does the escape hatch preserve the old behavior rather than remove it?
+- **Unverifiable criteria** — which acceptance criteria can't be mechanically checked as written?
+
+**Then file it.** Create the project page under the proposal's slug, carrying its evidence and acceptance criteria; record the review's accepted *and* rejected findings in the project's **Key decisions** (append-only), so the reasoning survives the session. Build, ship, release — consumer vaults receive it on their next `update`.
+
 ## Notes
 
 - **Forward-only.** The idea never was a consumer node, so there is nothing to delete and no receipt to match — the only surface shared with crossover is the boundary gate, which is why this is a separate skill rather than a crossover mode.
+- **The review belongs at intake, not authoring.** The consumer's gate is the mechanical boundary scan; a design critique there is produced by the same model that just wrote the idea, in private context, and yields findings that can't travel in a forward-only block. The engine-dev end reviews the genericized artifact — which is what actually gets built.
 - **Self-seeding.** The first artifact this skill would have produced is the proposal that created the skill itself; thereafter consumers use the skill instead of hand-authoring.
 - In-session only; never wire into a hook. See [[lesson-no-claude-in-hooks]].

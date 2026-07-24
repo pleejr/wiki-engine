@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.25.0] — 2026-07-24
+
+Minor — `engine-proposal` gains the **intake** half: what the engine-dev end does with an arriving proposal, starting with a design-review pass *before* a shape is chosen. Additive (skill text only); adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`skills/engine-proposal/SKILL.md` §6 Intake (engine-dev session)** — the skill previously documented only the authoring half, so intake was ad hoc: the receiving session went straight from a `HANDOFF` block to building. A proposal *is* the design input for the build, and a gap found at intake costs a paragraph while the same gap found mid-build costs a format change with artifacts already in flight. The v1.24.0 crossover work is the worked example: the proposal never named how a destination holding one block learns the batch's shape (→ the `##MANIFEST`), nor that a re-paste of a landed block must be idempotent (the naive accumulator regresses a verified item to `exists-skipped` — a repair path that degrades on retry), nor what happens when the new metadata is itself damaged. All three change the wire format.
+  - **Gated, not universal** — run the pass when a proposal touches a wire/file format, a protocol, an on-disk contract, or a safety gate, or when it flips a default; skip it for additive doc/skill-text.
+  - **Named skill, generic fallback** — it points at a rigorous critique skill by name (`scrutinize`) behind an existence check (`~/.claude/skills/scrutinize`), and carries an inline, engine-generic checklist for vaults that install no such skill. The engine therefore *composes* the review without *depending* on a consumer skill (cf. the generic-seam rule) — a named hint, never a hard requirement.
+  - Findings, **accepted and rejected**, are recorded in the resulting project's Key decisions; the description gained intake triggers ("act on this proposal", "here is a HANDOFF block") so the skill fires on the receiving end too.
+
 ## [1.24.0] — 2026-07-24
 
 Minor — **`crossover export` now emits one transport block per item by default**, so the reliable copy-paste path is the default one. Backwards-compatible on import (blocks from older engines still import); adopt with `bin/adopt.sh` or `update.sh`.
