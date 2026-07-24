@@ -4,7 +4,7 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.22.0] — 2026-07-24
 
 Minor — a **`verify`** skill that packages the verification-pass procedure the v1.21.0 tools (`verify-status.sh`, `upkeep.sh`) enabled. Additive; adopt with `bin/adopt.sh` or `update.sh`.
 
