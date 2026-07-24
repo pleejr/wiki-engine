@@ -34,6 +34,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 - **`wiki-adopt`** — idempotent adoption: scaffold a new vault **or** wire an already-cloned one, then seed. The front door on any new machine; safe to re-run.
 - **`update`** — engine-only machine catch-up: report + offer an engine version bump (`doctor`/`update.sh`), converge wiring (`wire-machine`), relink the engine's own skills. Generic — it never touches a consumer's separate skill repos; a consumer surfaces its own catch-up via a `session-checks.d` drop-in (below).
 - **`crossover`** — migrate pages to a vault on another machine over a copy-paste channel (export → import → finalize), with sha256-verified soft-delete + tombstone reference sweep. The deliberate manual boundary crossing; nothing is deleted at the origin until a returned receipt's hash matches.
+- **`engine-proposal`** — genericize + boundary-scrub a *consumer* vault's engine-improvement idea into a self-contained, scan-verified kickoff block for the engine-dev vault. Forward-only: originates a new idea (never a consumer node), so unlike `crossover` there is no integrity handshake and nothing is deleted — the only shared surface is the boundary gate.
 
 ## Commands (`bin/` — deterministic, no LLM; set `$WIKI_PATH` or pass `--wiki DIR`)
 
@@ -51,6 +52,8 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 | `lint.sh` | Umbrella lint + write-time **gate** (memory + frontmatter + soft-wrap + catalog + boundary-present + provenance-present); `checkpoint`, a pre-commit hook, and vault CI all run it. |
 | `verify-status.sh` | Report the `verified:` correctness signal across repo pages (verified / stale / unverified); `--todo` emits the drainable work-list, `--check` gates. |
 | `upkeep.sh` | Drainable maintenance queue (`.upkeep/queue.tsv`): `scan` builds it (stale repo pages + un-verified pages), `next`/`done` drain it one item per iteration. In-session/human-driven — no `claude` spawn; re-entry sentinel + lock guard any future automated driver. |
+| `crossover.sh` | Deterministic transport for the `crossover` skill: `export`/`import`/`finalize` a batch of pages between vaults with sha256 integrity + a secret-scan; only a hash-matched receipt authorizes the origin soft-delete. |
+| `engine-proposal.sh` | Boundary gate for the `engine-proposal` skill: `scan` a drafted handoff block against the consumer vault's own identifiers (slug/dir/git user), home paths, emails, non-generic boundary tags, and secret assignments (fail-closed); `stash` writes a git-ignored `.engine-proposal/<slug>.outbox` scratch copy. No `claude`, no node creation. |
 | `reflow.sh` · `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` | Soft-wrap normalize · skills-catalog · projects-catalog · memory validation. |
 | `new-wiki.sh` | Scaffold a brand-new vault (see README). |
 | `link-skills.sh` | Symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them. The bootstrap that makes `/wiki-adopt` available on a fresh machine (idempotent; warn+skips a foreign slot, `--force` to repoint). |

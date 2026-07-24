@@ -7,7 +7,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 ## Features
 
 - **Curated knowledge graph** — a typed node model (repo · project · skill · memory, plus concepts/entities/comparisons/queries/notes) linked by `[[wikilinks]]`, with the right freshness signal per node type. Full model in `SCHEMA.md`.
-- **In-session maintenance skills** — `wiki-context` (index-first context router), `wiki-repo` (ingest/refresh a repo page with git-ref provenance), `checkpoint` (end-of-session curate + log), `wiki-onboard`/`wiki-adopt` (bootstrap), `crossover` (integrity-checked page migration between vaults). No orchestrator — driven by Claude Code.
+- **In-session maintenance skills** — `wiki-context` (index-first context router), `wiki-repo` (ingest/refresh a repo page with git-ref provenance), `checkpoint` (end-of-session curate + log), `wiki-onboard`/`wiki-adopt` (bootstrap), `crossover` (integrity-checked page migration between vaults), `engine-proposal` (boundary-scrub a consumer's engine-improvement idea into a handoff block for the engine-dev vault). No orchestrator — driven by Claude Code.
 - **One-command adoption & wiring** — scaffold a new vault (`new-wiki.sh`) or wire an existing one onto a new machine (`wire-machine.sh`), idempotently; the engine is pinned per-vault as a submodule so updates never silently drift.
 - **Write-time invariant gates (held at zero)** — `lint.sh` enforces vault invariants — memory schema, frontmatter, soft-wrap, catalog drift, **boundary present on every node**, **provenance present on every repo page** — as a hard gate wired into CI + a pre-commit hook, not an honor-system lint.
 - **Freshness *and* correctness signals** — provenance freshness (`sources.sha` vs `HEAD`) tells you nothing *changed*; the `verified:` signal (`verify-status.sh`) records that someone *confirmed the content correct*, and is invalidated by provenance (a refresh auto-demotes a stale stamp), not a clock.
@@ -17,7 +17,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 
 ## What's here
 
-- `skills/` — the Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`, `update`, `crossover`.
+- `skills/` — the Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`, `update`, `verify`, `crossover`, `engine-proposal`.
 - `SCHEMA.md` — node model, three layers, page conventions, memory lifecycle.
 - `CLAUDE.md` — generic context router a wiki imports from its own thin `CLAUDE.md`.
 - `bin/` — deterministic maintenance tools (no LLM):

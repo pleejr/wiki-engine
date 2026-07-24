@@ -4,6 +4,15 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.23.0] — 2026-07-24
+
+Minor — a new **`engine-proposal`** skill: a boundary-safe channel for a *consumer* vault to propose an engine improvement upstream to the engine-dev vault. Additive; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`engine-proposal` skill** — genericizes + boundary-scrubs a consumer vault's engine-improvement idea into a self-contained, copy-pastable kickoff block the engine-dev session can act on with **zero** consumer-vault access, and creates **no node** in the consumer vault. Solves the recurring leak: a consumer keeps discovering engine ideas soaked in private/domain context, and hand-scrubbing them for handoff is inconsistent and misses identifiers. Forward-only — it *originates* a new idea that never was a consumer node — so unlike `crossover` there is no integrity handshake and nothing is deleted; the two skills share only the boundary gate, and both descriptions carry a mutual disambiguation clause.
+- **`bin/engine-proposal.sh`** — the deterministic gate the skill leans on. `scan` derives the consumer's own identifiers from the vault (git remote slug, directory name, git `user.name`/`user.email`) and flags any literal appearance in a drafted block, plus universal private-shaped patterns (home paths, emails, a non-generic `boundary:` tag, and secret assignments — reusing the `crossover` secret-scan shape); it **fails closed** (exit 1) so a scrub the model believed clean can't silently ship a leak. `stash` writes an optional git-ignored `.engine-proposal/<slug>.outbox` scratch copy for traceability (self-heals the vault's `.gitignore`). No `claude`, no network, no node creation; in-session only.
+- **`scaffold/gitignore.tmpl`** — ignores the transient `.engine-proposal/` outbox on new vaults (the `stash` subcommand appends it to an existing vault's `.gitignore`).
+
 ## [1.22.1] — 2026-07-24
 
 Patch — `bin/upkeep.sh` stale-detection is now **tag-aware**, plus a latent frontmatter-parse fix. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
