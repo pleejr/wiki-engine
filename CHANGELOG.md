@@ -6,11 +6,12 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-Minor — a **`verified:` correctness signal** distinct from freshness, plus a reporter (the pleejr-wiki *engine-evidence-verified* project). Additive; adopt with `bin/adopt.sh` or `update.sh`.
+Minor — the two remaining legs of the vault-upkeep trilogy: a **`verified:` correctness signal** (*engine-evidence-verified*) and a **drainable upkeep queue** (*engine-drainable-upkeep-loop*). Additive; adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Added
 - **`verified:` frontmatter convention** (SCHEMA.md) — an optional block (`date` / `by` / `against`) asserting a human or agent confirmed a page's content correct, separate from freshness (`sources.sha` vs `HEAD`). A page can be fresh-but-unverified or verified-but-stale. **Invalidation is by provenance, not a clock:** a repo page's stamp is *current* only while `verified.against == sources.sha`, so a `wiki-repo` refresh auto-demotes it to stale — the signal can't outlive the content it vouched for, and the check stays offline/deterministic.
-- **`bin/verify-status.sh`** — reports verified / stale / unverified across `repos/` pages (plus any opt-in non-repo page carrying a `verified:` block). `--todo` emits the slugs needing a pass (the drainable work-list the upkeep loop will consume); `--check` exits 1 if any repo page is unverified or stale. No network, no `claude`.
+- **`bin/verify-status.sh`** — reports verified / stale / unverified across `repos/` pages (plus any opt-in non-repo page carrying a `verified:` block). `--todo` emits the slugs needing a pass (the drainable work-list the upkeep loop consumes); `--check` exits 1 if any repo page is unverified or stale. No network, no `claude`.
+- **`bin/upkeep.sh`** — a drainable maintenance queue where a live artifact (`.upkeep/queue.tsv`) IS the work-list: `scan` (re)builds it from vault state — stale repo pages (recorded `sources.sha` ≠ local clone HEAD) + un-verified pages (via `verify-status.sh --todo`); `next`/`done` drain it one item per iteration until empty. **Honors the no-`claude`-in-hooks rule structurally:** increment 1 has no spawn (the in-session agent or a human drives next→act→done), and a re-entry sentinel (`UPKEEP_DEPTH`) + an atomic mkdir lock are in place to bound any future automated driver, which must stay human/cron-initiated, sentinel-guarded, and terminating (never self-requeue). `.upkeep/` is git-ignored (derived, rebuildable).
 
 ## [1.20.0] — 2026-07-24
 
