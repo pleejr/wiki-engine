@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.19.2] — 2026-07-24
+
+Patch — make the `crossover` payload survive real copy-paste. v1.19.0 emitted each file's base64 as one multi-thousand-character line, which terminals/chat clients mangle or truncate. Backwards-compatible on import; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Changed
+- **`bin/crossover.sh`** — export now writes the payload as **64-column wrapped base64** between a `##DATA` marker and the next item marker, instead of one long `data <b64>` line. Import accumulates the wrapped lines and **strips any stray whitespace/CR** before decoding, so a reflowed or re-indented paste still reconstructs the exact bytes (verified: a deliberately whitespace-mangled block decodes identically). The legacy single-line `data` form is still accepted on import for any block already in flight.
+
 ## [1.19.1] — 2026-07-24
 
 Patch — tighten the `crossover` export secret-scan, which was too broad: it matched the bare words `secret`/`token`/`password` anywhere, so a workflow note that merely *discusses* secrets in prose (e.g. "secrets are never synced") was wrongly refused. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
