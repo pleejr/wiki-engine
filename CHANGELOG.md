@@ -4,6 +4,11 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Fixed
+- **Ephemeral vaults no longer pollute a machine's real `~/.claude/settings.json`.** The `SessionStart` boot path self-installs its own hook through the add-only `ensure-hook.sh`, whose dedup keys on the *exact* command string — and that command embeds `WIKI_PATH=<vault>`. So scaffolding/adopting a *throwaway* vault (test, CI, scratchpad) against the default settings target wrote a **unique, un-reapable** boot hook into the user's live settings; each such run left a permanent extra entry, and every one fired its own preflight banner at session start (six-plus duplicate banners observed). `adopt.d/10-session-boot-hook.sh` now **skips wiring** when the vault lives under an ephemeral root (`$TMPDIR`, `/private/tmp`, `/tmp`, `/var/folders`, `*/scratchpad/*`) **unless** the caller isolated `CLAUDE_SETTINGS` to its own file — so a real vault still wires, an isolated test still writes to its temp file, and an un-isolated throwaway wires nothing. The CI smoke test now exports `CLAUDE_SETTINGS="$RUNNER_TEMP/settings.json"` so the recipe is safe to copy-paste locally. See [[lesson-ephemeral-vault-settings-pollution]].
+
 ## [1.22.1] — 2026-07-24
 
 Patch — `bin/upkeep.sh` stale-detection is now **tag-aware**, plus a latent frontmatter-parse fix. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.

@@ -12,6 +12,16 @@ set -uo pipefail
 
 : "${WIKI:?}"; : "${ENGINE:?}"; : "${ENSURE_HOOK:?}"
 
+# Never wire a REAL ~/.claude/settings.json boot hook for an EPHEMERAL vault (test / CI /
+# scratchpad). ensure-hook keys the boot command on WIKI_PATH, so a throwaway vault leaves a
+# permanent, un-dedupable SessionStart hook that fires an extra banner every session. If the
+# caller isolated CLAUDE_SETTINGS to its own temp file, wiring is safe (it lands there);
+# otherwise skip silently. See [[lesson-ephemeral-vault-settings-pollution]].
+case "$WIKI" in
+  "${TMPDIR:-/nonexistent-tmpdir}"*|/private/tmp/*|/tmp/*|/var/folders/*|*/scratchpad/*)
+    [ -n "${CLAUDE_SETTINGS:-}" ] || exit 0 ;;
+esac
+
 cmd="WIKI_PATH=$WIKI $ENGINE/bin/session-boot.sh"
 
 "$ENSURE_HOOK" \

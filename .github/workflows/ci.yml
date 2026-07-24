@@ -39,6 +39,10 @@ jobs:
           git config --global user.email ci@example.com
           git config --global user.name CI
           git config --global protocol.file.allow always
+          # Isolate settings so the wire/adopt path never mutates the real ~/.claude/settings.json.
+          # ensure-hook keys the boot hook on WIKI_PATH; a throwaway vault would otherwise leave a
+          # permanent, un-dedupable SessionStart hook. Keep this export when copying the recipe locally.
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings.json"
           VAULT="$RUNNER_TEMP/testvault"
           ./bin/new-wiki.sh --path "$VAULT" --boundary personal \
             --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills --no-rag
