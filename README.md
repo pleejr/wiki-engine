@@ -4,6 +4,17 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 
 **Day-to-day usage: `USAGE.md`.** Full spec: `SCHEMA.md`. Releases: `CHANGELOG.md`.
 
+## Features
+
+- **Curated knowledge graph** — a typed node model (repo · project · skill · memory, plus concepts/entities/comparisons/queries/notes) linked by `[[wikilinks]]`, with the right freshness signal per node type. Full model in `SCHEMA.md`.
+- **In-session maintenance skills** — `wiki-context` (index-first context router), `wiki-repo` (ingest/refresh a repo page with git-ref provenance), `checkpoint` (end-of-session curate + log), `wiki-onboard`/`wiki-adopt` (bootstrap), `crossover` (integrity-checked page migration between vaults). No orchestrator — driven by Claude Code.
+- **One-command adoption & wiring** — scaffold a new vault (`new-wiki.sh`) or wire an existing one onto a new machine (`wire-machine.sh`), idempotently; the engine is pinned per-vault as a submodule so updates never silently drift.
+- **Write-time invariant gates (held at zero)** — `lint.sh` enforces vault invariants — memory schema, frontmatter, soft-wrap, catalog drift, **boundary present on every node**, **provenance present on every repo page** — as a hard gate wired into CI + a pre-commit hook, not an honor-system lint.
+- **Freshness *and* correctness signals** — provenance freshness (`sources.sha` vs `HEAD`) tells you nothing *changed*; the `verified:` signal (`verify-status.sh`) records that someone *confirmed the content correct*, and is invalidated by provenance (a refresh auto-demotes a stale stamp), not a clock.
+- **Drainable upkeep queue** — `upkeep.sh` turns "what needs maintaining" (stale repo pages + un-verified pages) into a live work-list you drain one item at a time; spawn-free and bounded by the no-`claude`-in-hooks guards.
+- **Optional local semantic recall** — a self-contained CPU embedder (`.rag/`, fastembed + bge, no server/GPU/cloud) plus deterministic session auto-capture; the vault works fully without it.
+- **Versioned & CI-gated** — SemVer tags + `CHANGELOG.md`, engine CI on every push, a weekly RAG-dep freshness cron, and tag-aware update tooling (`doctor.sh`/`update.sh`) that refuses breaking bumps.
+
 ## What's here
 
 - `skills/` — the Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`, `update`, `crossover`.
@@ -18,7 +29,8 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
   - `engine-version.sh` · `doctor.sh` · `update.sh` — freshness of consumed components: pinned vs latest engine; full health report (engine + RAG deps + security + model); one-step update (same-MAJOR).
   - `session-preflight.sh` — SessionStart-hook version check: Claude Code (installed vs latest stable) + the pinned engine; on staleness prints an ACTION-REQUIRED block telling the assistant to ask before updating. Deterministic, never runs `claude`.
   - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
-  - `lint.sh` — umbrella lint (memory + frontmatter-property + soft-wrap + catalog); `checkpoint` runs it.
+  - `lint.sh` — umbrella lint **and write-time gate** (memory + frontmatter-property + soft-wrap + catalog + boundary-present + provenance-present); `checkpoint`, a pre-commit hook, and vault CI run it.
+  - `verify-status.sh` · `upkeep.sh` — the `verified:` correctness reporter (verified/stale/unverified, `--todo`, `--check`), and the drainable upkeep queue (`scan`/`next`/`done`) it feeds.
   - `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation (skills + projects), memory validation, soft-wrap normalization.
 
 ## Prerequisites
