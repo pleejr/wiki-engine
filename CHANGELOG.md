@@ -4,6 +4,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+Patch — `bin/upkeep.sh` stale-detection is now **tag-aware**, plus a latent frontmatter-parse fix. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **Tag-aware refresh detection** — a *tagged* repo page (`sources.ref` != `sources.sha`) now compares its recorded ref against the clone's latest tag (`git describe --tags --abbrev=0`), so a clone sitting a commit past the release tag (e.g. a docs-only commit) is no longer flagged as a false-positive `refresh`. *Untagged* pages (`ref == sha`) still compare sha vs `HEAD`. Fixes the spurious `refresh:wiki-engine` the drainable-upkeep loop surfaced.
+- **`sources.repo`/`ref`/`sha` extraction handles the block-list dash form** (`  - repo: x` with the key on the list-item line), not only a key on its own indented line. Previously a page whose slug differed from its repo name resolved to the wrong clone (or none) — masked only because every current page's slug equals its repo name.
+
 ## [1.22.0] — 2026-07-24
 
 Minor — a **`verify`** skill that packages the verification-pass procedure the v1.21.0 tools (`verify-status.sh`, `upkeep.sh`) enabled. Additive; adopt with `bin/adopt.sh` or `update.sh`.

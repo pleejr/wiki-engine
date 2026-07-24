@@ -18,10 +18,13 @@
 # scan drained to empty — it NEVER self-requeues into a watch loop).
 #
 # Queue sources (kinds):
-#   refresh  — a repos/ page whose recorded sources.sha != its local clone's HEAD
-#              (best-effort, offline: compares against $UPKEEP_REPOS_ROOT/<repo>; a
-#              clone that is itself behind upstream can yield a false-negative —
-#              re-ingest with `wiki-repo` resolves both).
+#   refresh  — a repos/ page that has drifted from its local clone (best-effort,
+#              offline: compares against $UPKEEP_REPOS_ROOT/<repo>). TAG-AWARE:
+#              a tagged page (sources.ref != sources.sha) compares its recorded ref
+#              against the clone's latest tag — so a clone sitting a commit past the
+#              release tag isn't a false positive; an untagged page (ref == sha)
+#              compares sha vs the clone HEAD. A clone itself behind upstream can
+#              still yield a false-negative — `wiki-repo` re-ingest resolves both.
 #   verify   — a repos/ page that is un-verified or verified-stale (verify-status.sh --todo).
 #
 # Usage:
@@ -80,7 +83,7 @@ page_sha() {
     infm && $0=="---"  { exit }
     infm && /^sources:/       { blk=1; next }
     infm && /^[A-Za-z_]+:/    { blk=0 }
-    infm && blk && /^[ \t]+sha:/ { sub(/^[^:]*:[ \t]*/,""); gsub(/[" \t]/,""); print; exit }
+    infm && blk && /^[ \t]+(- )?sha:/ { sub(/^[^:]*:[ \t]*/,""); gsub(/[" \t]/,""); print; exit }
   ' "$1"
 }
 # frontmatter sources.repo (defaults to the page slug)
@@ -90,25 +93,53 @@ page_repo() {
     infm && $0=="---"  { exit }
     infm && /^sources:/       { blk=1; next }
     infm && /^[A-Za-z_]+:/    { blk=0 }
-    infm && blk && /^[ \t]+repo:/ { sub(/^[^:]*:[ \t]*/,""); gsub(/[" \t]/,""); print; exit }
+    infm && blk && /^[ \t]+(- )?repo:/ { sub(/^[^:]*:[ \t]*/,""); gsub(/[" \t]/,""); print; exit }
+  ' "$1"
+}
+# frontmatter sources.ref (the primary freshness signal; a tag for tagged repos,
+# else the same short sha as sources.sha for untagged ones)
+page_ref() {
+  awk '
+    NR==1 && $0=="---" { infm=1; next }
+    infm && $0=="---"  { exit }
+    infm && /^sources:/       { blk=1; next }
+    infm && /^[A-Za-z_]+:/    { blk=0 }
+    infm && blk && /^[ \t]+(- )?ref:/ { sub(/^[^:]*:[ \t]*/,""); gsub(/[" \t]/,""); print; exit }
   ' "$1"
 }
 
 build_rows() {
-  # refresh: stale repo pages (recorded sha != local clone HEAD)
+  # refresh: stale repo pages. TAG-AWARE — a repo page records ref (primary signal)
+  # + sha. If it's TAGGED (ref != sha), compare the recorded ref against the clone's
+  # latest tag, so a clone sitting a commit or two past the release tag (e.g. a
+  # docs-only commit) is NOT a false "stale". Only UNTAGGED pages (ref == sha, or no
+  # ref) fall back to comparing the recorded sha against the clone's HEAD.
   if [ -d "$WIKI/repos" ]; then
     for f in "$WIKI/repos"/*.md; do
       [ -f "$f" ] || continue
       slug="$(basename "$f" .md)"
-      rec="$(page_sha "$f")"; [ -n "$rec" ] || continue
+      rec_sha="$(page_sha "$f")"; [ -n "$rec_sha" ] || continue
+      rec_ref="$(page_ref "$f")"
       repo="$(page_repo "$f")"; [ -n "$repo" ] || repo="$slug"
       clone="$REPOS_ROOT/$repo"
       [ -d "$clone/.git" ] || continue
+
+      if [ -n "$rec_ref" ] && [ "$rec_ref" != "$rec_sha" ]; then
+        # tagged page: compare recorded tag vs the clone's latest tag
+        clone_tag="$(git -C "$clone" describe --tags --abbrev=0 2>/dev/null || true)"
+        if [ -n "$clone_tag" ]; then
+          [ "$rec_ref" != "$clone_tag" ] && \
+            printf 'refresh:%s\trefresh\trepos/%s.md\trecorded tag %s ≠ clone tag %s\tpending\n' "$slug" "$slug" "$rec_ref" "$clone_tag"
+          continue
+        fi
+        # clone has no tags reachable — fall through to sha comparison (best-effort)
+      fi
+
+      # untagged page (or a tagged page against a tagless clone): sha vs HEAD
       head="$(git -C "$clone" rev-parse --short HEAD 2>/dev/null || true)"
       [ -n "$head" ] || continue
-      if [ "$rec" != "$head" ]; then
-        printf 'refresh:%s\trefresh\trepos/%s.md\trecorded %s ≠ clone %s\tpending\n' "$slug" "$slug" "$rec" "$head"
-      fi
+      [ "$rec_sha" != "$head" ] && \
+        printf 'refresh:%s\trefresh\trepos/%s.md\trecorded %s ≠ clone %s\tpending\n' "$slug" "$slug" "$rec_sha" "$head"
     done
   fi
   # verify: un-verified / verified-stale repo pages (from the verified reporter)
