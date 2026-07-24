@@ -40,8 +40,8 @@ die() { printf 'crossover: %s\n' "$*" >&2; exit 1; }
 
 sha256() { shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'; }
 sha256_stdin() { shasum -a 256 2>/dev/null | awk '{print $1}'; }
-b64enc() { openssl base64 -A -in "$1"; }              # single line, portable
-b64dec() { openssl base64 -d -A; }                    # stdin -> stdout
+b64enc() { openssl base64 -in "$1"; }                 # 64-col wrapped lines (copy-paste-safe)
+b64dec() { openssl base64 -d -A; }                    # stdin -> stdout (tolerates joined input)
 
 # bundle hash = sha256 of the newline-joined, order-preserved item hashes
 bundle_of() { printf '%s\n' "$@" | sha256_stdin; }
@@ -115,7 +115,10 @@ do_export() {
     printf 'path %s\n' "$rel"
     printf 'sha256 %s\n' "${hashes[$i]}"
     printf 'boundary %s\n' "${b:-unknown}"
-    printf 'data %s\n' "$(b64enc "$abs")"
+    # payload as wrapped base64 between ##DATA and the next marker — short lines
+    # survive copy-paste where one multi-thousand-char line gets mangled/truncated
+    printf '##DATA\n'
+    b64enc "$abs"
     printf '%s\t%s\t%s\n' "$rel" "${hashes[$i]}" "$([[ $COPY -eq 1 ]] && echo copy || echo move)" >> "$ledger"
     i=$((i+1))
   done
@@ -128,7 +131,7 @@ do_export() {
 do_import() {
   local line key val
   local batch="" src="" bundle=""
-  local cur_path="" cur_sha="" cur_data=""
+  local cur_path="" cur_sha="" cur_data="" in_data=0
   local -a r_paths r_shas r_status
   local seen_hashes=()
 
@@ -158,20 +161,27 @@ do_import() {
 
   while IFS= read -r line; do
     case "$line" in
-      "##$PROTO EXPORT") : ;;
-      "##ITEM") flush_item ;;
+      "##$PROTO EXPORT") in_data=0 ;;
+      "##ITEM") flush_item; in_data=0 ;;
+      "##DATA") in_data=1; cur_data="" ;;
       "##END")  flush_item; break ;;
       *)
-        key="${line%% *}"; val="${line#* }"
-        case "$key" in
-          batch)    batch="$val" ;;
-          source)   src="$val" ;;
-          bundle)   bundle="$val" ;;
-          path)     cur_path="$val" ;;
-          sha256)   cur_sha="$val" ;;
-          data)     cur_data="$val" ;;
-          # count/mode/boundary are informational in the block; not needed on import
-        esac ;;
+        if [[ $in_data -eq 1 ]]; then
+          # accumulate wrapped base64; strip any stray CR/whitespace so a
+          # reflowed paste still decodes to the exact bytes
+          cur_data+="${line//[[:space:]]/}"
+        else
+          key="${line%% *}"; val="${line#* }"
+          case "$key" in
+            batch)    batch="$val" ;;
+            source)   src="$val" ;;
+            bundle)   bundle="$val" ;;
+            path)     cur_path="$val" ;;
+            sha256)   cur_sha="$val" ;;
+            data)     cur_data="$val" ;;   # legacy single-line payload
+            # count/mode/boundary are informational in the block
+          esac
+        fi ;;
     esac
   done
   [[ -n "$batch" ]] || die "input is not a $PROTO export block"
