@@ -27,7 +27,8 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 ## Skills (in-session; run in a Claude Code session with `$WIKI_PATH` set)
 
 - **`wiki-context`** — session-start router: freshness check → recall → review-and-promote. The token-saver; load only what's relevant.
-- **`wiki-repo`** — ingest or refresh ONE repo page with git provenance.
+- **`wiki-repo`** — ingest or refresh ONE repo page with git provenance (a *freshness* refresh when the sha moved).
+- **`verify`** — run a *correctness* pass on repo pages: confirm the page against the real repo at its recorded sha, fix drift (and the source repo if it originated there), stamp the `verified:` signal. Complements `wiki-repo` (freshness) — a page can be fresh yet wrong.
 - **`checkpoint`** — end-of-session: distill memory, update project + log, prune raw, lint, re-index.
 - **`wiki-onboard`** — one-time bulk seed of a fresh vault from existing native memory / repos / projects.
 - **`wiki-adopt`** — idempotent adoption: scaffold a new vault **or** wire an already-cloned one, then seed. The front door on any new machine; safe to re-run.
