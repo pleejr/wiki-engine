@@ -44,7 +44,7 @@ $WIKI_PATH/engine/bin/crossover.sh export --vault "$WIKI_PATH" --batch <id> --co
   memory/dual-note.md                                 # copy batch
 ```
 
-Pick a stable `<id>` (e.g. `2026-07-23-engine-knowledge`). The script secret-scans each file and aborts rather than emit a key/token. It writes a `.crossover/<id>.outbound` ledger and prints the block. Show the whole block to the user to copy into the other machine's session. **Nothing is deleted here.**
+Pick a stable `<id>` (e.g. `2026-07-23-engine-knowledge`). The script secret-scans each file for a secret *assignment* (`key: value` / `key = value`) or literal key material and aborts rather than emit it — a note that merely mentions "secrets"/"tokens" in prose passes. If a genuine false positive blocks a reviewed file, re-run with `--reviewed`. It writes a `.crossover/<id>.outbound` ledger and prints the block. Show the whole block to the user to copy into the other machine's session. **Nothing is deleted here.**
 
 ## 3. Import (destination session)
 

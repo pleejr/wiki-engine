@@ -21,12 +21,15 @@
 # the vault's normal branch->PR flow, so git history is the soft-delete safety net.
 #
 # Usage:
-#   crossover.sh export  --vault DIR --batch ID [--copy] PATH [PATH...]
+#   crossover.sh export  --vault DIR --batch ID [--copy] [--reviewed] PATH [PATH...]
 #   crossover.sh import  --vault DIR [--overwrite]        < export-block
 #   crossover.sh finalize --vault DIR --batch ID [--yes]  < receipt-block
 #
 # PATHs are vault-relative (e.g. memory/foo.md). --copy marks the batch as a
-# copy (dual-purpose content): finalize will refuse to delete it.
+# copy (dual-purpose content): finalize will refuse to delete it. --reviewed
+# skips the secret-scan for a human-reviewed export (use only after confirming
+# the files carry no real secret — the scan flags secret *assignments*, so a
+# note that merely discusses "secrets"/"tokens" in prose passes without it).
 
 set -uo pipefail
 
@@ -45,13 +48,14 @@ bundle_of() { printf '%s\n' "$@" | sha256_stdin; }
 
 # --- argument parsing ---------------------------------------------------------
 CMD="${1:-}"; shift || true
-VAULT=""; BATCH=""; COPY=0; OVERWRITE=0; ASSUME_YES=0
+VAULT=""; BATCH=""; COPY=0; OVERWRITE=0; ASSUME_YES=0; REVIEWED=0
 PATHS=()
 while (( $# )); do
   case "$1" in
     --vault)     VAULT="${2:-}"; shift 2 ;;
     --batch)     BATCH="${2:-}"; shift 2 ;;
     --copy)      COPY=1; shift ;;
+    --reviewed)  REVIEWED=1; shift ;;
     --overwrite) OVERWRITE=1; shift ;;
     --yes)       ASSUME_YES=1; shift ;;
     --) shift; while (( $# )); do PATHS+=("$1"); shift; done ;;
@@ -73,14 +77,22 @@ do_export() {
   [[ -n "$BATCH" ]] || die "--batch is required for export"
   (( ${#PATHS[@]} )) || die "no paths given to export"
   local hashes=() rel abs
-  # validate + secret-scan before emitting anything
+  # validate + secret-scan before emitting anything. The scan targets secret
+  # *assignments* (key : value / key = value) and literal key material, not the
+  # bare words — so a workflow note that discusses "secrets"/"tokens" in prose
+  # is not a false positive. --reviewed skips it after a human has confirmed.
   for rel in "${PATHS[@]}"; do
     abs="$VAULT/$rel"
     [[ -f "$abs" ]] || die "not a file in vault: $rel"
-    if grep -nEi '(api[_-]?key|secret|token|password|BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16})' "$abs" >/dev/null; then
-      die "refusing to export $rel — matches a secret pattern (crossover carries no secrets)"
+    if [[ $REVIEWED -eq 0 ]] && grep -nEi \
+        -e '(api[_-]?key|client[_-]?secret|secret|token|password|passwd)[[:space:]]*[:=][[:space:]]*[^[:space:]]{6,}' \
+        -e 'AKIA[0-9A-Z]{16}' \
+        -e 'BEGIN [A-Z ]*PRIVATE KEY' \
+        "$abs" >/dev/null; then
+      die "refusing to export $rel — looks like it carries a secret value (crossover carries no secrets). If it only mentions secrets in prose, re-run with --reviewed."
     fi
   done
+  [[ $REVIEWED -eq 1 ]] && printf 'crossover: --reviewed set — secret-scan skipped for this export.\n' >&2
   for rel in "${PATHS[@]}"; do hashes+=("$(sha256 "$VAULT/$rel")"); done
   local bundle; bundle="$(bundle_of "${hashes[@]}")"
 
