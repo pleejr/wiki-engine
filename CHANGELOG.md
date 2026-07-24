@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.19.1] — 2026-07-24
+
+Patch — tighten the `crossover` export secret-scan, which was too broad: it matched the bare words `secret`/`token`/`password` anywhere, so a workflow note that merely *discusses* secrets in prose (e.g. "secrets are never synced") was wrongly refused. Backwards-compatible; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Changed
+- **`bin/crossover.sh`** — the export scan now flags secret *assignments* (`key : value` / `key = value` with a ≥6-char value) plus literal key material (`AKIA…`, PEM `BEGIN … PRIVATE KEY`), not bare keyword mentions. Real leaks (`api_key: sk-…`) are still blocked; prose about secrets passes. Added a **`--reviewed`** flag to skip the scan after a human has confirmed a file, for the rare genuine false positive. Documented in `skills/crossover/SKILL.md`.
+
 ## [1.19.0] — 2026-07-23
 
 Minor — a new **`crossover`** skill + `bin/crossover.sh` tool for migrating vault pages to another vault that never shares a machine (the deliberate manual boundary crossing), over a copy-paste text channel with end-to-end integrity. Additive; adopt with `bin/adopt.sh` or `update.sh`.
