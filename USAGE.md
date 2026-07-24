@@ -49,6 +49,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 | `wire-machine.sh` | Idempotent converge — make THIS machine ready for the vault at `$WIKI_PATH`: submodule, skill links, `WIKI_PATH`, CLAUDE.md import, `.rag`, feature-adopt. `--check` previews. The "wire an existing clone" verb behind `wiki-adopt`. |
 | `lint.sh` | Umbrella lint + write-time **gate** (memory + frontmatter + soft-wrap + catalog + boundary-present + provenance-present); `checkpoint`, a pre-commit hook, and vault CI all run it. |
 | `verify-status.sh` | Report the `verified:` correctness signal across repo pages (verified / stale / unverified); `--todo` emits the drainable work-list, `--check` gates. |
+| `upkeep.sh` | Drainable maintenance queue (`.upkeep/queue.tsv`): `scan` builds it (stale repo pages + un-verified pages), `next`/`done` drain it one item per iteration. In-session/human-driven — no `claude` spawn; re-entry sentinel + lock guard any future automated driver. |
 | `reflow.sh` · `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` | Soft-wrap normalize · skills-catalog · projects-catalog · memory validation. |
 | `new-wiki.sh` | Scaffold a brand-new vault (see README). |
 | `link-skills.sh` | Symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them. The bootstrap that makes `/wiki-adopt` available on a fresh machine (idempotent; warn+skips a foreign slot, `--force` to repoint). |
