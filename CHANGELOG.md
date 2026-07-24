@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+Minor — a **`verify`** skill that packages the verification-pass procedure the v1.21.0 tools (`verify-status.sh`, `upkeep.sh`) enabled. Additive; adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`skills/verify/SKILL.md`** — run a *correctness* pass on `repos/` pages: find the work (`verify-status.sh --todo` / the upkeep queue), confirm the page against the real repo at its recorded sha, fix any drift **and the source repo if the drift originated there** (fix-at-source), then stamp the `verified:` block — only after genuine confirmation. Distinct from `wiki-repo` (freshness re-ingest when the sha moved) and `checkpoint` (session curation): `verify` confirms correctness at the current sha. Documented in `USAGE.md`.
+
 ## [1.21.0] — 2026-07-24
 
 Minor — the two remaining legs of the vault-upkeep trilogy: a **`verified:` correctness signal** (*engine-evidence-verified*) and a **drainable upkeep queue** (*engine-drainable-upkeep-loop*). Additive; adopt with `bin/adopt.sh` or `update.sh`.
