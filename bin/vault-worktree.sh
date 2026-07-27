@@ -146,9 +146,18 @@ same_repo_worktree() {
 # (never discard working-tree edits) and deletes the branch only with `-d` (merged-only),
 # so committed-but-unintegrated work survives too. Returns 0 iff the worktree was removed.
 retire_worktree() {
-  local wt="$1" br
-  if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
-    log "vault-worktree: keeping $wt (uncommitted changes)"; return 1
+  local wt="$1" br leftovers
+  # Work at risk = tracked modifications, or untracked files that are actually content.
+  # `.gitkeep` placeholders are scaffolding adopt.sh drops into empty node folders — they
+  # exist in EVERY worktree, so counting them as "uncommitted changes" made retirement
+  # impossible for every worktree ever created. That is how orphaned directories piled up
+  # and then blocked `ensure`, which silently degraded to the canonical checkout. `-uall`
+  # so directories are expanded to files; an empty folder is invisible to git anyway.
+  leftovers="$(git -C "$wt" status --porcelain -uall 2>/dev/null | grep -v '/\.gitkeep$' || true)"
+  if [ -n "$leftovers" ]; then
+    log "vault-worktree: keeping $wt (uncommitted changes)"
+    printf '%s\n' "$leftovers" | sed 's/^/    /' >&2
+    return 1
   fi
   br="$(git -C "$wt" symbolic-ref --short HEAD 2>/dev/null || echo)"
   git -C "$WIKI" worktree remove --force "$wt" 2>/dev/null || return 1
@@ -187,7 +196,23 @@ case "$CMD" in
       printf '%s\n' "$wt"; exit 0
     fi
     exclude_default_root
-    mkdir -p "$WT_ROOT" || { log "vault-worktree: cannot create $WT_ROOT; using $WIKI"; printf '%s\n' "$WIKI"; exit 0; }
+    mkdir -p "$WT_ROOT" || { log "vault-worktree: cannot create $WT_ROOT; using $WIKI"; printf '%s\n' "$WIKI"; exit 1; }
+
+    # ORPHANED DIRECTORY RECOVERY. If the path exists but git does not list it as a
+    # worktree, a previous removal left the checkout behind while its gitdir went away.
+    # `worktree add` then fails on "already exists", and the fallback below hands back the
+    # canonical checkout — silently re-enabling the very shared-tree editing this tool
+    # exists to prevent. Move it aside rather than delete it: it may hold untracked work,
+    # and nothing here is ever worth losing to make a path free.
+    if [ -e "$wt" ] && ! git -C "$WIKI" worktree list --porcelain 2>/dev/null | grep -qxF "worktree $wt"; then
+      orphan="$wt.orphaned-$(date +%Y%m%d-%H%M%S)"
+      if mv "$wt" "$orphan" 2>/dev/null; then
+        log "vault-worktree: found an ORPHANED worktree dir at $wt (git no longer tracks it)."
+        log "  Moved to $orphan — inspect and delete it yourself; it may hold untracked files."
+      else
+        log "vault-worktree: $wt exists, git does not track it, and it could not be moved aside."
+      fi
+    fi
     base="origin/main"
     git -C "$WIKI" fetch -q origin main 2>/dev/null || base="$(git -C "$WIKI" symbolic-ref --short HEAD 2>/dev/null || echo HEAD)"
     # With a stable session slug the branch can outlive its worktree (retired but kept
@@ -204,8 +229,18 @@ case "$CMD" in
       write_lease "$wt" "$branch"
       printf '%s\n' "$wt"; exit 0
     fi
-    log "vault-worktree: worktree add failed; falling back to canonical $WIKI"
-    printf '%s\n' "$WIKI"; exit 0
+    # FALLBACK IS A FAILURE, and says so. It still prints the canonical path so an existing
+    # caller degrades rather than breaks, but it exits NON-ZERO: handing back the shared
+    # working tree while reporting success is how isolation turns itself off without anyone
+    # noticing. A caller that checks (`WORK="$(... ensure)" || abort`) can now refuse to
+    # write; one that does not is no worse off than before, and the `guard` still blocks the
+    # commit. The commit gate is the backstop — it is not a substitute, because the
+    # filesystem race happens while editing, long before anything is committed.
+    log "vault-worktree: FAILED to create a worktree — falling back to the canonical checkout."
+    log "  Writes here are NOT isolated: a concurrent session shares this tree, and edits to"
+    log "  one file are last-writer-wins on disk. Resolve before doing vault work, or accept"
+    log "  the risk deliberately with WIKI_WORKTREE=0."
+    printf '%s\n' "$WIKI"; exit 1
     ;;
 
   guard)
