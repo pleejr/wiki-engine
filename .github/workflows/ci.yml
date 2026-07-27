@@ -28,6 +28,78 @@ jobs:
       - name: Python syntax (py_compile)
         run: python3 -m py_compile bin/*.py
 
+      - name: Workflow steps must not write the real global git config
+        run: |
+          # These `run` blocks get extracted and executed locally to verify them — that is
+          # a deliberate practice here. `git config --global` then writes the DEVELOPER's
+          # ~/.gitconfig, which silently replaced a machine's git identity and misattributed
+          # two release commits. Any step using --global must first redirect it to a
+          # throwaway file, so the recipe is safe to run anywhere.
+          # Deliberately dependency-free: PyYAML is not guaranteed on the runner, and a
+          # guard that cannot run is worth nothing. Steps are split on the `- name:` key
+          # at the steps indent, which is enough to attribute each --global to its step.
+          python3 - <<'PY'
+          import sys
+          steps, cur = [], ['<preamble>', []]
+          for line in open('.github/workflows/ci.yml'):
+              if line.startswith('      - name:'):
+                  steps.append(cur)
+                  cur = [line.split(':', 1)[1].strip(), []]
+              else:
+                  cur[1].append(line)
+          steps.append(cur)
+
+          bad = []
+          for name, body in steps:
+              # The exemption marker is itself a comment, so look for it BEFORE stripping
+              # comments — otherwise this step flags itself for naming the pattern it
+              # detects.
+              if 'GUARD-SELF-EXEMPT' in ''.join(body):
+                  continue
+              # Comments legitimately DISCUSS the forbidden command — including the ones
+              # explaining why it is forbidden — so scan executable lines only. Without
+              # this the guard fails on a healthy tree, and a check that is always red is
+              # a check that gets bypassed.
+              text = ''.join(l for l in body if not l.lstrip().startswith('#'))
+              if 'git config --global' not in text:
+                  continue
+              if 'GIT_CONFIG_GLOBAL' not in text:
+                  bad.append(name)
+              elif text.index('GIT_CONFIG_GLOBAL') > text.index('git config --global'):
+                  bad.append(name + ' (redirect comes after the first --global write)')
+          if bad:
+              print('these steps write the REAL global git config:')
+              for b in bad:
+                  print('  -', b)
+              sys.exit(1)
+          print('ok: every --global write is redirected to a throwaway GIT_CONFIG_GLOBAL')
+          PY
+          # GUARD-SELF-EXEMPT
+
+      - name: Status line renders and degrades
+        run: |
+          # The status line is always on screen, so a crash or a wrong number is worse
+          # than no status line at all. Assert the CONTEXT BANDS (they drive the
+          # checkpoint-before-compaction nudge) and that every malformed input still
+          # exits 0 with a usable line.
+          mk() { printf '{"workspace":{"current_dir":"/w"},"model":{"display_name":"M"},"context_window":{"used_percentage":%s}}' "$1"; }
+          out() { mk "$1" | ./bin/statusline.sh; }
+          out 42 | grep -q 'ctx 42%'            || { echo "normal band missing"; exit 1; }
+          out 42 | grep -q 'checkpoint'         && { echo "nudged too early at 42%"; exit 1; }
+          out 70 | grep -q 'checkpoint soon'    || { echo "no soon-nudge at 70%"; exit 1; }
+          out 85 | grep -q 'checkpoint now'     || { echo "no now-nudge at 85%"; exit 1; }
+          # truncate, never round: 84.9 is not 85 and must not escalate the nudge
+          out 84.9 | grep -q 'checkpoint soon'  || { echo "84.9 mis-banded"; exit 1; }
+          # degradation: absent field, null, non-numeric, and non-JSON all exit 0
+          for bad in '{"model":{"display_name":"M"}}' '{"context_window":{"used_percentage":null}}' \
+                     '{"context_window":{"used_percentage":"abc"}}' 'not json'; do
+            printf '%s' "$bad" | ./bin/statusline.sh >/dev/null 2>&1 \
+              || { echo "status line failed on input: $bad"; exit 1; }
+            printf '%s' "$bad" | ./bin/statusline.sh | grep -q 'ctx ' \
+              && { echo "printed a context figure it does not have: $bad"; exit 1; }
+          done
+          echo "ok: bands correct, degrades cleanly"
+
       - name: Engine docs are soft-wrapped
         run: ./bin/reflow.sh --check $(find . -type d -name .git -prune -o \( -name '*.md' -o -name '*.tmpl' \) -print)
 
@@ -103,6 +175,12 @@ jobs:
           # Two sessions writing one vault. The property under test is that BOTH sets of
           # work survive and land in a linear history — the failure this exists to stop
           # is one session's `git add -A` sweeping up a peer's uncommitted work.
+          # Isolate git config to a throwaway file. `git config --global` writes to the
+          # REAL ~/.gitconfig, which is harmless on a runner that is destroyed minutes
+          # later and decidedly not harmless when this block is extracted and executed on
+          # a workstation to verify it — that silently replaced a machine's git identity
+          # and misattributed two release commits. Keep this export when copying locally.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-cc"
           git config --global user.email ci@example.com
           git config --global user.name CI
           V="$RUNNER_TEMP/cc"; mkdir -p "$V/notes"
@@ -169,6 +247,12 @@ jobs:
           # checkpoint commits from a worktree by design, that made the gate skip exactly
           # the commits it was meant to cover. Assert the shipped hook resolves the
           # CANONICAL root and therefore actually runs there.
+          # Own identity, isolated. This step used to work only because an earlier step's
+          # `git config --global` leaked across the whole runner — precisely the cross-step
+          # contamination the redirect removes. Depending on it was invisible until it went.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-wg"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
           V="$RUNNER_TEMP/wg"; mkdir -p "$V/memory"
           git -C "$V" init -q .
           mkdir -p "$V/engine/bin" "$V/.githooks"
@@ -198,9 +282,14 @@ jobs:
 
       - name: Scaffolder + lint smoke test
         run: |
+          # Isolate git config (see the concurrency step above) so extracting this block
+          # and running it locally cannot touch the real ~/.gitconfig.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-scaffold"
           git config --global user.email ci@example.com
           git config --global user.name CI
-          git config --global protocol.file.allow always
+          # NOTE: no `protocol.file.allow=always` here any more. new-wiki.sh now scopes
+          # that exception to its own submodule-add when --engine-url is a local path, so
+          # neither CI nor a developer's machine needs the global loosening.
           # Isolate settings so the wire/adopt path never mutates the real ~/.claude/settings.json.
           # ensure-hook keys the boot hook on WIKI_PATH; a throwaway vault would otherwise leave a
           # permanent, un-dedupable SessionStart hook. Keep this export when copying the recipe locally.

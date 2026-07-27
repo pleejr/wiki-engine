@@ -98,7 +98,17 @@ git -C "$VAULT_PATH" init -q -b main
 git -C "$VAULT_PATH" config user.email "$GIT_EMAIL"
 [ -n "$GIT_NAME" ] && git -C "$VAULT_PATH" config user.name "$GIT_NAME"
 
-git -C "$VAULT_PATH" submodule add -q "$ENGINE_URL" engine
+# Adding a submodule from a LOCAL PATH needs the file:// transport, which git disables by
+# default for submodules (CVE-2022-39253: a malicious .gitmodules could make a clone of an
+# untrusted repo read from arbitrary local paths). Scope the exception to THIS command and
+# only when the source really is a local path, instead of telling people to set
+# `protocol.file.allow=always` globally — a machine-wide loosening that then applies to
+# every clone of every untrusted repo, forever, for the sake of one scaffold command.
+SUBMODULE_GIT=(git -C "$VAULT_PATH")
+case "$ENGINE_URL" in
+  /*|./*|../*|file://*) SUBMODULE_GIT=(git -C "$VAULT_PATH" -c protocol.file.allow=always) ;;
+esac
+"${SUBMODULE_GIT[@]}" submodule add -q "$ENGINE_URL" engine
 
 while IFS= read -r d; do
   case "$d" in ''|'#'*) continue;; esac

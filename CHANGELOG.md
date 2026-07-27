@@ -4,6 +4,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Added
+- **The status line reports context-window usage, and names the action rather than the number.** `ctx 42%` while there is room, `ctx 72% — checkpoint soon` in amber, `ctx 88% — checkpoint now` in red. Compaction is a thing to get *ahead* of: once `checkpoint` has run the session is disposable and a fresh one starts with the vault as its handoff, so the expensive case is discovering the ceiling mid-task with uncommitted state. Read from `context_window.used_percentage`, which Claude Code pre-calculates, and **truncated rather than rounded** so 84.9% never escalates a band. The 5-hour rate limit appears only past 80% — a number that is always on screen and never actionable is one people stop reading.
+  - Degrades to the previous row on a client that does not send the field, with no `jq`, and on null / non-numeric / non-JSON input; always exits 0, because a status line that breaks is worse than one that is absent. CI asserts the bands *and* every degradation path.
+
+### Fixed
+- **CI recipes no longer write the developer's real global git config.** These `run` blocks are deliberately extracted and executed locally to verify them — that practice caught four real bugs the same day — but `git config --global` then targets the **workstation's** `~/.gitconfig`, not a disposable runner's. It silently replaced a machine's git identity, and two release commits were authored as `CI <ci@example.com>` before anyone noticed; git never announces whose name it is about to use. Steps now redirect to a throwaway `GIT_CONFIG_GLOBAL` first, mirroring the existing `CLAUDE_SETTINGS` isolation. **A CI guard enforces it**: any step calling `git config --global` without redirecting first fails the build, so the mistake cannot return by way of a newly added step.
+  - The guard scans executable lines only — comments legitimately *discuss* the forbidden command, including the ones explaining why it is forbidden — and exempts itself by marker. Both exclusions were found the honest way: the first draft failed on a clean tree, which is precisely the always-red failure mode it exists alongside.
+- **`new-wiki.sh` no longer needs a machine-wide `protocol.file.allow=always`.** Scaffolding from a local `--engine-url` requires git's file transport for submodules, disabled by default because of **CVE-2022-39253** (a hostile `.gitmodules` can make cloning an untrusted repo read arbitrary local paths). The documented workaround was to set it **globally**, which then applies to every clone of every repo on that machine, forever, to serve one scaffold command. The exception is now scoped to the single `submodule add`, and only when the URL really is a local path; the global setting has been dropped from CI and is no longer needed anywhere.
+
 ## [1.28.2] — 2026-07-27
 
 Patch — `gc` no longer leaves a `wt/*` branch behind after every successfully integrated session. Adopt with `bin/adopt.sh` or `update.sh`.
