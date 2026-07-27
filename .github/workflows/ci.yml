@@ -247,6 +247,12 @@ jobs:
           # checkpoint commits from a worktree by design, that made the gate skip exactly
           # the commits it was meant to cover. Assert the shipped hook resolves the
           # CANONICAL root and therefore actually runs there.
+          # Own identity, isolated. This step used to work only because an earlier step's
+          # `git config --global` leaked across the whole runner — precisely the cross-step
+          # contamination the redirect removes. Depending on it was invisible until it went.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-wg"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
           V="$RUNNER_TEMP/wg"; mkdir -p "$V/memory"
           git -C "$V" init -q .
           mkdir -p "$V/engine/bin" "$V/.githooks"
