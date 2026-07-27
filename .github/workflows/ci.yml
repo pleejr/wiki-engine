@@ -329,13 +329,15 @@ jobs:
       - name: Ephemeral vaults must not touch the machine's real config
         run: |
           # A throwaway vault (test / CI / scratchpad) must never wire itself into the
-          # machine's real settings.json or repoint the machine's live skill symlinks.
-          # The guard existed but could NEVER FIRE: it tested `[ -n "$CLAUDE_SETTINGS" ]`,
-          # while apply-adopt.sh exports that variable unconditionally, defaulting it to
-          # the real settings path. Isolation now means "points somewhere ELSE", not "is
-          # set". The symlink case is the worse one — those are what Claude Code loads, so
-          # aiming them at a directory that later gets cleaned breaks every engine skill,
-          # and they keep resolving until then so nothing announces it.
+          # machine's real settings.json or repoint ~/.claude/skills — those outlive it: a
+          # permanent SessionStart hook, or skill symlinks aimed at a directory that later
+          # disappears (they keep resolving until it is cleaned, so nothing announces it).
+          #
+          # Drives apply-adopt.sh, NOT the steps directly, because that is where the
+          # decision now lives. Two earlier in-step guards each failed silently: one tested
+          # `[ -n "$CLAUDE_SETTINGS" ]`, which apply-adopt makes permanently true; the other
+          # enumerated macOS-shaped temp prefixes and did not match this runner's own
+          # temp dir — caught only because this test runs on a path neither author had.
           export HOME="$RUNNER_TEMP/fakehome"; mkdir -p "$HOME/.claude/skills"
           echo '{}' > "$HOME/.claude/settings.json"
           ln -sfn /real/engine/skills/checkpoint "$HOME/.claude/skills/checkpoint"
@@ -343,20 +345,20 @@ jobs:
           before_settings="$(cat "$HOME/.claude/settings.json")"
           before_link="$(readlink "$HOME/.claude/skills/checkpoint")"
 
-          WIKI="$V" ENGINE="$V/engine/bin" ENSURE_HOOK="$V/engine/bin/ensure-hook.sh" \
-            bash adopt.d/10-session-boot-hook.sh || true
-          WIKI="$V" ENGINE="$V/engine" bash adopt.d/20-link-skills-submodule.sh || true
+          ./bin/apply-adopt.sh --wiki "$V" --force >/dev/null 2>&1 || true
 
           [ "$(cat "$HOME/.claude/settings.json")" = "$before_settings" ] \
             || { echo "an ephemeral vault wrote the real settings.json"; exit 1; }
           [ "$(readlink "$HOME/.claude/skills/checkpoint")" = "$before_link" ] \
             || { echo "an ephemeral vault repointed the machine's skill symlinks"; exit 1; }
 
-          # ...but with settings genuinely isolated, wiring must still work
-          WIKI="$V" ENGINE="$V/engine/bin" ENSURE_HOOK="$V/engine/bin/ensure-hook.sh" \
-            CLAUDE_SETTINGS="$RUNNER_TEMP/iso.json" bash adopt.d/10-session-boot-hook.sh >/dev/null 2>&1 || true
+          # ...but with settings genuinely redirected, wiring must STILL happen. A guard
+          # that is merely broad is the same defect facing the other way.
+          ./bin/apply-adopt.sh --wiki "$V" --force --settings "$RUNNER_TEMP/iso.json" >/dev/null 2>&1 || true
           [ -f "$RUNNER_TEMP/iso.json" ] \
-            || { echo "isolated wiring was skipped too — the guard is now too broad"; exit 1; }
+            || { echo "isolated wiring was skipped too — the guard is too broad"; exit 1; }
+          grep -q "$V" "$RUNNER_TEMP/iso.json" \
+            || { echo "isolated wiring did not record the vault"; exit 1; }
           echo "ok: ephemeral vault contained; isolated wiring still works"
 
       - name: Scaffolder + lint smoke test

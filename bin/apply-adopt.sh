@@ -54,6 +54,30 @@ export WIKI ENGINE
 export CLAUDE_SETTINGS="$SETTINGS"
 export ENSURE_HOOK="$SCRIPT_DIR/ensure-hook.sh"
 
+# --- may a step modify THIS MACHINE's shared config? ----------------------------------
+# Decided ONCE, here, rather than re-derived by each step. Two earlier attempts lived in
+# the steps themselves and both failed: one tested `[ -n "$CLAUDE_SETTINGS" ]`, which the
+# export above makes permanently true, so the guard never fired; the other enumerated
+# ephemeral path prefixes that happened to be macOS-shaped and did not match a CI runner's
+# temp dir. Steps consult $ADOPT_WIRE_MACHINE and do not re-implement the test.
+#
+# Machine-shared surfaces are the machine's real settings.json and ~/.claude/skills — a
+# throwaway vault touching either leaves damage that outlives it: a permanent SessionStart
+# hook, or skill symlinks aimed at a directory that later disappears (those keep resolving
+# until it is cleaned, so nothing announces the breakage).
+_real_settings="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+ADOPT_WIRE_MACHINE=1
+case "$WIKI" in
+  "${TMPDIR:-/nonexistent-tmpdir}"*|"${RUNNER_TEMP:-/nonexistent-runnertmp}"*|\
+  /private/tmp/*|/tmp/*|/var/folders/*|*/scratchpad/*|*/_temp/*)
+    # Ephemeral vault: wiring is allowed ONLY when the caller redirected settings
+    # somewhere other than the real file, which is what "isolated" actually means.
+    [ "$SETTINGS" != "$_real_settings" ] || ADOPT_WIRE_MACHINE=0 ;;
+esac
+export ADOPT_WIRE_MACHINE
+[ "$ADOPT_WIRE_MACHINE" -eq 0 ] && \
+  echo "adopt: ephemeral vault ($WIKI) — skipping machine-level wiring (settings, skill links)" >&2
+
 changes=""; failed=0
 for step in "$ADOPT_D"/*.sh; do
   [ -e "$step" ] || continue

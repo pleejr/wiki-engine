@@ -22,13 +22,8 @@ set -uo pipefail
 # Worse than the stale-hook case this mirrors: these symlinks are what Claude Code loads,
 # so aiming them at a throwaway engine breaks every engine skill on the machine the moment
 # that directory is cleaned — and they keep resolving until then, so nothing announces it.
-# Isolation is judged by CLAUDE_SETTINGS pointing somewhere other than the real file,
-# matching step 10; `-n` is not enough, since apply-adopt.sh always exports it.
-case "${WIKI:-}" in
-  "${TMPDIR:-/nonexistent-tmpdir}"*|/private/tmp/*|/tmp/*|/var/folders/*|*/scratchpad/*)
-    _real="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-    [ "${CLAUDE_SETTINGS:-$_real}" != "$_real" ] || exit 0 ;;
-esac
+# apply-adopt.sh decides this once (ADOPT_WIRE_MACHINE); not re-derived here.
+[ "${ADOPT_WIRE_MACHINE:-1}" = "1" ] || exit 0
 
 SRC="$ENGINE/skills"
 DEST="$HOME/.claude/skills"

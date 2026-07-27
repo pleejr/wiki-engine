@@ -12,21 +12,13 @@ set -uo pipefail
 
 : "${WIKI:?}"; : "${ENGINE:?}"; : "${ENSURE_HOOK:?}"
 
-# Never wire a REAL ~/.claude/settings.json boot hook for an EPHEMERAL vault (test / CI /
-# scratchpad). ensure-hook keys the boot command on WIKI_PATH, so a throwaway vault leaves a
-# permanent, un-dedupable SessionStart hook that fires an extra banner every session. If the
-# caller isolated CLAUDE_SETTINGS to its own temp file, wiring is safe (it lands there);
-# otherwise skip silently. See [[lesson-ephemeral-vault-settings-pollution]].
-case "$WIKI" in
-  "${TMPDIR:-/nonexistent-tmpdir}"*|/private/tmp/*|/tmp/*|/var/folders/*|*/scratchpad/*)
-    # Isolated means "points somewhere OTHER than the machine's real settings" — not
-    # merely "the variable is set". apply-adopt.sh exports CLAUDE_SETTINGS
-    # unconditionally, defaulting it to the real file, so a `[ -n ... ]` test here could
-    # never be false and this guard never fired: a throwaway vault wired a permanent
-    # SessionStart hook into the real settings every time.
-    _real="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-    [ "${CLAUDE_SETTINGS:-$_real}" != "$_real" ] || exit 0 ;;
-esac
+# Never wire a REAL settings.json boot hook for an EPHEMERAL vault (test / CI / scratchpad):
+# ensure-hook keys the command on WIKI_PATH, so a throwaway vault leaves a permanent,
+# un-dedupable SessionStart hook behind. See [[lesson-ephemeral-vault-settings-pollution]].
+# apply-adopt.sh decides this once (see ADOPT_WIRE_MACHINE there). Deliberately NOT
+# re-derived here: the two previous in-step versions of this test both failed silently —
+# one could never be false, the other missed CI temp paths.
+[ "${ADOPT_WIRE_MACHINE:-1}" = "1" ] || exit 0
 
 cmd="WIKI_PATH=$WIKI $ENGINE/bin/session-boot.sh"
 
