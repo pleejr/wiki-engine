@@ -15,14 +15,14 @@ Run **once**, right after `new-wiki.sh` (or after adopting the engine in an exis
 
 ## Boundary first (non-negotiable)
 - Read the vault's `boundary` (`personal` | `work`) from its `CLAUDE.md`. **Import only matching material.** Never pull work data into a personal vault or vice versa — crossover is a deliberate manual export.
-- No secrets (keys, tokens, credentials) ever land in a page. See [[lesson-no-claude-in-hooks]].
+- No secrets (keys, tokens, credentials) ever land in a page.
 
 ## Steps
 
 1. **Inventory, then confirm.** Survey the sources below and present a short proposed manifest (memories to distill, repos to ingest, projects to stub). **Ask before creating many pages.**
 
 2. **Memories → `memory/`.** Read Claude Code native memory (`~/.claude/projects/*/memory/*.md` and its `MEMORY.md` index) plus any preferences in `~/.claude/CLAUDE.md`. Distill **durable** facts into curated notes with the right `type` (`preference` · `decision` · `lesson` · `memory`), each with frontmatter (`title, created, updated, type, status, tags, sources, boundary`) and **≥2 `[[wikilinks]]`**. Native memory is raw scratch — promote the keepers, drop the transient. Same distillation as `checkpoint`, done in bulk.
-   - **Then prune the raw source.** Once a native note's durable content is in the vault, remove it from native memory and drop its `MEMORY.md` index line, so the vault is the single authority. **Never delete native content you haven't first captured.** Anything that must load *every* session (core behavioral guidance) belongs in `CLAUDE.md`, not left in native — move it there, then prune. Deletion is a guided in-session action; confirm before removing — it needs a human judgement, which no recursion guard supplies. See [[lesson-no-claude-in-hooks]].
+   - **Then prune the raw source.** Once a native note's durable content is in the vault, remove it from native memory and drop its `MEMORY.md` index line, so the vault is the single authority. **Never delete native content you haven't first captured.** Anything that must load *every* session (core behavioral guidance) belongs in `CLAUDE.md`, not left in native — move it there, then prune. Deletion is a guided in-session action; confirm before removing — it needs a human judgement, which no recursion guard supplies. See the **Hard safety rule** in the engine's `CLAUDE.md`.
 
 3. **Repos → `repos/`.** For each repo you actively work in, invoke **`wiki-repo`** (one per run) to create its page with git-ref provenance. Don't hand-write repo pages here.
 
@@ -33,6 +33,6 @@ Run **once**, right after `new-wiki.sh` (or after adopting the engine in an exis
 6. **Finalize.** Refresh `$WIKI_PATH/index.md` sections for the new pages, run `engine/bin/lint.sh` (umbrella) and fix any failures, and append a dated `log.md` line summarizing the seed.
 
 ## Rules
-- **In-session, on demand.** A one-time bootstrap has nothing to automate — and never from a hook that fires on an event its own child can re-trigger, the structure behind the `.ai-os` fork-bomb. The rule targets runaway agent generation, not headless `claude`. See [[lesson-no-claude-in-hooks]].
+- **In-session, on demand.** A one-time bootstrap has nothing to automate — and never from a hook that fires on an event its own child can re-trigger, the structure behind the `.ai-os` fork-bomb. The rule targets runaway agent generation, not headless `claude`. See the **Hard safety rule** in the engine's `CLAUDE.md`.
 - One-time bootstrap: if the vault already has substantial content, prefer `checkpoint`/`wiki-repo` for incremental updates instead of re-onboarding.
 - Respect the boundary and the no-secrets rule above at every step.

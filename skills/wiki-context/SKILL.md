@@ -28,5 +28,5 @@ Pull in just-enough context without inhaling the vault. This is the token-saver.
 ## Rules
 - Read from canonical `$WIKI_PATH` — this router is read-only, so it needs no worktree; write-path isolation for concurrent sessions is `checkpoint`'s job (via `vault-worktree.sh`). A slightly stale HEAD is fine for reads.
 - Do not load pages you don't need. Do not preload all repos.
-- In-session by default; never from a hook that fires on an event its own child can re-trigger. The read path (steps 1–5) is otherwise ordinary work; it is the write path below that needs a human. See [[lesson-no-claude-in-hooks]].
+- In-session by default; never from a hook that fires on an event its own child can re-trigger. The read path (steps 1–5) is otherwise ordinary work; it is the write path below that needs a human. See the **Hard safety rule** in the engine's `CLAUDE.md`.
 - Promotion and pruning are judgment calls made **with** the user — no sentinel or concurrency bound makes an unattended promotion correct, so these never automate. Only `rag-capture.sh` (deterministic, no `claude`) may run from a hook.
