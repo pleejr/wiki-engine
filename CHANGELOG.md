@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.29.0] — 2026-07-27
+
+Minor — the status line gains a **context-usage gauge that names the action** (`ctx 88% — checkpoint now`), so compaction is something to get ahead of rather than discover mid-task; plus two fixes to recipes and defaults that reached further than their job. Additive; the status line remains opt-in. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Added
 - **The status line reports context-window usage, and names the action rather than the number.** `ctx 42%` while there is room, `ctx 72% — checkpoint soon` in amber, `ctx 88% — checkpoint now` in red. Compaction is a thing to get *ahead* of: once `checkpoint` has run the session is disposable and a fresh one starts with the vault as its handoff, so the expensive case is discovering the ceiling mid-task with uncommitted state. Read from `context_window.used_percentage`, which Claude Code pre-calculates, and **truncated rather than rounded** so 84.9% never escalates a band. The 5-hour rate limit appears only past 80% — a number that is always on screen and never actionable is one people stop reading.
