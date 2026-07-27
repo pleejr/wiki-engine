@@ -105,9 +105,15 @@ If none is installed, do the pass inline against this checklist — it is delibe
 
 **Then file it.** Create the project page under the proposal's slug, carrying its evidence and acceptance criteria; record the review's accepted *and* rejected findings in the project's **Key decisions** (append-only), so the reasoning survives the session. Build, ship, release — consumer vaults receive it on their next `update`.
 
+**Then review the diff, before you push.** The design pass above and the acceptance criteria it produces are both derived from the *design* — so a defect that lives outside the design's frame is invisible to both, and to the tests you wrote from those criteria. Reading the change as written is the only layer that catches it. The worked example is this gate's own first use: the reviewed design was sound and every acceptance criterion passed, while the implementation ran its cache-migration side effect during a *probe* for a library that wasn't installed — outside the design's frame, so nothing upstream could have seen it.
+
+- **Use the host's diff-review tool** (in Claude Code, `/code-review`) — a line-level pass over the working diff. Reach for the design-critique skill only when the change is design-shaped; on a plain diff it produces architecture commentary where you want line-level scrutiny.
+- **Gated like the design pass, for the same reason** — run it when the change touches an on-disk contract, a safety gate, or a default, or when it has filesystem/network side effects; skip it for docs, comments, and skill text. Deterministic checks (CI) already cover the mechanical layer; this is a gate on expensive-to-revise code, not a tax on every commit.
+- **Findings go where the design findings went** — the project's Key decisions, accepted and rejected, so the next build inherits the reasoning.
+
 ## Notes
 
 - **Forward-only.** The idea never was a consumer node, so there is nothing to delete and no receipt to match — the only surface shared with crossover is the boundary gate, which is why this is a separate skill rather than a crossover mode.
 - **The review belongs at intake, not authoring.** The consumer's gate is the mechanical boundary scan; a design critique there is produced by the same model that just wrote the idea, in private context, and yields findings that can't travel in a forward-only block. The engine-dev end reviews the genericized artifact — which is what actually gets built.
 - **Self-seeding.** The first artifact this skill would have produced is the proposal that created the skill itself; thereafter consumers use the skill instead of hand-authoring.
-- In-session only; never wire into a hook. See [[lesson-no-claude-in-hooks]].
+- **In-session by default; automate only behind the recursion guards.** The thing to prevent is *runaway agent generation*, not headless `claude` as such — a deliberately-initiated one-shot or subagent is legitimate when it carries a re-entry sentinel, is concurrency-bounded, and terminates. What this skill must never become is a hook that fires on an event its own child can re-trigger. See [[lesson-no-claude-in-hooks]].
