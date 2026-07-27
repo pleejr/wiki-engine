@@ -4,6 +4,12 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Fixed
+- **The release workflow no longer truncates its title mid-word or leaks markdown into it.** `cut -c1-60` produced `v1.26.0 — local model weights now live in a **durable, engine-chosen c` and `v1.26.1 — two backwards-compatible fixes to consumed components: \`rag-`. Every release before v1.26.0 happened to open with a short clause, so the bug shipped unnoticed for a dozen tags. The title is now the summary's first clause as plain text: markdown stripped, split on punctuation **followed by whitespace** (so `rag-build.sh` doesn't split at its own dot), length capped at a word boundary with an ellipsis, and headings/bullets skipped so a section with no lead summary can't title the release `### Added`. Verified by executing the workflow's own block against the existing CHANGELOG sections for v1.22.0–v1.26.1 plus empty/heading-only/fallback inputs.
+  - CI/release infrastructure only — nothing a pinned consumer runs, so this lands untagged and rides along in the next functional release.
+
 ## [1.26.1] — 2026-07-26
 
 Patch — two backwards-compatible fixes to consumed components: `rag-build.sh`'s cross-boundary skip no longer **fails open** on a boundary outside the old hardcoded pair, and the engine no longer points at a consumer memory note that a freshly-scaffolded vault does not have. Adopt with `bin/adopt.sh` or `update.sh`.
