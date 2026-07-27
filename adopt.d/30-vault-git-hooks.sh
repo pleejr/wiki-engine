@@ -13,7 +13,7 @@ set -uo pipefail
 
 : "${WIKI:?}"; : "${ENGINE:?}"
 
-TMPL="$ENGINE/../scaffold/pre-commit.tmpl"
+TMPL="$ENGINE/../scaffold/pre-commit"
 HOOKDIR="$WIKI/.githooks"
 HOOK="$HOOKDIR/pre-commit"
 CHECK="${ADOPT_CHECK:-}"
