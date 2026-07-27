@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.30.0] — 2026-07-27
+
+Minor — `engine-proposal` gains the **defect path**: a bug hit while running the engine in a consumer vault now has a documented route and a block shape of its own, and the skill fires on bug phrasing rather than only on "improvement". Skill text only; adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Added
 - **`engine-proposal` now documents the DEFECT path, not just the improvement path** (`§1b`, plus intake guidance in `§6`). A consumer vault is where engine bugs actually surface — it runs the engine all day — and it is the one place that cannot fix them: editing the pinned `engine/` submodule in place is not a fix but a time bomb, since the next `update.sh` moves the pointer straight past it. The channel already existed; nothing told a reader that a *bug* travels down it, and every trigger phrase said "improvement" or "idea", so the skill would not fire on "I found a bug in the engine". It does now.
