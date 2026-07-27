@@ -25,6 +25,12 @@
 #              release tag isn't a false positive; an untagged page (ref == sha)
 #              compares sha vs the clone HEAD. A clone itself behind upstream can
 #              still yield a false-negative — `wiki-repo` re-ingest resolves both.
+#              SELF-PAGE: a vault that documents itself has one page whose clone IS
+#              this vault. Its sha-vs-HEAD test is structurally unsatisfiable —
+#              recording the new sha is itself a commit, which advances HEAD and
+#              re-stales the page it just refreshed — so that page would sit in the
+#              queue forever. Only the sha branch is suppressed; a TAGGED self-page
+#              still compares tags, which do not move on every commit.
 #   verify   — a repos/ page that is un-verified or verified-stale (verify-status.sh --todo).
 #
 # Usage:
@@ -135,7 +141,15 @@ build_rows() {
         # clone has no tags reachable — fall through to sha comparison (best-effort)
       fi
 
-      # untagged page (or a tagged page against a tagless clone): sha vs HEAD
+      # untagged page (or a tagged page against a tagless clone): sha vs HEAD.
+      # Skip the SELF-PAGE here — the vault documenting its own repo. Refreshing it
+      # commits a new sha, which advances the very HEAD it is compared against, so
+      # the test can never come out equal and the item is perpetual queue noise.
+      # Resolved by path (physical, so a symlinked vault still matches), not by
+      # name — nothing consumer-specific is baked in.
+      if [ "$(cd "$clone" && pwd -P)" = "$(cd "$WIKI" && pwd -P)" ]; then
+        continue
+      fi
       head="$(git -C "$clone" rev-parse --short HEAD 2>/dev/null || true)"
       [ -n "$head" ] || continue
       [ "$rec_sha" != "$head" ] && \
