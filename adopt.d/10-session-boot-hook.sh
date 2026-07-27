@@ -11,6 +11,13 @@
 set -uo pipefail
 
 : "${WIKI:?}"; : "${ENGINE:?}"; : "${ENSURE_HOOK:?}"
+. "${ADOPT_LIB:?}" || exit 3
+
+# ENGINE ASSETS — unconditional, above the ephemeral guard. Both were unguarded: a
+# missing session-boot.sh would have been wired into settings.json as a hook command
+# pointing at nothing, which fails once per session start and is reported nowhere.
+require_engine_asset "$ENGINE/bin/session-boot.sh" file "the engine's SessionStart entrypoint"
+require_engine_asset "$ENSURE_HOOK" file "the add-only hook writer"
 
 # Never wire a REAL settings.json boot hook for an EPHEMERAL vault (test / CI / scratchpad):
 # ensure-hook keys the command on WIKI_PATH, so a throwaway vault leaves a permanent,

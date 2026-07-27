@@ -53,6 +53,20 @@ fi
 export WIKI ENGINE
 export CLAUDE_SETTINGS="$SETTINGS"
 export ENSURE_HOOK="$SCRIPT_DIR/ensure-hook.sh"
+export ADOPT_LIB="$SCRIPT_DIR/adopt-lib.sh"
+
+# adopt-lib.sh carries require_engine_asset, which is how a step distinguishes "the
+# consumer doesn't have this" (no-op) from "the engine failed to ship this" (hard fail).
+# Checked ONCE here rather than by each step: if the helper itself is missing, every step
+# that sources it fails identically, and one message is more useful than N.
+# Exits 0 from a session hook (it must never block session start) but non-zero under
+# --check, which is a human/wire-machine convergence question: "is this machine adopted?"
+# answered by a tool that cannot even load its own helper must not come back green.
+if [ ! -f "$ADOPT_LIB" ]; then
+  echo "apply-adopt: FATAL — missing $ADOPT_LIB (engine packaging bug)" >&2
+  [ "$CHECK" -eq 1 ] && exit 1
+  exit 0
+fi
 
 # --- may a step modify THIS MACHINE's shared config? ----------------------------------
 # Decided ONCE, here, rather than re-derived by each step. Two earlier attempts lived in

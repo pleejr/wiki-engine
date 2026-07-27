@@ -361,6 +361,119 @@ jobs:
             || { echo "isolated wiring did not record the vault"; exit 1; }
           echo "ok: ephemeral vault contained; isolated wiring still works"
 
+      - name: Adoption steps resolve their own engine assets
+        run: |
+          # REGRESSION (v1.28.0 -> v1.31.0): 30-vault-git-hooks.sh resolved its template as
+          # "$ENGINE/../scaffold/pre-commit" — one directory too high, since ENGINE is the
+          # engine ROOT — so it probed the CONSUMER's vault root, found nothing, and took
+          # its `|| exit 0` branch. The pre-commit gate installed on NO vault for four
+          # minor releases while every reporting surface said adopted.
+          ./bin/lint-adopt-paths.sh
+
+          # ...and the check must be capable of being RED, or it is decoration. Drive it
+          # against fixtures it MUST reject — the original bad path, and a literal engine
+          # path that does not resolve. Asserted every run, not once by whoever wrote it.
+          F="$RUNNER_TEMP/adoptfix"; mkdir -p "$F/adopt.d" "$F/scaffold"
+          printf '#!/usr/bin/env bash\nTMPL="$ENGINE/../scaffold/pre-commit"\n' > "$F/adopt.d/99-regress.sh"
+          if ./bin/lint-adopt-paths.sh --engine "$F" >/dev/null 2>&1; then
+            echo "the path checker ACCEPTED the original bug — it is not load-bearing"; exit 1
+          fi
+          printf '#!/usr/bin/env bash\nSRC="$ENGINE/scaffold/nope"\n' > "$F/adopt.d/99-regress.sh"
+          if ./bin/lint-adopt-paths.sh --engine "$F" >/dev/null 2>&1; then
+            echo "the path checker ACCEPTED an unresolvable engine path"; exit 1
+          fi
+          echo "ok: adopt.d paths resolve, and the checker rejects both failure shapes"
+
+      - name: A bundled asset is installed, not silently skipped
+        run: |
+          # The behavioural half of the step above: assert the gate ACTUALLY LANDS on a
+          # vault, and that a missing template FAILS LOUDLY instead of reporting adopted.
+          # Presence and exit-0 both looked fine while the step did nothing, so this
+          # asserts observable effects on disk, never the step's own silence.
+          export HOME="$RUNNER_TEMP/hookhome"; mkdir -p "$HOME/.claude/skills"
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-hooks"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+
+          V="$RUNNER_TEMP/hookvault"; mkdir -p "$V"; git -C "$V" init -q .
+          ./bin/apply-adopt.sh --wiki "$V" --force --settings "$RUNNER_TEMP/hook.json" >/dev/null 2>&1 || true
+          [ -x "$V/.githooks/pre-commit" ] \
+            || { echo "the pre-commit gate was NOT installed"; exit 1; }
+          cmp -s scaffold/pre-commit "$V/.githooks/pre-commit" \
+            || { echo "the installed hook does not match the shipped template"; exit 1; }
+          [ "$(git -C "$V" config --local core.hooksPath)" = ".githooks" ] \
+            || { echo "core.hooksPath was not set"; exit 1; }
+
+          # ADD-ONLY, both halves: a hook the vault wrote is never overwritten, and a
+          # hooksPath deliberately aimed elsewhere is never stolen.
+          W="$RUNNER_TEMP/ownhook"; mkdir -p "$W/.githooks"; git -C "$W" init -q .
+          printf '#!/usr/bin/env bash\n# mine\nexit 0\n' > "$W/.githooks/pre-commit"
+          chmod +x "$W/.githooks/pre-commit"
+          git -C "$W" config core.hooksPath .myhooks
+          ./bin/apply-adopt.sh --wiki "$W" --force --settings "$RUNNER_TEMP/hook2.json" >/dev/null 2>&1 || true
+          grep -q '# mine' "$W/.githooks/pre-commit" \
+            || { echo "an existing hook was overwritten"; exit 1; }
+          [ "$(git -C "$W" config --local core.hooksPath)" = ".myhooks" ] \
+            || { echo "a foreign core.hooksPath was stolen"; exit 1; }
+
+          # NEGATIVE: with the template gone the step must exit non-zero, NAME the path it
+          # looked for, and leave .engine-adopted unwritten so the next session retries.
+          # Run from a COPY — a recipe that renames a file in the checkout is not safe to
+          # run on a developer's machine, only on a disposable runner.
+          E="$RUNNER_TEMP/engbroken"; cp -R "$GITHUB_WORKSPACE" "$E"
+          mv "$E/scaffold/pre-commit" "$E/scaffold/pre-commit.moved"
+          B="$RUNNER_TEMP/brokenvault"; mkdir -p "$B"; git -C "$B" init -q .
+          out="$("$E/bin/apply-adopt.sh" --wiki "$B" --force --settings "$RUNNER_TEMP/hook3.json" 2>&1 || true)"
+          printf '%s\n' "$out" | grep -q '! step 30-vault-git-hooks.sh failed' \
+            || { echo "a missing bundled asset did NOT fail the step:"; printf '%s\n' "$out"; exit 1; }
+          printf '%s\n' "$out" | grep -q "$E/scaffold/pre-commit" \
+            || { echo "the failure did not name the resolved path:"; printf '%s\n' "$out"; exit 1; }
+          [ ! -f "$B/.engine-adopted" ] \
+            || { echo "the adoption marker was written despite a failed step"; exit 1; }
+
+          # ...and the failure must reach the USER. apply-adopt always exits 0 and its
+          # output goes to additionalContext (model-only), so without this a broken engine
+          # still renders the ordinary green banner and the human hears nothing.
+          if command -v jq >/dev/null 2>&1; then
+            sm="$(WIKI_PATH="$B" CLAUDE_SETTINGS="$RUNNER_TEMP/hook3.json" "$E/bin/session-boot.sh" | jq -r '.systemMessage // ""')"
+            printf '%s\n' "$sm" | grep -q 'engine adopt: .* FAILED' \
+              || { echo "a failed adoption step never reached the user banner: [$sm]"; exit 1; }
+          fi
+          echo "ok: gate installs, add-only holds, a missing asset fails loudly and visibly"
+
+      - name: Adoption marker stays keyed to the pinned version
+        run: |
+          # The property that makes the fix self-healing WITHOUT any epoch/marker-format
+          # machinery: a corrected step can only reach a vault by moving the pin, and a
+          # moved pin busts the fast path. Asserted behaviourally (does the hook come
+          # back?) rather than by grepping for a flag name.
+          export HOME="$RUNNER_TEMP/markhome"; mkdir -p "$HOME/.claude/skills"
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-mark"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          V="$RUNNER_TEMP/markvault"; mkdir -p "$V"; git -C "$V" init -q .
+          S="$RUNNER_TEMP/mark.json"
+          ./bin/apply-adopt.sh --wiki "$V" --force --settings "$S" >/dev/null 2>&1 || true
+          PIN="$(git describe --tags --always)"
+
+          # (a) a marker recording a DIFFERENT pin must NOT fast-path
+          rm -rf "$V/.githooks"; echo "v0.0.1-stale" > "$V/.engine-adopted"
+          ./bin/apply-adopt.sh --wiki "$V" --settings "$S" >/dev/null 2>&1 || true
+          [ -f "$V/.githooks/pre-commit" ] \
+            || { echo "a stale marker fast-pathed past the steps — the fix could never reach a vault"; exit 1; }
+
+          # (b) ...and the fast path must still work, or the marker is pointless
+          rm -rf "$V/.githooks"; printf '%s\n' "$PIN" > "$V/.engine-adopted"
+          ./bin/apply-adopt.sh --wiki "$V" --settings "$S" >/dev/null 2>&1 || true
+          [ ! -f "$V/.githooks/pre-commit" ] \
+            || { echo "the marker fast path never engages — steps run on every session"; exit 1; }
+
+          # (c) the UPDATE path ignores the marker outright
+          ./bin/adopt.sh --wiki "$V" >/dev/null 2>&1 || true
+          [ -f "$V/.githooks/pre-commit" ] \
+            || { echo "adopt.sh honoured the marker; an updating vault would skip corrected steps"; exit 1; }
+          echo "ok: marker is pin-keyed, fast path works both ways, update path forces"
+
       - name: Scaffolder + lint smoke test
         run: |
           # Isolate git config (see the concurrency step above) so extracting this block
