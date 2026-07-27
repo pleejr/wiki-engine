@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.29.1] — 2026-07-27
+
+Patch — `ensure` could silently hand back the shared working tree and report success, switching the concurrency isolation off unobserved. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Fixed
 - **`ensure` could silently hand back the canonical checkout and report success — turning the isolation off without anyone noticing.** Three linked defects, found by the tool failing on the reference vault immediately after the concurrency work shipped:
