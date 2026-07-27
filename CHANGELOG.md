@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.28.1] — 2026-07-27
+
+Patch — the vault gate was **silently inert inside a worktree**, which is where `checkpoint` commits, so it skipped exactly the commits it was meant to cover; and `integrate` counted untracked files as dirty, refusing on essentially every real vault. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Fixed
 - **The vault gate was silently inert inside a worktree — so it skipped exactly the commits `checkpoint` makes.** A `pre-commit` that resolves `engine/bin/lint.sh` from `git rev-parse --show-toplevel` finds nothing in a linked worktree, because `git worktree add` never populates submodules. The hook then took its "engine not initialized, skipping" branch and exited 0. Since `checkpoint` has committed from a worktree by design since v1.8.0, every one of those commits bypassed the gate entirely — while the canonical checkout, where almost nothing is committed, was faithfully gated. `scaffold/pre-commit` now derives the **canonical** root from the shared git common dir and runs both the guard and the lint from there. Adoption warns any vault whose existing hook still resolves from the worktree root.
