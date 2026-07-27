@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.31.0] — 2026-07-27
+
+Minor — `update.sh` advances the engine repo page's provenance when it bumps the pin, converting a perpetual `refresh` item into an honest `verify` one while never touching the `verified:` stamp; plus a fix for adoption guards that let throwaway vaults wire themselves into the machine's real settings and skill symlinks. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Added
 - **`update.sh` now advances the engine repo page's provenance when it bumps the pin.** A vault that documents the engine it consumes re-stales that page on *every* release, so the `refresh` item reappeared immediately and reliably — three times in one session. The bump removes the churn **without losing the signal**, because the two staleness axes are independent: `refresh` compares provenance to the clone, `verify` compares `verified.against` to `sources.sha`. Advancing provenance alone silences the first and **trips the second** — the page's pointer is current, its content is unconfirmed, which is a more precise description than "refresh" and exactly what verified-stale means. Verified empirically before building on it.
