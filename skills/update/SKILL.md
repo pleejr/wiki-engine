@@ -31,6 +31,6 @@ If it reports pending, run it again without `--check`. Add-only and idempotent �
 Summarize what changed (engine pin, wiring). Remind: session *content* is `checkpoint`'s job; a consumer's extra skills are converged by their own sync. This verb keeps the **engine** current.
 
 ## Rules
-- Deterministic engine tools only; never spawn `claude`; in-session / on-demand (or banner-nudged) — **never wired to a hook**.
+- Deterministic engine tools only; never spawns `claude` — so the scripts themselves are hook-safe and may be wired freely. The *skill* stays **in-session / on-demand** (or banner-nudged) for a different reason: advancing a pin is a judgement call the operator confirms, and `doctor.sh`'s report is advice, not an instruction to apply.
 - **Ask before advancing the pin** (`update.sh`); the wiring converge is add-only and safe to just run.
 - **Engine-only** — never reach into a consumer's skill repos or their tag vocabulary; that separation is what keeps the engine generic and shareable.
