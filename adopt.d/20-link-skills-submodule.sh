@@ -17,6 +17,14 @@
 set -uo pipefail
 
 : "${ENGINE:?}"
+
+# Never repoint the MACHINE's live skills at an EPHEMERAL vault (test / CI / scratchpad).
+# Worse than the stale-hook case this mirrors: these symlinks are what Claude Code loads,
+# so aiming them at a throwaway engine breaks every engine skill on the machine the moment
+# that directory is cleaned — and they keep resolving until then, so nothing announces it.
+# apply-adopt.sh decides this once (ADOPT_WIRE_MACHINE); not re-derived here.
+[ "${ADOPT_WIRE_MACHINE:-1}" = "1" ] || exit 0
+
 SRC="$ENGINE/skills"
 DEST="$HOME/.claude/skills"
 [ -d "$SRC" ] || exit 0

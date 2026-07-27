@@ -326,6 +326,41 @@ jobs:
           printf '%s\n' "$out" | grep -q "GATE RAN" \
             || { echo "the vault gate did NOT run from inside a worktree:"; printf '%s\n' "$out"; exit 1; }
 
+      - name: Ephemeral vaults must not touch the machine's real config
+        run: |
+          # A throwaway vault (test / CI / scratchpad) must never wire itself into the
+          # machine's real settings.json or repoint ~/.claude/skills — those outlive it: a
+          # permanent SessionStart hook, or skill symlinks aimed at a directory that later
+          # disappears (they keep resolving until it is cleaned, so nothing announces it).
+          #
+          # Drives apply-adopt.sh, NOT the steps directly, because that is where the
+          # decision now lives. Two earlier in-step guards each failed silently: one tested
+          # `[ -n "$CLAUDE_SETTINGS" ]`, which apply-adopt makes permanently true; the other
+          # enumerated macOS-shaped temp prefixes and did not match this runner's own
+          # temp dir — caught only because this test runs on a path neither author had.
+          export HOME="$RUNNER_TEMP/fakehome"; mkdir -p "$HOME/.claude/skills"
+          echo '{}' > "$HOME/.claude/settings.json"
+          ln -sfn /real/engine/skills/checkpoint "$HOME/.claude/skills/checkpoint"
+          V="$RUNNER_TEMP/ephem"; mkdir -p "$V"; ln -sfn "$GITHUB_WORKSPACE" "$V/engine"
+          before_settings="$(cat "$HOME/.claude/settings.json")"
+          before_link="$(readlink "$HOME/.claude/skills/checkpoint")"
+
+          ./bin/apply-adopt.sh --wiki "$V" --force >/dev/null 2>&1 || true
+
+          [ "$(cat "$HOME/.claude/settings.json")" = "$before_settings" ] \
+            || { echo "an ephemeral vault wrote the real settings.json"; exit 1; }
+          [ "$(readlink "$HOME/.claude/skills/checkpoint")" = "$before_link" ] \
+            || { echo "an ephemeral vault repointed the machine's skill symlinks"; exit 1; }
+
+          # ...but with settings genuinely redirected, wiring must STILL happen. A guard
+          # that is merely broad is the same defect facing the other way.
+          ./bin/apply-adopt.sh --wiki "$V" --force --settings "$RUNNER_TEMP/iso.json" >/dev/null 2>&1 || true
+          [ -f "$RUNNER_TEMP/iso.json" ] \
+            || { echo "isolated wiring was skipped too — the guard is too broad"; exit 1; }
+          grep -q "$V" "$RUNNER_TEMP/iso.json" \
+            || { echo "isolated wiring did not record the vault"; exit 1; }
+          echo "ok: ephemeral vault contained; isolated wiring still works"
+
       - name: Scaffolder + lint smoke test
         run: |
           # Isolate git config (see the concurrency step above) so extracting this block
