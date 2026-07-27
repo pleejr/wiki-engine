@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.26.1] — 2026-07-26
+
+Patch — two backwards-compatible fixes to consumed components: `rag-build.sh`'s cross-boundary skip no longer **fails open** on a boundary outside the old hardcoded pair, and the engine no longer points at a consumer memory note that a freshly-scaffolded vault does not have. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Fixed
 - **`rag-build.sh`'s cross-boundary skip no longer fails open on an unrecognized boundary.** `vault_boundary()` matched the vault's declared boundary against a hardcoded `("personal", "work")`; anything else fell through to `None`, and `None` switches the skip off entirely. So the one automated cross-boundary guard was disabled on precisely the vaults that had adopted a new boundary — a page carrying a *foreign* `boundary:` got embedded into recall instead of skipped. Demonstrated before/after on a throwaway vault: a `boundary: work` page indexed into an `engine-wiki` vault (3 files, 0 skipped) now skips correctly (2 files, 1 skipped), with `personal` unchanged. Any well-formed token is now accepted; an unparseable declaration is reported on stderr and scanned past rather than silently accepted, and a genuinely absent boundary still means "no filter" since there is nothing to compare against.
