@@ -10,5 +10,11 @@
 # Transient engine-proposal outbox (scratch handoff blocks; not a vault node)
 .engine-proposal/
 
+# Foreign-boundary denylist for lint.sh's gate. Git-ignored ON PURPOSE: the file
+# names the OTHER boundary's identifiers, so tracking it would commit exactly what
+# the gate exists to keep out of this vault. Per-machine; an absent file reports
+# "not armed" rather than passing silently.
+.wiki-gates.local
+
 # OS cruft
 .DS_Store

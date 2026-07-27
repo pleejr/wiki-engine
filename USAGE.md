@@ -49,7 +49,8 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 | `engine-version.sh` | Pinned vs latest engine tag (run by `wiki-context`). |
 | `adopt.sh` | Ensure the vault has the engine's current node folders + run feature-adoption (after a pin bump). |
 | `wire-machine.sh` | Idempotent converge — make THIS machine ready for the vault at `$WIKI_PATH`: submodule, skill links, `WIKI_PATH`, CLAUDE.md import, `.rag`, feature-adopt. `--check` previews. The "wire an existing clone" verb behind `wiki-adopt`. |
-| `lint.sh` | Umbrella lint + write-time **gate** (memory + frontmatter + soft-wrap + catalog + boundary-present + provenance-present); `checkpoint`, a pre-commit hook, and vault CI all run it. |
+| `lint.sh` | Umbrella lint + write-time **gate** (memory + frontmatter + soft-wrap + catalog + boundary-present + provenance-present + link-integrity + foreign-boundary); `checkpoint`, a pre-commit hook, and vault CI all run it. |
+| `lint-links.sh` | Link-integrity gate over content-node pages. A dangling `[[link]]` that **nearly** matches a real slug is an **error** (typo, or a slug left behind by a rename); one that matches nothing is a stub per `SCHEMA.md` and stays a warning. Links inside code spans/fences are documentation about the syntax, not links, and are ignored; targets listed in the vault's external-refs file (things that must never resolve here) are silent. |
 | `verify-status.sh` | Report the `verified:` correctness signal across repo pages (verified / stale / unverified); `--todo` emits the drainable work-list, `--check` gates. |
 | `upkeep.sh` | Drainable maintenance queue (`.upkeep/queue.tsv`): `scan` builds it (stale repo pages + un-verified pages), `next`/`done` drain it one item per iteration. In-session/human-driven — no `claude` spawn; re-entry sentinel + lock guard any future automated driver. |
 | `crossover.sh` | Deterministic transport for the `crossover` skill: `export`/`import`/`finalize` a batch of pages between vaults with sha256 integrity + a secret-scan; only a hash-matched receipt authorizes the origin soft-delete. `export` splits one block per item by default (`--bundle` for one block, `--block N` to re-emit one); `import` accumulates blocks and names what is still outstanding. |
@@ -90,6 +91,15 @@ The SessionStart banner reports engine freshness. A machine can fold in **its ow
 
 - Every vault declares `boundary: personal|work`. **No secrets** (keys, tokens, credentials) in any page. **Content never crosses vaults** — personal↔work is a deliberate manual export.
 - **NEVER invoke `claude` from a hook or any background/recursive spawn** — that was the `.ai-os` fork bomb. Skills are in-session, on-demand only. The lone exception that may run from a hook is `rag-capture.sh`, precisely because it is deterministic and never calls `claude`.
+
+## Gate seam (`$WIKI/.wiki-gates.conf`)
+
+Optional, `key = value`, **parsed and never sourced** — a config file that can execute code is a config file that can own the machine running the gate. Absent means engine defaults. The engine composes the seam; the vault supplies the values, so no consumer's strings live in the engine.
+
+| Key | Default | What it names |
+| --- | --- | --- |
+| `external_refs` | `.wiki-gates-external-refs` | A file of link targets that must **never** resolve in this vault — another boundary's pages, engine files, skill names. Listed targets are silent instead of warning as stubs, so a permanent cross-boundary reference is not mistaken for rot a future session should "fix". |
+| `foreign_boundary_patterns` | `.wiki-gates.local` | A file of EREs this vault's pages must not match — the foreign-boundary denylist. **Keep it git-ignored:** naming the forbidden strings in a tracked file commits the other boundary's identifiers into this vault's permanent history, which is the thing the gate exists to prevent. The trade-off is that a fresh clone starts unarmed, so an unarmed gate reports `not armed` rather than passing silently. Matches print the file, line, and the *pattern* — never the matched text, which would put the foreign string in CI logs. |
 
 ## Config knobs (environment)
 
