@@ -17,6 +17,16 @@
 set -uo pipefail
 
 : "${ENGINE:?}"
+. "${ADOPT_LIB:?}" || exit 3
+
+SRC="$ENGINE/skills"
+DEST="$HOME/.claude/skills"
+
+# ENGINE ASSET — unconditional, and above the ephemeral guard on purpose. This was
+# `[ -d "$SRC" ] || exit 0`, which resolves correctly today and so was silent for the
+# right reason; a future refactor of the engine's layout would have made it silent for
+# the wrong one, with skill links this time. See bin/adopt-lib.sh for the rule.
+require_engine_asset "$SRC" dir "the engine's own skills, which the machine links to"
 
 # Never repoint the MACHINE's live skills at an EPHEMERAL vault (test / CI / scratchpad).
 # Worse than the stale-hook case this mirrors: these symlinks are what Claude Code loads,
@@ -24,10 +34,6 @@ set -uo pipefail
 # that directory is cleaned — and they keep resolving until then, so nothing announces it.
 # apply-adopt.sh decides this once (ADOPT_WIRE_MACHINE); not re-derived here.
 [ "${ADOPT_WIRE_MACHINE:-1}" = "1" ] || exit 0
-
-SRC="$ENGINE/skills"
-DEST="$HOME/.claude/skills"
-[ -d "$SRC" ] || exit 0
 
 for s in "$SRC"/*/; do
   [ -d "$s" ] || continue

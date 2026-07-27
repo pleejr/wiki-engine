@@ -12,14 +12,21 @@
 set -uo pipefail
 
 : "${WIKI:?}"; : "${ENGINE:?}"
+. "${ADOPT_LIB:?}" || exit 3
 
-TMPL="$ENGINE/../scaffold/pre-commit"
+TMPL="$ENGINE/scaffold/pre-commit"
 HOOKDIR="$WIKI/.githooks"
 HOOK="$HOOKDIR/pre-commit"
 CHECK="${ADOPT_CHECK:-}"
 
+# ENGINE ASSET — unconditional, and deliberately ABOVE the git-repo guard below. This
+# line used to read `[ -f "$TMPL" ] || exit 0` against `$ENGINE/../scaffold/pre-commit`,
+# one directory too high (ENGINE is the engine ROOT), so it pointed into the consumer's
+# vault root, found nothing, and exited 0 — for four minor releases, on every vault.
+require_engine_asset "$TMPL" file "the vault's pre-commit gate template"
+
+# CONSUMER STATE — a vault that isn't a git repo has no hooks to install. Genuine no-op.
 git -C "$WIKI" rev-parse --git-dir >/dev/null 2>&1 || exit 0
-[ -f "$TMPL" ] || exit 0
 
 if [ ! -f "$HOOK" ]; then
   if [ -n "$CHECK" ]; then

@@ -23,6 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKI="${WIKI_PATH:-}"
 
 ctx=""   # accumulates human-readable text destined for the model (additionalContext)
+adopt_fail=0
 
 # 1. Auto-adopt features the pinned engine shipped since this machine last adopted.
 if [ -x "$SCRIPT_DIR/apply-adopt.sh" ]; then
@@ -30,6 +31,17 @@ if [ -x "$SCRIPT_DIR/apply-adopt.sh" ]; then
   else a="$("$SCRIPT_DIR/apply-adopt.sh" 2>&1)" || true; fi
   [ -n "${a:-}" ] && ctx="${ctx}${a}
 "
+  # A FAILED adoption step must reach the USER, not just the model. apply-adopt.sh always
+  # exits 0 (it must never block session start), and everything it prints lands in
+  # additionalContext under suppressOutput — model-only. So without this, an engine that
+  # ships a broken adoption step still renders the ordinary green banner, and whether the
+  # human ever hears about it depends on the assistant choosing to mention it. Since a
+  # step now hard-fails when its own bundled asset is missing, the loud half of that
+  # design has to be genuinely loud.
+  # -E, not BRE `\|`: alternation via `\|` is a GNU extension and is not portable. Anchored
+  # to the two shapes apply-adopt.sh actually reports failure in, so an advisory line that
+  # happens to contain the word FATAL cannot raise a false alarm.
+  adopt_fail="$(printf '%s\n' "${a:-}" | grep -Ec '^! step |^apply-adopt: FATAL' || true)"
 fi
 
 # 2. Version staleness (wiki-engine). Side effect: (re)writes the cache.
@@ -43,6 +55,12 @@ fi
 banner=""
 if [ -x "$SCRIPT_DIR/session-banner.sh" ]; then
   banner="$(WIKI_PATH="$WIKI" "$SCRIPT_DIR/session-banner.sh" 2>/dev/null || true)"
+fi
+
+# Prepend the adoption failure, so a broken step is never masked by a green version line.
+if [ "${adopt_fail:-0}" -gt 0 ] 2>/dev/null; then
+  banner="⚠ engine adopt: ${adopt_fail} step(s) FAILED — run engine/bin/apply-adopt.sh --check${banner:+
+}${banner}"
 fi
 
 # Emit one combined hook-JSON: systemMessage -> user, additionalContext -> model.
