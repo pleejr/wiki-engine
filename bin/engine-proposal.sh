@@ -15,8 +15,20 @@
 # fail-closed gate plus an optional git-ignored scratch copy for traceability.
 #
 # Subcommands:
-#   scan  --vault DIR [--file F]    block on stdin (or F) -> findings; exit 1 if any leak
-#   stash --vault DIR --slug ID     block on stdin -> $VAULT/.engine-proposal/ID.outbox (git-ignored)
+#   scan   --vault DIR [--file F]   block on stdin (or F) -> findings; exit 1 if any leak
+#   stash  --vault DIR --slug ID    block on stdin -> $VAULT/.engine-proposal/ID.outbox (git-ignored)
+#   status --vault DIR [--slug ID]  what happened to a proposal, read from the engine checkout
+#
+# `status` closes the round trip. A handoff is forward-only, so the engine has no way to
+# tell a reporter anything — the shared surface is the engine repository itself, and that
+# is what this reads: PROPOSALS.md for the outcome, the `Proposal:` commit trailers plus
+# `git tag --contains` for the release. Nothing is stored on the consumer side, because
+# hand-maintained status drifts and a derived answer cannot.
+#
+# It resolves against `origin/main` when the submodule has it (update.sh fetches), NOT the
+# detached pin — otherwise a proposal that shipped after your pin reads as still open. It
+# prints the horizon it resolved against, so "no record" is never confused with "your refs
+# are stale". No network: it reads only what the checkout already has.
 #
 # `scan` derives the consumer's OWN identifiers from the vault (git remote slug,
 # directory name, git user name/email) and flags any literal appearance in the
@@ -26,8 +38,9 @@
 # identifiers it can derive, so the skill still owns the actual scrub.
 #
 # Usage:
-#   engine-proposal.sh scan  --vault DIR [--file draft.md]   < block
-#   engine-proposal.sh stash --vault DIR --slug my-idea       < block
+#   engine-proposal.sh scan   --vault DIR [--file draft.md]   < block
+#   engine-proposal.sh stash  --vault DIR --slug my-idea       < block
+#   engine-proposal.sh status --vault DIR [--slug my-idea]
 
 set -uo pipefail
 
@@ -134,6 +147,15 @@ do_stash() {
   local block; block="$(read_input)"
   [[ -n "$block" ]] || die "empty input — nothing to stash"
 
+  # The filename is what `status` keys off, and the block's own `slug:` is what the engine
+  # ledger will carry. If they diverge, every later lookup silently asks about the wrong
+  # proposal — so reject it here rather than at the far end, where nobody can see both.
+  local inblock
+  inblock="$(printf '%s\n' "$block" | grep -m1 -E '^slug:[[:space:]]*' | sed -E 's/^slug:[[:space:]]*//; s/[[:space:]]+$//')"
+  if [[ -n "$inblock" && "$inblock" != "$SLUG" ]]; then
+    die "--slug '$SLUG' does not match the block's 'slug: $inblock' — the slug is the only correlation key; make them identical"
+  fi
+
   local dir="$VAULT/.engine-proposal"
   mkdir -p "$dir"
   # self-heal: keep the transient outbox out of git even on an existing vault
@@ -147,8 +169,144 @@ do_stash() {
     ".engine-proposal/$SLUG.outbox"
 }
 
+# ============================================================ status ==========
+do_status() {
+  local engine="$VAULT/engine"
+  [[ -d "$engine" ]] || die "no engine at $engine — status reads the engine checkout"
+  git -C "$engine" rev-parse --git-dir >/dev/null 2>&1 || die "engine at $engine is not a git checkout"
+
+  # Resolve against fetched history, not the detached pin: a proposal that shipped in a
+  # release NEWER than this vault's pin is invisible from the worktree, and reading it as
+  # "open" is the exact failure this subcommand exists to remove.
+  local ref horizon pinned
+  if git -C "$engine" rev-parse -q --verify origin/main >/dev/null 2>&1; then ref="origin/main"; else ref="HEAD"; fi
+  horizon="$(git -C "$engine" describe --tags --always "$ref" 2>/dev/null || echo "$ref")"
+  pinned="$(git -C "$engine" describe --tags --always HEAD 2>/dev/null || echo "?")"
+
+  # ledger, read at the resolution ref (falls back to the worktree on an old ref)
+  local ledger
+  ledger="$(git -C "$engine" show "$ref:PROPOSALS.md" 2>/dev/null || true)"
+  [[ -n "$ledger" ]] || ledger="$(cat "$engine/PROPOSALS.md" 2>/dev/null || true)"
+
+  local -a l_slug=() l_out=() l_det=()
+  if [[ -n "$ledger" ]]; then
+    local row
+    while IFS= read -r row; do
+      [[ -n "$row" ]] || continue
+      IFS='|' read -r -a f <<<"$row"
+      [[ ${#f[@]} -eq 4 ]] || continue
+      local s o d
+      s="$(printf '%s' "${f[1]}" | tr -d ' `')"
+      o="$(printf '%s' "${f[2]}" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+      d="$(printf '%s' "${f[3]}" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/^`//; s/`$//')"
+      [[ -n "$s" ]] || continue
+      l_slug+=("$s"); l_out+=("$o"); l_det+=("$d")
+    done < <(printf '%s\n' "$ledger" | awk '
+      /^## Ledger[[:space:]]*$/ { inl=1; next } /^## / { inl=0 }
+      inl && /^\|/ { if ($0 ~ /^\|[[:space:]]*slug[[:space:]]*\|/) next; if ($0 ~ /^\|[[:space:]]*-+/) next; print }')
+  fi
+
+  ledger_find() {
+    local w="$1" i
+    [[ ${#l_slug[@]} -gt 0 ]] || return 1
+    for i in "${!l_slug[@]}"; do [[ "${l_slug[$i]}" == "$w" ]] && { printf '%s' "$i"; return 0; }; done
+    return 1
+  }
+
+  # slugs to report -----------------------------------------------------------
+  local -a want=(); local -a src=()
+  if [[ -n "$SLUG" ]]; then
+    want+=("$SLUG"); src+=("--slug")
+  else
+    local ob
+    for ob in "$VAULT"/.engine-proposal/*.outbox; do
+      [[ -e "$ob" ]] || continue
+      local base inb
+      base="$(basename "$ob" .outbox)"
+      inb="$(grep -m1 -E '^slug:[[:space:]]*' "$ob" 2>/dev/null | sed -E 's/^slug:[[:space:]]*//; s/[[:space:]]+$//')"
+      want+=("${inb:-$base}"); src+=("$base.outbox")
+    done
+  fi
+
+  printf 'engine-proposal: resolving against %s (%s); this vault is pinned at %s\n' "$ref" "$horizon" "$pinned"
+  if [[ ${#want[@]} -eq 0 ]]; then
+    # an empty outbox is NOT "nothing outstanding" — the outbox is git-ignored and
+    # per-machine, so say what was actually scanned rather than implying a clean slate.
+    printf '\n  no handoff blocks stashed on THIS machine (%s).\n' ".engine-proposal/"
+    printf '  The outbox is git-ignored and per-machine, so this is not evidence that nothing is\n'
+    printf '  outstanding. Query a specific proposal with: engine-proposal.sh status --vault DIR --slug ID\n'
+    return 0
+  fi
+
+  local i
+  for i in "${!want[@]}"; do
+    # separate declarations: `local a=x b=$a` expands $a before the builtin assigns it
+    local slug="${want[$i]}"
+    local canon="$slug"
+    local idx note=""
+    printf '\n  %s  (%s)\n' "$slug" "${src[$i]}"
+
+    if idx="$(ledger_find "$canon")" && [[ "${l_out[$idx]}" == "alias" ]]; then
+      note="    (recorded upstream under '${l_det[$idx]}' — intake renamed it)"
+      canon="${l_det[$idx]}"
+    fi
+    if ! idx="$(ledger_find "$canon")"; then
+      printf '    unknown — no row in the engine ledger at %s.\n' "$horizon"
+      printf '    The engine has no record of receiving this. Re-sending is the right move.\n'
+      [[ "$ref" == "HEAD" ]] && printf '    (resolved against the pin only — no origin/main fetched; run update.sh first)\n'
+      continue
+    fi
+    [[ -n "$note" ]] && printf '%s\n' "$note"
+
+    case "${l_out[$idx]}" in
+      open)
+        printf '    open — received and recorded upstream (%s). Do not re-send.\n' "${l_det[$idx]}" ;;
+      rejected)
+        printf '    REJECTED — %s\n' "${l_det[$idx]}" ;;
+      partially-accepted)
+        printf '    partially accepted — %s\n' "${l_det[$idx]}" ;;
+      shipped)
+        local rel=""
+        if [[ "${l_det[$idx]}" != "derived" ]]; then
+          rel="${l_det[$idx]}"
+        else
+          local sha
+          sha="$(git -C "$engine" log "$ref" --format='%H %(trailers:key=Proposal,valueonly,separator=%x2c)' 2>/dev/null \
+                 | awk -v s="$canon" '{for(i=2;i<=NF;i++){gsub(/,/,"",$i); if($i==s){print $1; exit}}}')"
+          if [[ -n "$sha" ]]; then
+            rel="$(git -C "$engine" tag --contains "$sha" 2>/dev/null | grep -E '^v[0-9]' | sort -V | head -1)"
+            if [[ -z "$rel" ]]; then
+              printf '    merged, not yet released — %s is on %s but carries no version tag.\n' "${sha:0:9}" "$ref"
+              printf '    It will arrive in the next release.\n'
+              continue
+            fi
+          fi
+        fi
+        if [[ -z "$rel" ]]; then
+          printf '    shipped upstream, but no release could be resolved from %s.\n' "$horizon"
+          continue
+        fi
+        # `pinned` is a `git describe`, so it may read v1.33.0-3-gabc1234 on a vault whose
+        # submodule sits past a tag; sort -V still orders that after the bare tag, which is
+        # the answer we want. A pin we cannot parse gets no have-it/need-it claim at all.
+        if [[ ! "$pinned" =~ ^v[0-9] ]]; then
+          printf '    SHIPPED in %s (could not read this vault'\''s pin to compare).\n' "$rel"
+        elif [[ "$(printf '%s\n%s\n' "$rel" "$pinned" | sort -V | tail -1)" == "$pinned" ]]; then
+          printf '    SHIPPED in %s — you already have it (pinned %s). Safe to drop the block.\n' "$rel" "$pinned"
+        else
+          printf '    SHIPPED in %s — NEWER than your pin (%s). Run update.sh to get it.\n' "$rel" "$pinned"
+        fi ;;
+      *)
+        printf '    unrecognised outcome "%s" — the ledger is newer than this tool; update the engine.\n' "${l_out[$idx]}" ;;
+    esac
+  done
+  printf '\n'
+  return 0
+}
+
 case "$CMD" in
-  scan)  do_scan ;;
-  stash) do_stash ;;
-  *) die "usage: engine-proposal.sh {scan|stash} --vault DIR [...]  (got '${CMD:-}')" ;;
+  scan)   do_scan ;;
+  stash)  do_stash ;;
+  status) do_status ;;
+  *) die "usage: engine-proposal.sh {scan|stash|status} --vault DIR [...]  (got '${CMD:-}')" ;;
 esac

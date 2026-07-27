@@ -573,3 +573,136 @@ jobs:
             --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills --no-rag
           ./bin/lint.sh --wiki "$VAULT"
           ./bin/adopt.sh --check --wiki "$VAULT"
+
+  # ---------------------------------------------------------------------------
+  # The proposal round-trip is its own job for ONE reason: it needs full history
+  # and tags (`fetch-depth: 0`) to see the `Proposal:` trailers and resolve a
+  # commit to its release, and the checks job above must not pay for that on
+  # every run. A depth-1 checkout would let every trailer check pass vacuously —
+  # which is why lint-proposals.sh treats a shallow clone as a FAILURE rather
+  # than silently skipping.
+  proposals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Ledger is well-formed and no trailer drifts from it
+        run: ./bin/lint-proposals.sh
+
+      - name: A shallow clone must FAIL, not pass vacuously
+        run: |
+          # The whole ledger gate rests on walking history. If a future checkout loses
+          # fetch-depth: 0, every trailer check silently sees zero commits and goes green —
+          # the same "check that can never be red" class this repo has now shipped fixes for
+          # three times. Assert the tool refuses instead.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-shallow"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git clone -q --depth 1 "file://$PWD" "$RUNNER_TEMP/shallow"
+          # Capture, then grep. Actions runs `bash -eo pipefail`, so `lint | grep -q` takes
+          # the FAILING lint's status and a matching grep still reads as a miss — which is
+          # exactly how this step first went red against a tool that was working.
+          L="$(./bin/lint-proposals.sh --repo "$RUNNER_TEMP/shallow" 2>&1 || true)"
+          echo "$L"
+          printf '%s' "$L" | grep -q "SHALLOW" \
+            || { echo "FAIL: shallow clone did not report"; exit 1; }
+          echo "ok: shallow clone is reported"
+          ./bin/lint-proposals.sh --repo "$RUNNER_TEMP/shallow" >/dev/null 2>&1 \
+            && { echo "FAIL: shallow clone passed"; exit 1; } || echo "ok: shallow clone exits non-zero"
+
+      - name: status reports shipped / rejected / open / unknown correctly
+        run: |
+          # Behavioural fixture: a consumer vault pinned THREE releases behind an engine
+          # that has since shipped one of its proposals, rejected another, and renamed a
+          # third. Every state the skill promises a reporter is asserted here, including
+          # the two that do not exist without this feature: a DECLINE reaching the
+          # reporter at all, and `unknown` (never received) being distinguishable from
+          # `open` (received, in progress).
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-proposals"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/proposals"; mkdir -p "$T"
+          fail=0
+          chk() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "  ok   $1"; else echo "  FAIL $1 — wanted: $3"; fail=1; fi; }
+
+          SRC="$T/engine-src"; mkdir -p "$SRC"; git init -q "$SRC"
+          cat > "$SRC/PROPOSALS.md" <<'EOF'
+          # Proposals
+
+          ## Ledger
+
+          | slug | outcome | detail |
+          |---|---|---|
+          | `shipped-old` | shipped | derived |
+          | `shipped-new` | shipped | derived |
+          | `back-filled` | shipped | v1.0.0 |
+          | `declined-thing` | rejected | the axis was wrong: a per-item cap cannot fix a volume failure |
+          | `half-thing` | partially-accepted | shape taken, the marker machinery was not — it self-heals |
+          | `open-thing` | open | filed 2026-01-01 |
+          | `renamed-in` | alias | shipped-old |
+          EOF
+          git -C "$SRC" add -A && git -C "$SRC" commit -q -m ledger
+          git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: old thing\n\nbody\n\nProposal: shipped-old\nCo-authored-by: X <x@y>\n')"
+          git -C "$SRC" tag v1.0.0
+          git -C "$SRC" commit -q --allow-empty -m middle
+          git -C "$SRC" tag v1.5.0
+          git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: new thing\n\nbody\n\nProposal: shipped-new\n')"
+          git -C "$SRC" tag v2.0.0
+
+          V="$T/vault"; mkdir -p "$V/.engine-proposal"
+          git clone -q "$SRC" "$V/engine"
+          git -C "$V/engine" checkout -q v1.0.0    # detached at the pin, as a submodule is
+          for s in shipped-old shipped-new back-filled declined-thing half-thing open-thing renamed-in; do
+            printf 'HANDOFF — engine improvement proposal\nslug: %s\n' "$s" > "$V/.engine-proposal/$s.outbox"
+          done
+
+          OUT="$(./bin/engine-proposal.sh status --vault "$V" 2>&1)"; echo "$OUT"
+          chk "resolves past the pin"       "$OUT" "resolving against origin/main"
+          chk "shipped at/below pin"        "$OUT" "SHIPPED in v1.0.0 — you already have it"
+          chk "shipped ABOVE pin"           "$OUT" "SHIPPED in v2.0.0 — NEWER than your pin"
+          chk "REJECTED is not open"        "$OUT" "REJECTED — the axis was wrong"
+          chk "partially accepted"          "$OUT" "partially accepted — shape taken"
+          chk "open says do not re-send"    "$OUT" "open — received and recorded upstream"
+          chk "alias resolves to canonical" "$OUT" "recorded upstream under 'shipped-old'"
+
+          OUT2="$(./bin/engine-proposal.sh status --vault "$V" --slug never-arrived 2>&1)"
+          chk "unknown != open"             "$OUT2" "unknown — no row in the engine ledger"
+          chk "unknown says re-send"        "$OUT2" "Re-sending is the right move"
+
+          rm -f "$V/.engine-proposal/shipped-new.outbox"
+          OUT3="$(./bin/engine-proposal.sh status --vault "$V" --slug shipped-new 2>&1)"
+          chk "--slug without a local block" "$OUT3" "SHIPPED in v2.0.0"
+
+          rm -f "$V"/.engine-proposal/*.outbox
+          OUT4="$(./bin/engine-proposal.sh status --vault "$V" 2>&1)"
+          chk "empty outbox is not a clean slate" "$OUT4" "not evidence that nothing is"
+
+          if printf 'slug: real-slug\n' | ./bin/engine-proposal.sh stash --vault "$V" --slug other-slug >/dev/null 2>&1; then
+            echo "  FAIL stash accepted a slug that disagrees with the block"; fail=1
+          else echo "  ok   stash rejects filename/slug divergence"; fi
+
+          # Both lint failures are confirmed load-bearing by INTRODUCING them. Capture the
+          # output before grepping: under pipefail, `lint | grep -q` takes the failing
+          # lint's status, so a matching grep would still read as a miss.
+          git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: oops\n\nProposal: shipped-old\n\ntrailing prose\n')"
+          L="$(./bin/lint-proposals.sh --repo "$SRC" 2>&1 || true)"   # -e would abort on the expected failure
+          printf '%s' "$L" | grep -q "not in the final paragraph" \
+            && echo "  ok   lint catches a trailer git cannot parse" \
+            || { echo "  FAIL lint missed a mid-body Proposal: line"; fail=1; }
+          git -C "$SRC" reset -q --hard HEAD~1
+
+          git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: ghost\n\nProposal: not-in-ledger\n')"
+          L="$(./bin/lint-proposals.sh --repo "$SRC" 2>&1 || true)"   # -e would abort on the expected failure
+          printf '%s' "$L" | grep -q "has no row in PROPOSALS.md" \
+            && echo "  ok   lint catches a trailer with no ledger row" \
+            || { echo "  FAIL lint missed an unledgered trailer"; fail=1; }
+          git -C "$SRC" reset -q --hard HEAD~1
+
+          ./bin/lint-proposals.sh --repo "$SRC" >/dev/null 2>&1 \
+            && echo "  ok   lint passes on a well-formed ledger" \
+            || { echo "  FAIL lint red on a clean fixture"; ./bin/lint-proposals.sh --repo "$SRC"; fail=1; }
+
+          exit "$fail"
