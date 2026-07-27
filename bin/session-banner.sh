@@ -22,8 +22,33 @@ eng="?"; [ -n "$WIKI" ] && eng="$(git -C "$WIKI/engine" describe --tags --always
 # staleness summary written by session-preflight.sh (empty = all current)
 frag=""; [ -f "$CACHE" ] && frag="$(head -n1 "$CACHE" 2>/dev/null)"
 
+# Live peer sessions (local file reads only, no git, no network). Surfaced because the
+# concurrency guard fires at COMMIT time — by then a session has already done its editing
+# in whatever tree it chose. Knowing at session START that someone else is writing is what
+# makes taking a worktree an informed choice rather than a rule to remember.
+peers=""
+if [ -n "$WIKI" ]; then
+  ldir="${WIKI_WORKTREE_ROOT:-$WIKI/.worktrees}/.leases"
+  if [ -d "$ldir" ]; then
+    me="${WIKI_WT_SESSION:-${CLAUDE_CODE_SESSION_ID:-}}"
+    stale_sec=$(( ${WIKI_LEASE_STALE_MIN:-120} * 60 ))
+    now="$(date +%s)"; n=0
+    for lf in "$ldir"/*.lease; do
+      [ -f "$lf" ] || continue
+      s="$(awk -F= '$1=="session"{sub(/^[^=]*=/,"");print;exit}' "$lf" 2>/dev/null)"
+      [ -n "$me" ] && [ "$s" = "$me" ] && continue
+      hb="$(awk -F= '$1=="heartbeat"{sub(/^[^=]*=/,"");print;exit}' "$lf" 2>/dev/null)"
+      [ -n "$hb" ] || continue
+      [ $(( now - hb )) -lt "$stale_sec" ] && n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+      peers="$(printf '  ·  ⚠ %d other session(s) writing — take a worktree' "$n")"
+    fi
+  fi
+fi
+
 if [ -z "$frag" ]; then
-  printf 'wiki-engine %s ✓\n' "$eng"
+  printf 'wiki-engine %s ✓%s\n' "$eng" "$peers"
 else
-  printf 'wiki-engine %s  ·  ⚠ %s\n' "$eng" "$frag"
+  printf 'wiki-engine %s  ·  ⚠ %s%s\n' "$eng" "$frag" "$peers"
 fi

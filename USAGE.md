@@ -50,6 +50,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 | `adopt.sh` | Ensure the vault has the engine's current node folders + run feature-adoption (after a pin bump). |
 | `wire-machine.sh` | Idempotent converge — make THIS machine ready for the vault at `$WIKI_PATH`: submodule, skill links, `WIKI_PATH`, CLAUDE.md import, `.rag`, feature-adopt. `--check` previews. The "wire an existing clone" verb behind `wiki-adopt`. |
 | `lint.sh` | Umbrella lint + write-time **gate** (memory + frontmatter + soft-wrap + catalog + boundary-present + provenance-present + link-integrity + foreign-boundary); `checkpoint`, a pre-commit hook, and vault CI all run it. |
+| `vault-worktree.sh` | Concurrency machinery for multi-session/agent writing: `ensure` (per-session worktree), `guard` (refuse a commit in canonical — wire from `pre-commit`), `lease`/`peers` (advisory path declarations + live sessions), `integrate` (locked rebase + fast-forward to `main`), `gc`/`list`. See the Concurrency section below. |
 | `lint-links.sh` | Link-integrity gate over content-node pages. A dangling `[[link]]` that **nearly** matches a real slug is an **error** (typo, or a slug left behind by a rename); one that matches nothing is a stub per `SCHEMA.md` and stays a warning. Links inside code spans/fences are documentation about the syntax, not links, and are ignored; targets listed in the vault's external-refs file (things that must never resolve here) are silent. |
 | `verify-status.sh` | Report the `verified:` correctness signal across repo pages (verified / stale / unverified); `--todo` emits the drainable work-list, `--check` gates. |
 | `upkeep.sh` | Drainable maintenance queue (`.upkeep/queue.tsv`): `scan` builds it (stale repo pages + un-verified pages), `next`/`done` drain it one item per iteration. In-session/human-driven — no `claude` spawn; re-entry sentinel + lock guard any future automated driver. |
@@ -91,6 +92,25 @@ The SessionStart banner reports engine freshness. A machine can fold in **its ow
 
 - Every vault declares `boundary: personal|work`. **No secrets** (keys, tokens, credentials) in any page. **Content never crosses vaults** — personal↔work is a deliberate manual export.
 - **NEVER invoke `claude` from a hook or any background/recursive spawn** — that was the `.ai-os` fork bomb. Skills are in-session, on-demand only. The lone exception that may run from a hook is `rag-capture.sh`, precisely because it is deterministic and never calls `claude`.
+
+## Concurrency — more than one session (or agent) writing at once
+
+Two sessions pointed at one `$WIKI_PATH` share **one working tree, one index, and one HEAD**. That is enough to lose work even when they never touch the same file: `git add -A` in either stages the other's in-progress edits, and `git reset`/`checkout` moves the other's HEAD. Simultaneous edits to one file are last-writer-wins **on disk, before git is involved at all**, so no commit-time lock can help.
+
+`bin/vault-worktree.sh` layers four defences, each covering what the one below cannot:
+
+| Layer | Command | What it prevents |
+| --- | --- | --- |
+| **Isolation** | `ensure` | The filesystem race. Each session gets its own worktree (own dir + own HEAD, shared `.git`) on a `wt/<session>` branch. ~0.4 s, <1 MB. |
+| **Enforcement** | `guard` | Isolation being skipped. Refuses a commit made in the canonical checkout, so the unsafe path can't be taken out of habit. Wired from the vault's `pre-commit`. |
+| **Visibility** | `lease` / `peers` | Surprise. A session declares the paths it intends to write; `peers` lists live sessions. **Advisory** — git decides real conflicts at merge, and refusing overlap would block the common harmless case of two sessions touching one index file. The job is to make a collision course visible while re-planning is still cheap. |
+| **Serialization** | `integrate` | HEAD races at the one genuinely shared step. Rebases your branch onto `main` **inside your worktree** (so a conflict lands in your tree, not in canonical mid-merge), then fast-forwards `main` under an atomic lock. |
+
+The session-start banner reports live peers, because the guard only fires at *commit* time — by then the editing has already happened somewhere.
+
+Exit codes from `integrate`, so a loop or agent can branch on them: **1** dirty worktree, **2** not in a worktree, **3** rebase conflict (resolve in your worktree, re-run), **4** lock wait timed out.
+
+Single-session machine, or a deliberate direct-to-main flow: `WIKI_WORKTREE=0` turns isolation and the guard off together.
 
 ## Gate seam (`$WIKI/.wiki-gates.conf`)
 
