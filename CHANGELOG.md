@@ -4,6 +4,15 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Fixed
+- **`ensure` could silently hand back the canonical checkout and report success — turning the isolation off without anyone noticing.** Three linked defects, found by the tool failing on the reference vault immediately after the concurrency work shipped:
+  - **`.gitkeep` placeholders made every worktree permanently un-retirable.** `retire_worktree` treated *any* `git status` output as uncommitted work, but `adopt.sh` drops a `.gitkeep` into each empty node folder — in every worktree, always. So `gc` refused forever, and worktree directories accumulated. The dirty check now ignores those placeholders (and expands directories with `-uall`, since an empty folder is invisible to git anyway) while still refusing on real untracked content, which it now *names* instead of merely counting.
+  - **An orphaned directory then blocked `worktree add`.** Once a checkout survived while its gitdir went away, the path was occupied but untracked by git, `add` failed on "already exists", and `ensure` fell through. It now detects that state — path present, absent from `worktree list` — and **moves the directory aside** (`…orphaned-<timestamp>`) rather than deleting it, because it may hold untracked work and no path is worth losing files to free.
+  - **The fallback now exits non-zero.** It still prints the canonical path so an existing caller degrades rather than breaks, but returning the *shared working tree* while reporting success is precisely how isolation disables itself unobserved. `checkpoint` now checks the status. The commit `guard` remains the backstop and is not a substitute: the filesystem race happens while **editing**, long before anything reaches a commit.
+  - Pinned by CI in all four directions — placeholder must not block retirement, real untracked work must, an orphan must be recovered with its files preserved, and a genuine failure must exit non-zero while still printing a usable path.
+
 ## [1.29.0] — 2026-07-27
 
 Minor — the status line gains a **context-usage gauge that names the action** (`ctx 88% — checkpoint now`), so compaction is something to get ahead of rather than discover mid-task; plus two fixes to recipes and defaults that reached further than their job. Additive; the status line remains opt-in. Adopt with `bin/adopt.sh` or `update.sh`.

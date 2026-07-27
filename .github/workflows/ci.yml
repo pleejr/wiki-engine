@@ -240,6 +240,52 @@ jobs:
           [ "$rc" -eq 1 ] || { echo "integrate ignored a tracked modification in canonical (rc=$rc)"; exit 1; }
           git -C "$V" checkout -- notes/seed.md
 
+      - name: ensure never silently hands back the canonical checkout
+        run: |
+          # The isolation is worthless if it can turn itself off quietly. Two regressions
+          # are pinned here: an orphaned worktree dir (checkout survives, gitdir gone) used
+          # to make `worktree add` fail and `ensure` return CANONICAL with exit 0 — the
+          # shared tree, reported as success; and adoption's .gitkeep placeholders made
+          # every worktree permanently un-retirable, which is what produced the orphans.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-en"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          V="$RUNNER_TEMP/en"; mkdir -p "$V/notes"
+          git -C "$V" init -q .; printf 'seed\n' > "$V/notes/seed.md"
+          git -C "$V" add -A; git -C "$V" commit -qm seed; git -C "$V" branch -M main
+          export WIKI_PATH="$V"
+
+          # (a) a .gitkeep placeholder must not block retirement
+          W="$(WIKI_WT_SESSION=s1 ./bin/vault-worktree.sh ensure 2>/dev/null)"
+          mkdir -p "$W/queries"; touch "$W/queries/.gitkeep"
+          WIKI_WT_SESSION=s1 ./bin/vault-worktree.sh gc "$W" 2>&1 | grep -q 'gc removed 1' \
+            || { echo ".gitkeep placeholder blocked retirement"; exit 1; }
+
+          # (b) real untracked work must still block it
+          W="$(WIKI_WT_SESSION=s2 ./bin/vault-worktree.sh ensure 2>/dev/null)"
+          printf 'work\n' > "$W/notes/unsaved.md"
+          WIKI_WT_SESSION=s2 ./bin/vault-worktree.sh gc "$W" 2>&1 | grep -q 'keeping' \
+            || { echo "retired a worktree holding untracked work"; exit 1; }
+
+          # (c) an orphaned dir is recovered, not fallen back from
+          W="$(WIKI_WT_SESSION=s3 ./bin/vault-worktree.sh ensure 2>/dev/null)"
+          printf 'precious\n' > "$W/notes/precious.md"
+          rm -rf "$V/.git/worktrees/s3"; git -C "$V" worktree prune
+          NEW="$(WIKI_WT_SESSION=s3 ./bin/vault-worktree.sh ensure 2>/dev/null)"; rc=$?
+          [ "$rc" -eq 0 ] || { echo "orphan recovery failed (rc=$rc)"; exit 1; }
+          [ "$NEW" != "$V" ] || { echo "ensure fell back to canonical instead of recovering"; exit 1; }
+          ls "$V"/.worktrees/s3.orphaned-*/notes/precious.md >/dev/null 2>&1 \
+            || { echo "orphan was discarded instead of moved aside"; exit 1; }
+
+          # (d) a genuine failure exits NON-ZERO while still printing a usable path
+          chmod 500 "$V/.worktrees"
+          set +e
+          OUT="$(WIKI_WT_SESSION=blocked ./bin/vault-worktree.sh ensure 2>/dev/null)"; rc=$?
+          set -e
+          chmod 755 "$V/.worktrees"
+          [ "$rc" -ne 0 ] || { echo "ensure reported SUCCESS while handing back the shared tree"; exit 1; }
+          [ "$OUT" = "$V" ] || { echo "fallback should still print the canonical path"; exit 1; }
+
       - name: Vault gate runs from a worktree, not just canonical
         run: |
           # REGRESSION: a hook that resolves engine/ from `--show-toplevel` is silently
