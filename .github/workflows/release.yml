@@ -27,7 +27,23 @@ jobs:
           ver="${TAG#v}"
           notes="$(awk -v ver="$ver" '$0 ~ "^## \\["ver"\\]"{f=1;next} /^## \[/{f=0} f' CHANGELOG.md)"
           [ -n "$notes" ] || notes="Release $TAG"
-          suffix="$(printf '%s\n' "$notes" | grep -m1 -E '\S' | sed -E 's/^(Minor|Patch|Major) — //; s/\.$//' | cut -c1-60)"
+          # Title suffix = the CHANGELOG summary's first clause, as plain text.
+          # `cut -c1-60` used to slice mid-word and leave markdown in the title
+          # ("v1.26.0 — local model weights now live in a **durable, engine-chosen c").
+          # Every release before v1.26.0 happened to open with a short clause, so it
+          # never showed. Clause split needs punctuation + whitespace, otherwise
+          # `rag-build.sh` splits at its own dot; the length cap backs off to a word
+          # boundary; headings/bullets are skipped so a section with no lead summary
+          # can't title the release "### Added".
+          MAX=80
+          suffix="$(printf '%s\n' "$notes" | grep -m1 -E '^[[:space:]]*[^[:space:]#*-]' \
+            | sed -E 's/^(Minor|Patch|Major) — //' \
+            | sed -E 's/\*+//g; s/`//g' \
+            | sed -E 's/([.;:])[[:space:]].*$/\1/' \
+            | sed -E 's/[[:space:]]*[.;:]+$//')"
+          if [ "${#suffix}" -gt "$MAX" ]; then
+            suffix="$(printf '%s' "$suffix" | cut -c1-"$MAX" | sed -E 's/[[:space:]]+[^[:space:]]*$//')…"
+          fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $TAG already exists — skipping"
           else
