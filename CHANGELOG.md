@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.26.0] — 2026-07-26
+
+Minor — local model weights now live in a **durable, engine-chosen cache** instead of OS-reaped temp, so recall stops breaking on the reaper's schedule; `engine-proposal` gains a **pre-push diff review**; and every skill's automation caveat now states its actual reason instead of a blanket hook ban. Additive — existing vaults migrate their cache automatically and offline on the next `rag-setup.sh`. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Added
 - **`skills/engine-proposal/SKILL.md` §6 — review the diff before you push.** Intake gained a design-review pass in v1.25.0, but the lifecycle then ran straight from "build" to "ship", so nothing reviewed the *implementation*. The design pass and the acceptance criteria it produces are both derived from the design, as are the tests written from those criteria — so a defect outside the design's frame is invisible to all three. First use of the gate proved it: the RAG cache fix below had a sound reviewed design and passed every acceptance criterion, while running its migration side effect during a *probe* for a library that wasn't installed.
