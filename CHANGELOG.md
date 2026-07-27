@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.32.0] — 2026-07-27
+
+Minor — the pre-commit gate shipped in v1.28.0 **never installed on any vault**: its adoption step resolved its own bundled template one directory too high, found nothing, and exited 0. Fixes the path, and makes the silent-skip class it belongs to impossible. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Fixed
 - **An adoption step's own bundled asset could go missing and the step reported success.** `adopt.d/30-vault-git-hooks.sh` resolved its template as `$ENGINE/../scaffold/pre-commit`, but `apply-adopt.sh` sets `ENGINE` to the engine **root** and the template ships at `$ENGINE/scaffold/pre-commit`. One directory too high, so the step probed the *consumer's* vault root, matched its `[ -f "$TMPL" ] || exit 0` guard, and exited 0 with no output.
