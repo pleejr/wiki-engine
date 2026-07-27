@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Fixed
+- **`lint-links.sh` no longer mistakes a multi-backtick code span for a real link.** The stripper handled only single-backtick spans, but CommonMark lets a code span use N backticks so it can contain runs of fewer — and ``` ``[[wikilink]]`` ``` is the natural way to write a *literal* link in prose. A single-backtick-only pass ate the delimiters and left `[[wikilink]]` looking like a genuine link, so documentation about the link syntax was reported as a stub. Runs of three, two, and one are now stripped longest-first.
+  - **Found by dogfooding within minutes:** the first project page written *after* the gate shipped tripped it, which is as good an argument as any that a gate has to be run against real prose and not only against fixtures.
+  - Pinned by a new CI step asserting the gate in **both** directions — a near-miss must fail, a genuine stub must not, and a link inside a 1/2/3-backtick span must be invisible. Confirmed load-bearing by removing the double-backtick handling and watching the step fail.
+
 ## [1.27.0] — 2026-07-27
 
 Minor — the gates-at-zero set is complete: a **link-integrity gate** that errors only on links which were *meant* to resolve, and an opt-in **foreign-boundary gate**, both reading consumer-specific values from a new vault seam (`$WIKI/.wiki-gates.conf`). Additive — the link gate ships enforced at zero on an existing vault, and the boundary gate is inactive until a vault supplies patterns. Adopt with `bin/adopt.sh` or `update.sh`.
