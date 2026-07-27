@@ -28,12 +28,27 @@ if [ ! -f "$HOOK" ]; then
     mkdir -p "$HOOKDIR" && cp "$TMPL" "$HOOK" && chmod +x "$HOOK" \
       && echo "adopt: installed $HOOK (vault gate + concurrency guard)"
   fi
-elif ! grep -q 'vault-worktree.sh' "$HOOK" 2>/dev/null; then
-  # Present but predates the guard. Report rather than edit: this file is the vault's.
-  echo "adopt: NOTE — $HOOK exists but does not run the concurrency guard."
-  echo "adopt:   Add before the lint call, so a commit in the canonical checkout is refused:"
-  echo "adopt:     CANON=\"\$(cd \"\$(git rev-parse --git-common-dir)/..\" && pwd)\""
-  echo "adopt:     WIKI_PATH=\"\$CANON\" \"\$CANON/engine/bin/vault-worktree.sh\" guard || exit 1"
+else
+  if ! grep -q 'vault-worktree.sh' "$HOOK" 2>/dev/null; then
+    # Present but predates the guard. Report rather than edit: this file is the vault's.
+    echo "adopt: NOTE — $HOOK exists but does not run the concurrency guard."
+    echo "adopt:   Add before the lint call, so a commit in the canonical checkout is refused:"
+    echo "adopt:     CANON=\"\$(cd \"\$(git rev-parse --git-common-dir)/..\" && pwd)\""
+    echo "adopt:     WIKI_PATH=\"\$CANON\" \"\$CANON/engine/bin/vault-worktree.sh\" guard || exit 1"
+  fi
+  if ! grep -q 'git-common-dir' "$HOOK" 2>/dev/null; then
+    # A hook that resolves engine/ from `git rev-parse --show-toplevel` is SILENTLY
+    # INERT in a worktree: a linked worktree never carries the engine/ submodule, so the
+    # "engine not initialized, skipping" branch fires every time. Since `checkpoint`
+    # commits from a worktree by design, such a vault has been running its gate on
+    # exactly the commits that bypass it.
+    echo "adopt: WARNING — $HOOK appears to resolve engine/ from the WORKTREE root."
+    echo "adopt:   A worktree has no engine/ submodule, so the gate silently skips there —"
+    echo "adopt:   and checkpoint commits from a worktree. Resolve the canonical root instead:"
+    echo "adopt:     CANON=\"\$(cd \"\$(git rev-parse --git-common-dir)/..\" && pwd)\""
+    echo "adopt:   then use \"\$CANON/engine/bin/...\" for both the guard and lint."
+    echo "adopt:   Reference implementation: $TMPL"
+  fi
 fi
 
 # Point git at the hooks dir. Only set it when unset or already ours — never steal a

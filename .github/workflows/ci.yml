@@ -146,6 +146,56 @@ jobs:
           git -C "$B" log --oneline -1 | grep -q "B x" \
             || { echo "the conflicting session lost its commit"; exit 1; }
 
+          # integrate must not treat UNTRACKED files in canonical as dirty. Adoption
+          # leaves empty node folders and the RAG index untracked there by design, so a
+          # check that counted them would refuse every integrate — and a check that is
+          # always red is a check that gets bypassed.
+          mkdir -p "$V/untracked-dir" && printf 'x\n' > "$V/untracked-dir/x.md"
+          printf 'C work\n' > "$A/notes/c.md"; git -C "$A" add -A; git -C "$A" commit -qm "A c"
+          (cd "$A" && WIKI_WT_SESSION=sess-A "$GITHUB_WORKSPACE/bin/vault-worktree.sh" integrate >/dev/null 2>&1) \
+            || { echo "integrate wrongly refused over untracked files in canonical"; exit 1; }
+          # ...but a TRACKED modification in canonical must still block it
+          printf 'edited\n' >> "$V/notes/seed.md"
+          printf 'D work\n' > "$A/notes/d.md"; git -C "$A" add -A; git -C "$A" commit -qm "A d"
+          rc=0
+          (cd "$A" && WIKI_WT_SESSION=sess-A "$GITHUB_WORKSPACE/bin/vault-worktree.sh" integrate >/dev/null 2>&1) || rc=$?
+          [ "$rc" -eq 1 ] || { echo "integrate ignored a tracked modification in canonical (rc=$rc)"; exit 1; }
+          git -C "$V" checkout -- notes/seed.md
+
+      - name: Vault gate runs from a worktree, not just canonical
+        run: |
+          # REGRESSION: a hook that resolves engine/ from `--show-toplevel` is silently
+          # inert inside a worktree, because a linked worktree carries no submodule. Since
+          # checkpoint commits from a worktree by design, that made the gate skip exactly
+          # the commits it was meant to cover. Assert the shipped hook resolves the
+          # CANONICAL root and therefore actually runs there.
+          V="$RUNNER_TEMP/wg"; mkdir -p "$V/memory"
+          git -C "$V" init -q .
+          mkdir -p "$V/engine/bin" "$V/.githooks"
+          # stand in for the engine submodule: a lint that always fails, so "did the gate
+          # run?" is observable as a refused commit rather than inferred from silence
+          printf '#!/usr/bin/env bash\necho "GATE RAN"; exit 1\n' > "$V/engine/bin/lint.sh"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$V/engine/bin/vault-worktree.sh"
+          chmod +x "$V/engine/bin/lint.sh" "$V/engine/bin/vault-worktree.sh"
+          cp scaffold/pre-commit "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"
+          git -C "$V" config core.hooksPath .githooks
+          # engine/ must be ABSENT from the worktree, which is the whole point: a real
+          # vault carries it as a submodule and `git worktree add` never populates it.
+          # Ignoring it here reproduces that. Without this the fixture commits engine/ as
+          # tracked content, the worktree gets a copy, and the test passes even with the
+          # bug reinstated — which is exactly what happened on the first attempt.
+          printf 'engine/\n' > "$V/.gitignore"
+          printf 'seed\n' > "$V/memory/seed.md"
+          git -C "$V" -c core.hooksPath=/dev/null add -A
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm seed
+          git -C "$V" branch -M main
+          git -C "$V" worktree add -q "$V/../wg-wt" -b wt/probe main
+          printf 'more\n' > "$RUNNER_TEMP/wg-wt/memory/more.md"
+          git -C "$RUNNER_TEMP/wg-wt" add -A
+          out="$(git -C "$RUNNER_TEMP/wg-wt" commit -m "from worktree" 2>&1 || true)"
+          printf '%s\n' "$out" | grep -q "GATE RAN" \
+            || { echo "the vault gate did NOT run from inside a worktree:"; printf '%s\n' "$out"; exit 1; }
+
       - name: Scaffolder + lint smoke test
         run: |
           git config --global user.email ci@example.com

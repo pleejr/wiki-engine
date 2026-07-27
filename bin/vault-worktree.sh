@@ -278,8 +278,14 @@ case "$CMD" in
     if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
       log "vault-worktree: $wt has uncommitted changes — commit them before integrating"; exit 1
     fi
-    if [ -n "$(git -C "$WIKI" status --porcelain 2>/dev/null)" ]; then
-      log "vault-worktree: canonical $WIKI is dirty — refusing to move its HEAD under whoever owns those edits"
+    # TRACKED modifications only (-uno). A fast-forward can clobber someone's uncommitted
+    # edits to tracked files; it cannot touch untracked ones. Counting untracked files as
+    # "dirty" made integrate refuse essentially always, because adoption leaves empty node
+    # folders (queries/, raw/assets/, ...) and the RAG index untracked in canonical by
+    # design — a check that is always red is a check that gets bypassed.
+    if [ -n "$(git -C "$WIKI" status --porcelain -uno 2>/dev/null)" ]; then
+      log "vault-worktree: canonical $WIKI has uncommitted changes to TRACKED files —"
+      log "  refusing to move its HEAD under whoever owns those edits. Commit or stash them first."
       exit 1
     fi
     mkdir -p "$WT_ROOT" 2>/dev/null || true
