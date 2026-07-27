@@ -155,10 +155,20 @@ retire_worktree() {
   log "vault-worktree: removed $wt"
   case "$br" in
     wt/*)
-      if git -C "$WIKI" branch -d "$br" >/dev/null 2>&1; then
-        log "vault-worktree: deleted merged branch $br"
+      # Containment is judged against LOCAL main, not `git branch -d`'s default.
+      # `-d` compares to the branch's UPSTREAM (origin/main), so a session branch that
+      # `integrate` just fast-forwarded into local main is still reported "not fully
+      # merged" whenever main has not been pushed yet — leaving a wt/* branch behind
+      # after every single session. `merge-base --is-ancestor` asks the question we
+      # actually mean: are these commits already contained in main? Only then -D.
+      local mainref
+      mainref="$(git -C "$WIKI" symbolic-ref --short HEAD 2>/dev/null || echo main)"
+      if git -C "$WIKI" merge-base --is-ancestor "$br" "$mainref" 2>/dev/null; then
+        if git -C "$WIKI" branch -D "$br" >/dev/null 2>&1; then
+          log "vault-worktree: deleted $br (already contained in $mainref)"
+        fi
       else
-        log "vault-worktree: kept branch $br (unmerged commits — integrate or delete by hand)"
+        log "vault-worktree: kept branch $br (commits not in $mainref — integrate or delete by hand)"
       fi ;;
   esac
   return 0

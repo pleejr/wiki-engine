@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.28.2] — 2026-07-27
+
+Patch — `gc` no longer leaves a `wt/*` branch behind after every successfully integrated session. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **`gc` judged branch containment against the wrong reference, so it kept every branch it should have deleted.** It used `git branch -d`, which compares against the branch's **upstream** (`origin/main`) rather than local `main`. A session branch that `integrate` had just fast-forwarded into local `main` therefore reported *"not fully merged"* whenever `main` had not been pushed yet — which is the normal state mid-session. The result was a `wt/*` branch accumulating after **every** session, harmless once and untenable at the session counts this concurrency work exists to support. Containment is now asked directly (`merge-base --is-ancestor <branch> <main>`), which is the actual question, and only then is the branch removed. Verified both directions: an integrated branch is deleted with `main` unpushed and no remote configured at all; an unintegrated branch is still kept.
+
 ## [1.28.1] — 2026-07-27
 
 Patch — the vault gate was **silently inert inside a worktree**, which is where `checkpoint` commits, so it skipped exactly the commits it was meant to cover; and `integrate` counted untracked files as dirty, refusing on essentially every real vault. Adopt with `bin/adopt.sh` or `update.sh`.
