@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.26.2] — 2026-07-26
+
+Patch — pinned `onnxruntime` advanced to 1.28.0; verified by install *and* embed across the supported Python range, alongside a release-tooling fix. Adopt with `bin/adopt.sh` or `update.sh`; `update.sh` re-syncs the vault's `.rag/venv` to the new pin automatically.
 
 ### Changed
 - **`onnxruntime` pinned 1.27.0 → 1.28.0** in `scaffold/rag-requirements.txt`, clearing the update `doctor.sh` had been flagging every session. Wheels exist for the whole supported range (cp312/cp313/cp314), so this is not the wheel-propagation lag that makes a fresh bump look like an incompatibility. Verified by **install *and* use**, not install alone: fresh venvs on Python 3.13.14 and 3.14.6 each installed the full pinned set and produced real 768-dim embeddings offline from the durable model cache (identical cosine on both, so the vectors agree across interpreters — not zeros). Python 3.12 is covered by wheel presence only; no 3.12 interpreter is available on the machine this was bumped from, and CI does not install the RAG stack.
