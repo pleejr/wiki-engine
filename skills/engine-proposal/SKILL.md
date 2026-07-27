@@ -1,13 +1,13 @@
 ---
 name: engine-proposal
-description: This skill should be used on BOTH ends of a wiki-engine improvement handoff. On the CONSUMER end: a vault discovers an engine improvement during normal work and hands it UPSTREAM to the engine-dev vault — genericized and boundary-scrubbed so no consumer-private context leaks, and without creating any node in the consumer vault. It strips consumer identifiers (vault/org/repo names, usernames, emails, absolute paths, values, secrets), restates the problem in engine-generic terms, runs a deterministic boundary scan, and emits a self-contained copy-pastable kickoff block. On the ENGINE-DEV end (intake): it drives a critical design-review pass over an arriving proposal before any shape is chosen, then files the project and records which findings were accepted or rejected. Triggers: "engine-proposal", "propose an engine change", "propose this upstream", "send this idea to the engine-dev vault", "package this as an engine improvement", "scrub this and hand it to the engine", "this should live in the engine, not here", "act on this proposal", "intake this engine proposal", "here is a HANDOFF block". Distinct from crossover (which MOVES an existing canonical vault page to another vault with sha256 integrity + soft-delete + tombstones) — engine-proposal ORIGINATES a new, forward-only idea that never was and shouldn't become a consumer node: no integrity handshake, no origin deletion; the only shared surface is the boundary gate. Distinct from checkpoint (which curates content INTO this vault) — engine-proposal creates no consumer node by default. NOT for moving an existing note between vaults (use crossover) or recording a decision/lesson in this vault (use checkpoint).
+description: This skill should be used on BOTH ends of a wiki-engine improvement handoff. On the CONSUMER end: a vault discovers an engine improvement during normal work and hands it UPSTREAM to the engine-dev vault — genericized and boundary-scrubbed so no consumer-private context leaks, and without creating any node in the consumer vault. It strips consumer identifiers (vault/org/repo names, usernames, emails, absolute paths, values, secrets), restates the problem in engine-generic terms, runs a deterministic boundary scan, and emits a self-contained copy-pastable kickoff block. On the ENGINE-DEV end (intake): it drives a critical design-review pass over an arriving proposal before any shape is chosen, then files the project and records which findings were accepted or rejected. Also the route for a DEFECT found while running the engine in a consumer vault, which cannot fix it in place (a local edit to the pinned engine/ submodule is discarded by the next update): the same channel carries a defect-report block that separates the observation from the suggested fix, names the failure shape (fail-closed / fail-open / data-loss), and confirms the bug is still live at the pinned version. Triggers: "engine-proposal", "propose an engine change", "propose this upstream", "send this idea to the engine-dev vault", "package this as an engine improvement", "scrub this and hand it to the engine", "this should live in the engine, not here", "act on this proposal", "intake this engine proposal", "here is a HANDOFF block", "I found a bug in the engine", "this looks like an engine bug", "report this defect upstream", "the engine is broken here", "file this engine bug", "should I fix this in engine/ or send it upstream". Distinct from crossover (which MOVES an existing canonical vault page to another vault with sha256 integrity + soft-delete + tombstones) — engine-proposal ORIGINATES a new, forward-only idea that never was and shouldn't become a consumer node: no integrity handshake, no origin deletion; the only shared surface is the boundary gate. Distinct from checkpoint (which curates content INTO this vault) — engine-proposal creates no consumer node by default. NOT for moving an existing note between vaults (use crossover) or recording a decision/lesson in this vault (use checkpoint).
 status: active
-summary: "genericize + boundary-scrub a consumer vault's engine-improvement idea into a self-contained, scan-verified kickoff block for the engine-dev vault (creates no consumer node); on the engine-dev end, design-review the arriving proposal before building."
-updated: 2026-07-24
+summary: "genericize + boundary-scrub a consumer vault's engine improvement OR defect report into a self-contained, scan-verified handoff block for the engine-dev vault (creates no consumer node); on the engine-dev end, reproduce/design-review before building."
+updated: 2026-07-27
 used_by: []
 ---
 
-# engine-proposal — hand a scrubbed engine improvement upstream
+# engine-proposal — hand a scrubbed engine improvement *or defect* upstream
 
 A consumer vault (one that only *runs* the engine, where engine development does not happen) keeps discovering engine-improvement ideas mid-work, each soaked in that vault's private/domain context. Handing them to the engine-dev vault by hand is inconsistent and a boundary risk — identifiers leak unless someone scrubs them every time. This skill makes that handoff repeatable and boundary-safe: it genericizes the idea, gates it through a mechanical scan, and produces a self-contained kickoff block — **without writing anything into the consumer vault.**
 
@@ -19,11 +19,61 @@ A consumer vault (one that only *runs* the engine, where engine development does
 - **crossover** — *moves* an existing canonical page to a vault on another machine, with sha256 integrity + soft-delete + tombstones. Use it when the thing already exists as a node.
 - **checkpoint** — writes a curated node *into this vault*. Use it when the idea belongs here.
 
-If the idea should leave and never lived here, it's this skill.
+If the idea should leave and never lived here, it's this skill. **A bug you hit while running the engine is the same case** — see §1b; the consumer vault cannot fix it, so the report is the deliverable.
 
 ## 1. Capture the idea + its raw context
 
 Collect the improvement, the motivating use case, and why it surfaced now. Keep the raw (private) context as *input to the scrub* — it never appears in the output. One idea per handoff block (mirrors crossover's one-connected-cluster rule); a second idea is a second block.
+
+## 1b. Found a DEFECT rather than an improvement? Same channel, different block
+
+A consumer vault is where engine bugs actually get hit — it is the thing running the engine all day. It is also the one place that **cannot fix them**: engine development does not happen there, and a local edit inside `engine/` is not a fix but a time bomb, because the submodule is pinned and the next `update.sh` moves the pointer straight past your change. So a defect found in a consumer vault travels the *same* upstream channel as an idea; only the block's contents differ.
+
+Four things a defect report needs that an improvement proposal does not:
+
+- **Confirm it is still live at the pin you are running — do not assume.** A bug can be fixed *incidentally* by unrelated work and stay open on paper for days, because the change that fixed it never cited it. State the engine version you reproduced against; the engine-dev end cannot tell a live defect from a stale one otherwise, and re-deriving that costs more than reporting it.
+- **Separate what you OBSERVED from what you PROPOSE.** The observation is evidence; the fix is a hypothesis, and a reporter's hypothesis can be wrong while the bug is entirely real. A worked example from this engine's own history: a report correctly identified that a lost terminator line dropped the last item, and prescribed treating the missing terminator as an integrity failure — which would have *rejected a payload whose hash matched*, forcing another paste over exactly the lossy channel the tool exists to survive. The defect was real; the prescription would have made it worse. Report the first with confidence, offer the second loosely.
+- **Say which failure shape it is** — this, not severity adjectives, is what sets urgency:
+  - **fail-closed** — it refuses, nothing is lost. Annoying, rarely urgent.
+  - **fail-open** — it proceeds while *looking* correct. Severe, because nothing surfaces it. A boundary filter that silently disabled itself on an unrecognized value, a write-time gate that skipped every commit taking the intended path, and an isolation helper that handed back the shared tree with exit 0 were all this shape.
+  - **data-loss** — it destroys or overwrites work. Report immediately, and say what you did to preserve the evidence.
+- **List what you already ruled out.** Saves the engine-dev end re-deriving your dead ends, and often contains the real clue.
+
+**The scrub is harder here, and skimping is tempting.** The material that makes a defect report useful — error output, stack traces, command lines, file paths, config dumps — is precisely the material that carries absolute paths, vault and org names, usernames, and machine names. Scrub it anyway, but **keep the reproduction runnable**: substitute placeholders *consistently* (the same path becomes the same `<vault>` everywhere) so the steps still work, and **declare what you redacted** so a gap reads as deliberate rather than as evidence you forgot to include. Never quietly drop a detail because scrubbing it is awkward — say it was redacted and describe its shape.
+
+Use this block shape instead of §3's:
+
+```
+HANDOFF — engine defect report
+slug: <stable-kebab-slug>
+boundary: generic (engine-domain; contains no consumer-private context)
+
+Title: <one line naming the DEFECT, not the fix>
+
+Engine version: <the tag this vault is pinned to>
+Still live at that pin: <how you confirmed — a bug can be fixed incidentally and stay open>
+
+Observed: <what happened, with scrubbed evidence>
+Expected: <what should have happened, and why you believe that>
+
+Reproduction (generic):
+  1. <step>
+  2. <step>
+  -> <output, redacted where noted>
+
+Failure shape: fail-closed | fail-open | data-loss
+
+Already ruled out: <dead ends, so engine-dev need not walk them again>
+
+Suggested fix (HOLD LOOSELY — may be wrong): <optional; omit rather than guess>
+
+Redactions: <what was replaced, and with what, so nothing looks accidentally missing>
+
+Instruction to engine-dev: reproduce first, then decide the shape. Treat the
+suggested fix as a hypothesis, not a specification.
+```
+
+Everything else — the scrub discipline in §2, the mechanical scan in §4, the no-consumer-node rule in §5 — applies unchanged.
 
 ## 2. Genericize / boundary-scrub — the core value
 
@@ -86,6 +136,14 @@ Any finding → revise the block (return to §2) and re-scan. Do not hand off un
 The other end of the handoff. A proposal arrives as a `HANDOFF` block; it is the **design input for the build**, so review it *before* choosing a shape — a gap found here costs a paragraph, the same gap found mid-build costs a format change with artifacts already in flight.
 
 **When to review.** Run the pass when the proposal touches a **wire/file format, a protocol, an on-disk contract, or a safety gate**, or when it flips a default. Skip it for additive doc/skill-text or a one-line fix — this is a gate on expensive-to-revise decisions, not a tax on every idea.
+
+**If it is a DEFECT report (§1b), reproduce before designing anything.** Three failure modes, all seen here:
+
+- **The bug may already be gone.** A defect can be fixed *incidentally* by unrelated work while its report stays open, because the change that fixed it never cited it. Reproduce at current `HEAD` first. If it no longer reproduces, the work is not "close it" — it is **find the commit that fixed it and pin it with a regression test**, because a fix nobody aimed at is exactly the one no test covers. Then close it, citing both.
+- **The reporter's suggested fix may be wrong while the bug is real.** Treat it as a hypothesis. Judge it against the *observation*, never adopt it because the report sounded confident. One filed prescription in this engine's history would have rejected payloads that were provably intact.
+- **The reported symptom may not be the defect.** Reproduce, then find the mechanism; report and mechanism agree less often than they appear to. Only once you have the mechanism is the shape decision a design question at all.
+
+A defect that reproduces and has an obvious, contained fix does **not** need the full design pass below — go fix it, with a test that fails first.
 
 **How to review.** Use a rigorous critique skill if this vault has one installed — check `~/.claude/skills/scrutinize` (this vault's is `scrutinize`; a vault may install it under another name, and the engine depends on none of them):
 
