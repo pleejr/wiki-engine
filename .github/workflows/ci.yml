@@ -34,6 +34,42 @@ jobs:
       - name: Usage docs cover all skills + no stale command refs
         run: ./bin/lint-docs.sh
 
+      - name: Crossover fail-closed smoke test
+        run: |
+          # crossover's safety property is that a LOSSY PASTE CAN NEVER AUTHORIZE A DELETE:
+          # integrity rides on the per-item sha256 + batch bundle hash, never on the
+          # block's framing. Pin that here — the last-item flush used to depend on the
+          # trailing ##END, so dropping that one optional-looking line lost the item and
+          # aborted under `set -u` (#19, fixed incidentally by the #30 split-export rework).
+          O="$RUNNER_TEMP/xo/origin"; mkdir -p "$O/memory"
+          printf -- '---\ntitle: Test note\nboundary: work\n---\n\nBody text.\n' > "$O/memory/test-note.md"
+          ./bin/crossover.sh export --vault "$O" --batch CI1 memory/test-note.md > "$RUNNER_TEMP/xo/block.txt"
+
+          # (a) intact block round-trips and verifies
+          D="$RUNNER_TEMP/xo/d-intact"; mkdir -p "$D"
+          ./bin/crossover.sh import --vault "$D" < "$RUNNER_TEMP/xo/block.txt" | grep -qx 'status all-verified' \
+            || { echo "intact block did not verify"; exit 1; }
+
+          # (b) trailing ##END dropped — the payload is unchanged, so it must STILL verify
+          #     (and must not abort): the terminator is framing, not integrity.
+          grep -v '^##END$' "$RUNNER_TEMP/xo/block.txt" > "$RUNNER_TEMP/xo/no-end.txt"
+          D="$RUNNER_TEMP/xo/d-noend"; mkdir -p "$D"
+          ./bin/crossover.sh import --vault "$D" < "$RUNNER_TEMP/xo/no-end.txt" | grep -qx 'status all-verified' \
+            || { echo "block without trailing ##END failed to import"; exit 1; }
+
+          # (c) truncated payload — must fail CLOSED: incomplete receipt, item named as
+          #     hash-mismatch, and nothing written into the destination vault.
+          N=$(wc -l < "$RUNNER_TEMP/xo/no-end.txt")
+          sed -n "1,$((N-1))p" "$RUNNER_TEMP/xo/no-end.txt" > "$RUNNER_TEMP/xo/cut.txt"
+          D="$RUNNER_TEMP/xo/d-cut"; mkdir -p "$D"
+          ./bin/crossover.sh import --vault "$D" < "$RUNNER_TEMP/xo/cut.txt" > "$RUNNER_TEMP/xo/receipt.txt"
+          grep -qx 'status incomplete' "$RUNNER_TEMP/xo/receipt.txt" \
+            || { echo "truncated payload did not fail closed"; exit 1; }
+          grep -q 'status hash-mismatch' "$RUNNER_TEMP/xo/receipt.txt" \
+            || { echo "truncated payload was not diagnosed as hash-mismatch"; exit 1; }
+          [ ! -e "$D/memory/test-note.md" ] \
+            || { echo "truncated payload wrote a file into the destination"; exit 1; }
+
       - name: Scaffolder + lint smoke test
         run: |
           git config --global user.email ci@example.com
