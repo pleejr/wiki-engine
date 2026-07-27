@@ -98,6 +98,54 @@ jobs:
             echo "a wikilink inside a code span was treated as a link"; exit 1
           fi
 
+      - name: Concurrency model (isolation, guard, serialization)
+        run: |
+          # Two sessions writing one vault. The property under test is that BOTH sets of
+          # work survive and land in a linear history — the failure this exists to stop
+          # is one session's `git add -A` sweeping up a peer's uncommitted work.
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          V="$RUNNER_TEMP/cc"; mkdir -p "$V/notes"
+          git -C "$V" init -q .
+          printf 'seed\n' > "$V/notes/seed.md"
+          git -C "$V" add -A && git -C "$V" commit -qm seed && git -C "$V" branch -M main
+          export WIKI_PATH="$V"
+          A="$(WIKI_WT_SESSION=sess-A ./bin/vault-worktree.sh ensure 2>/dev/null)"
+          B="$(WIKI_WT_SESSION=sess-B ./bin/vault-worktree.sh ensure 2>/dev/null)"
+          [ "$A" != "$B" ] || { echo "two sessions got the same worktree"; exit 1; }
+
+          # guard: canonical refused, worktree allowed
+          (cd "$V" && WIKI_WT_SESSION=sess-A "$GITHUB_WORKSPACE/bin/vault-worktree.sh" guard) \
+            && { echo "guard did not refuse a commit in canonical"; exit 1; } || true
+          (cd "$A" && WIKI_WT_SESSION=sess-A "$GITHUB_WORKSPACE/bin/vault-worktree.sh" guard) \
+            || { echo "guard wrongly refused a commit inside a worktree"; exit 1; }
+
+          # both sessions commit independently, then integrate through the lock
+          printf 'A work\n' > "$A/notes/a.md"; git -C "$A" add -A; git -C "$A" commit -qm "A work"
+          printf 'B work\n' > "$B/notes/b.md"; git -C "$B" add -A; git -C "$B" commit -qm "B work"
+          (cd "$A" && WIKI_WT_SESSION=sess-A "$GITHUB_WORKSPACE/bin/vault-worktree.sh" integrate >/dev/null 2>&1) \
+            || { echo "A failed to integrate"; exit 1; }
+          (cd "$B" && WIKI_WT_SESSION=sess-B "$GITHUB_WORKSPACE/bin/vault-worktree.sh" integrate >/dev/null 2>&1) \
+            || { echo "B failed to integrate"; exit 1; }
+          # NEITHER may be lost — this is the whole point
+          [ -f "$V/notes/a.md" ] || { echo "session A's work was lost"; exit 1; }
+          [ -f "$V/notes/b.md" ] || { echo "session B's work was lost"; exit 1; }
+
+          # a real conflict must fail closed: canonical untouched, worktree recoverable
+          printf 'A v2\n' > "$A/notes/x.md"; git -C "$A" add -A; git -C "$A" commit -qm "A x"
+          (cd "$A" && WIKI_WT_SESSION=sess-A "$GITHUB_WORKSPACE/bin/vault-worktree.sh" integrate >/dev/null 2>&1)
+          printf 'B v2\n' > "$B/notes/x.md"; git -C "$B" add -A; git -C "$B" commit -qm "B x"
+          before="$(git -C "$V" rev-parse HEAD)"
+          # `|| rc=$?`, not a bare call then `$?` — this step runs under `bash -e`, which
+          # would abort on the expected non-zero before the status could be read.
+          rc=0
+          (cd "$B" && WIKI_WT_SESSION=sess-B "$GITHUB_WORKSPACE/bin/vault-worktree.sh" integrate >/dev/null 2>&1) || rc=$?
+          [ "$rc" -eq 3 ] || { echo "expected exit 3 on rebase conflict, got $rc"; exit 1; }
+          [ "$(git -C "$V" rev-parse HEAD)" = "$before" ] \
+            || { echo "a failed integrate moved canonical HEAD"; exit 1; }
+          git -C "$B" log --oneline -1 | grep -q "B x" \
+            || { echo "the conflicting session lost its commit"; exit 1; }
+
       - name: Scaffolder + lint smoke test
         run: |
           git config --global user.email ci@example.com

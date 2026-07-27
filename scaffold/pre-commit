@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# pre-commit — this vault's write-time gate. Installed by the engine's adoption step;
+# safe to edit (adoption will not overwrite an existing hook).
+#
+# Two independent checks, in the order that fails cheapest first:
+#   1. CONCURRENCY GUARD — refuse a commit made in the canonical checkout. Two sessions
+#      sharing one working tree share one index and one HEAD, so `git add -A` in either
+#      sweeps up the other's in-progress work and files it under the wrong commit. The
+#      guard makes the isolated path the only path. Bypass for a single-session machine
+#      with WIKI_WORKTREE=0.
+#   2. VAULT INVARIANTS — the engine's umbrella lint, held at zero.
+#
+# Bypass everything for a genuine WIP commit:  git commit --no-verify
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+# The CANONICAL vault root, which is not $ROOT when this fires inside a worktree.
+# Derived from the shared .git common dir rather than from an inherited $WIKI_PATH: a
+# hook must reason about the repo being committed to, not whatever vault the surrounding
+# shell happens to point at, or it reports the wrong vault while refusing the right one.
+CANON="$(cd "$(git rev-parse --git-common-dir)/.." 2>/dev/null && pwd)" || CANON="$ROOT"
+ENGINE="$CANON/engine/bin"
+
+# engine/ is a submodule — if it isn't checked out (fresh clone before `submodule
+# update`), skip rather than block the commit. CI still enforces.
+if [ ! -x "$ENGINE/lint.sh" ]; then
+  echo "pre-commit: engine not initialized (submodule missing) — skipping gates" >&2
+  exit 0
+fi
+
+if [ -x "$ENGINE/vault-worktree.sh" ]; then
+  WIKI_PATH="$CANON" "$ENGINE/vault-worktree.sh" guard || exit 1
+fi
+
+if ! "$ENGINE/lint.sh" --wiki "$ROOT"; then
+  echo >&2
+  echo "pre-commit: vault gate FAILED (see above). Fix the violation, or commit with --no-verify to bypass." >&2
+  exit 1
+fi
