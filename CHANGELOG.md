@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.27.0] — 2026-07-27
+
+Minor — the gates-at-zero set is complete: a **link-integrity gate** that errors only on links which were *meant* to resolve, and an opt-in **foreign-boundary gate**, both reading consumer-specific values from a new vault seam (`$WIKI/.wiki-gates.conf`). Additive — the link gate ships enforced at zero on an existing vault, and the boundary gate is inactive until a vault supplies patterns. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Added
 - **`bin/lint-links.sh` — the link-integrity gate, plus the vault seam both consumer-specific gates read from.** Completes the gates-at-zero set: `lint.sh` now runs link-integrity and foreign-boundary alongside the boundary/provenance presence checks it already enforced.
