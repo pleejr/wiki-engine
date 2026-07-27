@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.33.0] — 2026-07-27
+
+Minor — two fail-open defects found by running the engine: containing one machine-shared surface silently licensed writing the other, and `peers` reported finished sessions as live. Adds the `CLAUDE_SKILLS_DIR` seam. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Fixed
 - **Containing one machine-shared surface silently licensed writing the other.** Redirecting `--settings` is the documented way to contain a throwaway vault, and it flipped a single shared "may wire this machine" flag — which authorised the skills step to repoint the machine's **real** `~/.claude/skills` at the throwaway engine. The settings redirect isolates `settings.json`; nothing about it isolates the skills directory. Those symlinks are what Claude Code loads, so aiming them at a directory that later gets cleaned breaks every engine skill on the machine, and they keep resolving until then — nothing announces it.
