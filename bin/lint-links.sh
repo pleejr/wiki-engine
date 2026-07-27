@@ -88,7 +88,18 @@ prose_links() {
   awk '
     /^[ \t]*```/ { fence = !fence; next }
     fence { next }
-    { line=$0; gsub(/`[^`]*`/, "", line); print line }
+    {
+      line=$0
+      # Strip LONGER backtick runs first. CommonMark lets a code span be delimited
+      # by N backticks so it can contain runs of fewer — ``[[x]]`` is the natural
+      # way to show a literal link, and a single-backtick-only pass would eat the
+      # delimiters and leave [[x]] looking like a real link. Found by dogfooding:
+      # the first doc written after this gate shipped tripped exactly this.
+      gsub(/```[^`]*```/, "", line)
+      gsub(/``[^`]*``/,   "", line)
+      gsub(/`[^`]*`/,     "", line)
+      print line
+    }
   ' "$1" \
   | grep -oE '\[\[[^]]+\]\]' 2>/dev/null \
   | sed -e 's/^\[\[//' -e 's/\]\]$//' -e 's/[|#].*//' \
