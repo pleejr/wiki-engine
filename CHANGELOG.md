@@ -4,6 +4,12 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Fixed
+- **`crossover`'s fail-closed contract is now pinned by a CI smoke test.** Issue #19 reported that an export block missing its trailing `##END` dropped its last item and then aborted under `set -u` on an empty hash array. Both halves were already fixed *incidentally* by the v1.25.0 split-export rework — which moved the last-item flush to EOF and gave the bundle computation an explicit empty guard — but nothing had been written to close the issue, so nothing stopped the regression. The test pins the property rather than the flush: **integrity rides on the per-item sha256 and the batch bundle hash, never on the block's framing.** That is exactly what the original bug violated, by making the last record's fate depend on the single line most likely to be lost over the copy-paste channel the tool exists to survive. Three assertions — an intact block verifies; the same block with `##END` stripped **still** verifies (unchanged payload ⇒ unchanged verdict); a truncated payload fails **closed** with `status incomplete`, the item named `hash-mismatch`, and nothing written to the destination. Confirmed load-bearing rather than assumed: the `run` block was extracted from `ci.yml` itself and executed, then the EOF flush was removed to recreate the pre-rework defect, which fails the second assertion with the exact issue symptom.
+  - CI-only — nothing a pinned consumer runs, so this lands untagged and rides along in this release.
+
 ## [1.26.2] — 2026-07-26
 
 Patch — pinned `onnxruntime` advanced to 1.28.0; verified by install *and* embed across the supported Python range, alongside a release-tooling fix. Adopt with `bin/adopt.sh` or `update.sh`; `update.sh` re-syncs the vault's `.rag/venv` to the new pin automatically.
