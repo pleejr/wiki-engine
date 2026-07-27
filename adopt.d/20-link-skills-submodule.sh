@@ -20,7 +20,7 @@ set -uo pipefail
 . "${ADOPT_LIB:?}" || exit 3
 
 SRC="$ENGINE/skills"
-DEST="$HOME/.claude/skills"
+DEST="${ADOPT_SKILLS_DIR:?}"
 
 # ENGINE ASSET — unconditional, and above the ephemeral guard on purpose. This was
 # `[ -d "$SRC" ] || exit 0`, which resolves correctly today and so was silent for the
@@ -32,8 +32,12 @@ require_engine_asset "$SRC" dir "the engine's own skills, which the machine link
 # Worse than the stale-hook case this mirrors: these symlinks are what Claude Code loads,
 # so aiming them at a throwaway engine breaks every engine skill on the machine the moment
 # that directory is cleaned — and they keep resolving until then, so nothing announces it.
-# apply-adopt.sh decides this once (ADOPT_WIRE_MACHINE); not re-derived here.
-[ "${ADOPT_WIRE_MACHINE:-1}" = "1" ] || exit 0
+# apply-adopt.sh decides this once (ADOPT_WIRE_SKILLS); not re-derived here.
+#
+# Gated on the SKILLS redirect specifically, not on a shared machine flag: redirecting
+# --settings contains settings.json and nothing else, and treating it as blanket isolation
+# is what let a throwaway vault repoint this machine's real skill links.
+[ "${ADOPT_WIRE_SKILLS:-1}" = "1" ] || exit 0
 
 for s in "$SRC"/*/; do
   [ -d "$s" ] || continue

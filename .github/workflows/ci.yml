@@ -329,7 +329,7 @@ jobs:
       - name: Ephemeral vaults must not touch the machine's real config
         run: |
           # A throwaway vault (test / CI / scratchpad) must never wire itself into the
-          # machine's real settings.json or repoint ~/.claude/skills — those outlive it: a
+          # machine's real settings.json or repoint its real skills dir — those outlive it: a
           # permanent SessionStart hook, or skill symlinks aimed at a directory that later
           # disappears (they keep resolving until it is cleaned, so nothing announces it).
           #
@@ -338,6 +338,11 @@ jobs:
           # `[ -n "$CLAUDE_SETTINGS" ]`, which apply-adopt makes permanently true; the other
           # enumerated macOS-shaped temp prefixes and did not match this runner's own
           # temp dir — caught only because this test runs on a path neither author had.
+          #
+          # NOTE ON THE FIXTURE: $HOME is overridden here, which is what let the third bug
+          # hide (see the per-surface step below). Every assertion in THIS step is about a
+          # vault with NOTHING redirected, so the override is harmless — but it is exactly
+          # why the next step deliberately does not override it.
           export HOME="$RUNNER_TEMP/fakehome"; mkdir -p "$HOME/.claude/skills"
           echo '{}' > "$HOME/.claude/settings.json"
           ln -sfn /real/engine/skills/checkpoint "$HOME/.claude/skills/checkpoint"
@@ -352,14 +357,89 @@ jobs:
           [ "$(readlink "$HOME/.claude/skills/checkpoint")" = "$before_link" ] \
             || { echo "an ephemeral vault repointed the machine's skill symlinks"; exit 1; }
 
-          # ...but with settings genuinely redirected, wiring must STILL happen. A guard
-          # that is merely broad is the same defect facing the other way.
+          # ...but with BOTH surfaces redirected, wiring must STILL happen. A guard that is
+          # merely broad is the same defect facing the other way.
           ./bin/apply-adopt.sh --wiki "$V" --force --settings "$RUNNER_TEMP/iso.json" >/dev/null 2>&1 || true
           [ -f "$RUNNER_TEMP/iso.json" ] \
             || { echo "isolated wiring was skipped too — the guard is too broad"; exit 1; }
           grep -q "$V" "$RUNNER_TEMP/iso.json" \
             || { echo "isolated wiring did not record the vault"; exit 1; }
           echo "ok: ephemeral vault contained; isolated wiring still works"
+
+      - name: Containing one surface must not license writing the other
+        run: |
+          # REGRESSION: redirecting --settings is the DOCUMENTED way to contain a throwaway
+          # vault, and it used to flip a single shared "may wire this machine" flag — which
+          # licensed the skills step to repoint the machine's REAL skills dir at the
+          # throwaway engine. The settings redirect isolates settings.json; nothing about it
+          # isolates the skills directory. Hit live on a developer machine, not in CI,
+          # because the step above overrides $HOME and so is more isolated than any real
+          # invocation. THIS step deliberately leaves the real skills path in place.
+          #
+          # One flag per surface; each gated on ITS OWN redirect.
+          export HOME="$RUNNER_TEMP/surfhome"; mkdir -p "$HOME/.claude/skills"
+          ln -sfn /real/engine/skills/checkpoint "$HOME/.claude/skills/checkpoint"
+          V="$RUNNER_TEMP/surfvault"; mkdir -p "$V"; ln -sfn "$GITHUB_WORKSPACE" "$V/engine"
+
+          # (a) settings redirected, skills NOT — settings wiring proceeds, skills contained
+          ./bin/apply-adopt.sh --wiki "$V" --force --settings "$RUNNER_TEMP/surf.json" >/dev/null 2>&1 || true
+          [ "$(readlink "$HOME/.claude/skills/checkpoint")" = "/real/engine/skills/checkpoint" ] \
+            || { echo "a settings redirect licensed repointing the machine's REAL skills dir"; exit 1; }
+          [ -f "$RUNNER_TEMP/surf.json" ] \
+            || { echo "settings wiring was skipped — per-surface gating is too broad"; exit 1; }
+
+          # (b) both redirected — skills linking happens, into the REDIRECTED dir only
+          D="$RUNNER_TEMP/surfskills"; mkdir -p "$D"
+          CLAUDE_SKILLS_DIR="$D" ./bin/apply-adopt.sh --wiki "$V" --force \
+            --settings "$RUNNER_TEMP/surf2.json" >/dev/null 2>&1 || true
+          [ -L "$D/checkpoint" ] \
+            || { echo "skills were not linked even with the skills dir redirected"; exit 1; }
+          [ "$(readlink "$HOME/.claude/skills/checkpoint")" = "/real/engine/skills/checkpoint" ] \
+            || { echo "the real skills dir was touched despite a redirect"; exit 1; }
+          echo "ok: each surface gated on its own redirect, both directions"
+
+      - name: A finished session must not be reported as a live peer
+        run: |
+          # REGRESSION: lease liveness was purely time-based (WIKI_LEASE_STALE_MIN, default
+          # 120), so a session that had cleanly integrated and been gc'd still showed in
+          # `peers` for up to two hours — and `gc` reported "reaped 0 dead lease(s)" with a
+          # provably dead lease sitting right there. A registry that shows ghosts stops
+          # being read. A session that finished leaves PROOF: worktree and branch both gone.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-lease"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          V="$RUNNER_TEMP/leasevault"; mkdir -p "$V/memory"; git -C "$V" init -q .
+          printf 'seed\n' > "$V/memory/seed.md"
+          git -C "$V" -c core.hooksPath=/dev/null add -A
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm seed
+          git -C "$V" branch -M main
+          WT="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+
+          W="$(WIKI_PATH="$V" WIKI_WT_SESSION=ghost "$WT" ensure)"
+          WIKI_PATH="$V" WIKI_WT_SESSION=ghost "$WT" lease memory/ >/dev/null 2>&1
+          WIKI_PATH="$V" WIKI_WT_SESSION=ghost "$WT" peers | grep -q ghost \
+            || { echo "a live session was not listed as a peer"; exit 1; }
+
+          # Retire it exactly as a finished session does, then look again from ANOTHER
+          # session. The heartbeat is seconds old, so only the structural test can catch it.
+          WIKI_PATH="$V" WIKI_WT_SESSION=ghost "$WT" gc "$W" >/dev/null 2>&1 || true
+          out="$(WIKI_PATH="$V" WIKI_WT_SESSION=observer "$WT" peers)"
+          printf '%s\n' "$out" | grep -q ghost \
+            && { echo "a finished session is still reported as a live peer:"; printf '%s\n' "$out"; exit 1; }
+
+          # ...and gc must actually reap it rather than counting zero.
+          gcout="$(WIKI_PATH="$V" WIKI_WT_SESSION=observer "$WT" gc 2>&1)"
+          [ -e "$V/.worktrees/.leases/ghost.lease" ] \
+            && { echo "gc left the dead lease on disk: $gcout"; exit 1; }
+
+          # The OTHER direction: a session whose worktree still exists (crashed, not
+          # finished) must STILL be treated as live, or the guard is too broad and the
+          # whole point — warning about a real concurrent writer — is lost.
+          W2="$(WIKI_PATH="$V" WIKI_WT_SESSION=crashed "$WT" ensure)"
+          WIKI_PATH="$V" WIKI_WT_SESSION=crashed "$WT" lease memory/ >/dev/null 2>&1
+          WIKI_PATH="$V" WIKI_WT_SESSION=observer "$WT" peers | grep -q crashed \
+            || { echo "a session with a live worktree was wrongly reaped as finished"; exit 1; }
+          echo "ok: finished sessions reaped immediately, crashed ones still reported live"
 
       - name: Adoption steps resolve their own engine assets
         run: |
