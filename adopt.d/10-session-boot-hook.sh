@@ -19,7 +19,13 @@ set -uo pipefail
 # otherwise skip silently. See [[lesson-ephemeral-vault-settings-pollution]].
 case "$WIKI" in
   "${TMPDIR:-/nonexistent-tmpdir}"*|/private/tmp/*|/tmp/*|/var/folders/*|*/scratchpad/*)
-    [ -n "${CLAUDE_SETTINGS:-}" ] || exit 0 ;;
+    # Isolated means "points somewhere OTHER than the machine's real settings" — not
+    # merely "the variable is set". apply-adopt.sh exports CLAUDE_SETTINGS
+    # unconditionally, defaulting it to the real file, so a `[ -n ... ]` test here could
+    # never be false and this guard never fired: a throwaway vault wired a permanent
+    # SessionStart hook into the real settings every time.
+    _real="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+    [ "${CLAUDE_SETTINGS:-$_real}" != "$_real" ] || exit 0 ;;
 esac
 
 cmd="WIKI_PATH=$WIKI $ENGINE/bin/session-boot.sh"

@@ -4,6 +4,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Added
+- **`update.sh` now advances the engine repo page's provenance when it bumps the pin.** A vault that documents the engine it consumes re-stales that page on *every* release, so the `refresh` item reappeared immediately and reliably — three times in one session. The bump removes the churn **without losing the signal**, because the two staleness axes are independent: `refresh` compares provenance to the clone, `verify` compares `verified.against` to `sources.sha`. Advancing provenance alone silences the first and **trips the second** — the page's pointer is current, its content is unconfirmed, which is a more precise description than "refresh" and exactly what verified-stale means. Verified empirically before building on it.
+  - **`verified:` is deliberately not touched.** That field asserts a human or agent read the repo and confirmed the page; writing it mechanically would fabricate the one signal the vault refuses to fabricate, converting an honest *unconfirmed* into a false *confirmed*. The content pass stays manual and stays queued. `update.sh` says so explicitly rather than leaving it to be inferred.
+  - Matches pages by `sources.repo`, never by filename, and derives the repo name from the submodule's remote — so the engine hardcodes no consumer's naming.
+
+### Fixed
+- **Ephemeral vaults were wiring themselves into the machine's real config, because the guard could never fire.** `adopt.d/10` skipped a throwaway vault only when `CLAUDE_SETTINGS` was set — but `apply-adopt.sh` *exports that variable unconditionally*, defaulting it to the real settings path. The test was therefore always true and the guard always passed: every scaffold-and-adopt against a temp vault left a permanent `SessionStart` hook in the real `settings.json`. Isolation now means **"points somewhere other than the real file"**, not "is set".
+  - **`adopt.d/20` had no guard at all, and its failure is worse.** It repoints `~/.claude/skills/*` — the symlinks Claude Code actually loads — so adopting a throwaway vault aimed every engine skill at a directory that later gets cleaned. They keep resolving until then, so nothing announces the breakage; the skills simply vanish at some later date. Same isolation test added.
+  - Third instance in one session of a check whose result could not vary (see the entries for the worktree gate and the always-red `integrate`). CI now pins both directions: an ephemeral vault must not touch the real settings or symlinks, **and** genuinely isolated wiring must still work — the second half matters, because a guard that is merely broad is the same defect facing the other way.
+
 ## [1.30.0] — 2026-07-27
 
 Minor — `engine-proposal` gains the **defect path**: a bug hit while running the engine in a consumer vault now has a documented route and a block shape of its own, and the skill fires on bug phrasing rather than only on "improvement". Skill text only; adopt with `bin/adopt.sh` or `update.sh`.
