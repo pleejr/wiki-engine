@@ -13,12 +13,20 @@
 #   7. provenance present    — every repos/ page carries a sources: block with
 #                              ref: + sha: (a version-keyed node must record what it
 #                              was ingested from, so freshness is checkable)
+#   8. link integrity        — lint-links.sh: a dangling [[link]] that NEARLY matches
+#                              a real slug is an error (typo / stale slug after a
+#                              rename); one that matches nothing is a stub per SCHEMA
+#                              and stays a warning
+#   9. foreign boundary      — no other-boundary identifiers in this vault's pages.
+#                              OPT-IN: inactive until the vault supplies a patterns
+#                              file, and says so rather than passing silently
 #
-# Checks 6–7 are vault-invariant GATES: they must hold at zero, so lint.sh doubles
+# Checks 6–9 are vault-invariant GATES: they must hold at zero, so lint.sh doubles
 # as the enforced write-time gate (vault CI + pre-commit) — see the pleejr-wiki
-# engine-gates-at-zero project. Universal invariants (no consumer-specific values),
-# so they ship engine-default-on; consumer-specific gates (a foreign-boundary
-# denylist, link-integrity with a stub allowlist) land later behind a vault seam.
+# engine-gates-at-zero project. 6–8 carry no per-vault values, so they ship
+# engine-default-on; 9 needs a consumer-specific denylist and therefore sits behind
+# the vault seam ($WIKI/.wiki-gates.conf) — the engine composes it, the vault fills
+# it in, and the engine names no consumer's strings.
 #
 # Exit 1 if any check fails.
 #
@@ -154,6 +162,67 @@ if [ -d "$WIKI/repos" ]; then
   done
 fi
 [ "$pp" -eq 0 ] && echo "ok: every repo page carries sources: ref/sha provenance"
+
+# 8. link integrity -------------------------------------------------------------
+section "link integrity"
+"$SCRIPT_DIR/lint-links.sh" --wiki "$WIKI" $STRICT || rc=1
+
+# 9. foreign boundary -----------------------------------------------------------
+# The motivating case for the whole gates project: a personal-boundary vault should
+# mechanically reject work-org identifiers, instead of relying on a human noticing
+# during an import. Necessarily consumer-specific — only the vault knows which
+# strings are foreign — so it reads them from the seam and is INACTIVE without one.
+#
+# The patterns file is expected to be git-ignored: naming the forbidden strings in a
+# tracked file would write the other boundary's identifiers into this vault's
+# permanent history, i.e. commit the very thing the gate exists to keep out. The
+# cost is that a fresh clone starts unarmed, so an unarmed gate SAYS SO — a silent
+# pass would be indistinguishable from a clean one.
+section "foreign boundary"
+GATES_CONF="$WIKI/.wiki-gates.conf"
+fb_file=""
+if [ -f "$GATES_CONF" ]; then
+  fb_file="$(awk -F= '
+    /^[ \t]*#/ { next }
+    { key=$1; sub(/^[ \t]+/,"",key); sub(/[ \t]+$/,"",key)
+      if (key != "foreign_boundary_patterns") next
+      sub(/^[^=]*=/,""); val=$0; sub(/^[ \t]+/,"",val); sub(/[ \t]+$/,"",val)
+      print val; exit }' "$GATES_CONF")"
+fi
+[ -n "$fb_file" ] || fb_file=".wiki-gates.local"
+
+if [ ! -f "$WIKI/$fb_file" ]; then
+  echo "not armed: no $fb_file (declare foreign-boundary patterns there to enable)"
+else
+  fb=0
+  pats="$(grep -v '^[ \t]*#' "$WIKI/$fb_file" | grep -v '^[ \t]*$' || true)"
+  if [ -z "$pats" ]; then
+    echo "not armed: $fb_file declares no patterns"
+  else
+    for d in "${NODE_DIRS[@]}"; do
+      for f in "$WIKI/$d"/*.md; do
+        [ -f "$f" ] || continue
+        while IFS= read -r pat; do
+          [ -n "$pat" ] || continue
+          if hits="$(grep -inE "$pat" "$f" 2>/dev/null)"; then
+            # print the line number and the matched pattern, never the matched text —
+            # echoing it back would put the foreign string in CI logs.
+            while IFS= read -r h; do
+              printf '  ✗ %s:%s — matches foreign-boundary pattern /%s/\n' \
+                "${f#$WIKI/}" "${h%%:*}" "$pat"
+            done <<EOF
+$hits
+EOF
+            fb=1; rc=1
+          fi
+        done <<EOF
+$pats
+EOF
+      done
+    done
+    [ "$fb" -eq 0 ] && echo "ok: no foreign-boundary identifiers in content-node pages"
+  fi
+fi
 
 echo
 [ "$rc" -eq 0 ] && echo "lint: all checks passed" || echo "lint: FAILURES above"
