@@ -17,7 +17,7 @@ The front door for adopting **the wiki-engine loop** on a machine. It **converge
 
 ## Boundary first (non-negotiable)
 - The vault's `boundary` (`personal` | `work`) is chosen below and stamped into its `CLAUDE.md`. Onboarding imports **only matching material** — never pull work data into a personal vault or vice versa.
-- No secrets (keys, tokens, credentials) ever land in a page. See [[lesson-no-claude-in-hooks]].
+- No secrets (keys, tokens, credentials) ever land in a page.
 
 ## Steps
 
@@ -56,7 +56,7 @@ The front door for adopting **the wiki-engine loop** on a machine. It **converge
 6. **Report.** Summarize what was created and wired, and tell the user the vault is live for the next session (new shell picks up `WIKI_PATH`; the always-on import loads the router automatically).
 
 ## Rules
-- **In-session, on demand.** Adoption is a one-time interactive bring-up, so there is nothing here worth automating — and never from a hook that fires on an event its own child can re-trigger, which is the structure that produced the `.ai-os` fork-bomb. The rule targets runaway agent generation, not headless `claude`. See [[lesson-no-claude-in-hooks]].
+- **In-session, on demand.** Adoption is a one-time interactive bring-up, so there is nothing here worth automating — and never from a hook that fires on an event its own child can re-trigger, which is the structure that produced the `.ai-os` fork-bomb. The rule targets runaway agent generation, not headless `claude`. See the **Hard safety rule** in the engine's `CLAUDE.md`.
 - **Idempotent — safe to re-run.** Scaffolding is create-new (`new-wiki.sh` refuses over an existing vault); wiring converges via `wire-machine.sh` (add-only, `--check`-able). For ongoing *content* curation use `checkpoint`/`wiki-repo`.
 - The `--wire-*` flags assume a single-vault machine; never run them where the other boundary's vault also lives.
 - Respect the boundary and the no-secrets rule at every step.

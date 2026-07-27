@@ -42,4 +42,4 @@ Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's c
 
 ## Rules
 - `boundary: personal`; **no secrets** copied into the page (no `.env` values, keys, tokens).
-- In-session by default; never from a hook that fires on an event its own child can re-trigger. A bounded, deliberately-initiated run — a scheduled staleness refresh, say — is legitimate when it carries a re-entry sentinel, is concurrency-bounded, and terminates. See [[lesson-no-claude-in-hooks]].
+- In-session by default; never from a hook that fires on an event its own child can re-trigger. A bounded, deliberately-initiated run — a scheduled staleness refresh, say — is legitimate when it carries a re-entry sentinel, is concurrency-bounded, and terminates. See the **Hard safety rule** in the engine's `CLAUDE.md`.

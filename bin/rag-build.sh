@@ -44,7 +44,7 @@ fi
 export RAG_WIKI="$WIKI" RAG_BINDIR="$SCRIPT_DIR" RAG_FORCE="$FORCE"
 
 "$PYBIN" - <<'PY'
-import os, sys, json, glob, hashlib
+import os, sys, json, glob, hashlib, re
 sys.path.insert(0, os.environ["RAG_BINDIR"])
 from rag_embed import Embedder
 
@@ -68,6 +68,18 @@ def current_model():
 CURMODEL = current_model()
 
 def vault_boundary():
+    """The vault's own boundary, read from its CLAUDE.md — used below to skip pages
+    declaring a *different* one, so cross-boundary content that leaked in never gets
+    indexed into recall.
+
+    Accepts any well-formed token rather than a fixed pair. Matching against a
+    hardcoded ("personal", "work") made the check fail *open*: a vault on any other
+    boundary fell through to None, which switches the skip off entirely — so the one
+    automated cross-boundary guard was disabled on exactly the vaults that had
+    adopted a new boundary. A declaration we cannot parse is reported and skipped
+    over rather than silently accepted; genuinely absent metadata still yields None
+    (filter off), because there is nothing to compare against.
+    """
     p = os.path.join(WIKI, "CLAUDE.md")
     if not os.path.isfile(p):
         return None
@@ -75,8 +87,10 @@ def vault_boundary():
         if "boundary:" in line:
             after = line.split("boundary:", 1)[1].strip().strip("`.*_ ")
             tok = after.split()[0].strip("`.,") if after.split() else ""
-            if tok in ("personal", "work"):
+            if re.match(r"^[a-z][a-z0-9-]*$", tok):
                 return tok
+            # not a boundary token (prose mentioning "boundary:") — keep looking
+            sys.stderr.write("rag-build: ignoring unparseable boundary %r in CLAUDE.md\n" % tok)
     return None
 VBOUND = vault_boundary()
 
