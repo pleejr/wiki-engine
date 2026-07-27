@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.28.0] — 2026-07-27
+
+Minor — a **concurrency model for vaults with more than one writer**: per-session isolation is now enforced by a pre-commit guard rather than merely offered, sessions can declare and see each other's intended paths, and integration to `main` is serialized under a lock. Additive; existing single-session vaults are unaffected (`WIKI_WORKTREE=0` opts out entirely). Adopt with `bin/adopt.sh` or `update.sh` — adoption installs the vault's pre-commit hook if it has none.
 
 ### Added
 - **A concurrency model for more than one session (or agent) writing a vault at once.** `vault-worktree.sh` gains `guard`, `lease`, `peers` and `integrate`, and the isolation it already provided is now enforced rather than merely offered. Motivated by a real incident: two sessions worked one vault, one ran `git add -A`, and it swept the other's finished-but-uncommitted work into an unrelated commit — then a `reset` intended to repair that removed the peer's *next* commit, because the tree had moved between checking and acting.
