@@ -14,6 +14,13 @@
 #   RAG_REQUIREMENTS pinned deps file  (default: engine scaffold/rag-requirements.txt)
 #   RAG_PIP_PKG      override: install this package instead of the pinned file (unpinned)
 #   RAG_LOCAL_MODEL  model to prefetch           (default: BAAI/bge-base-en-v1.5)
+#   RAG_MODEL_CACHE  where model weights live    (default: ${XDG_CACHE_HOME:-~/.cache}/wiki-engine/models)
+#
+# The cache is machine-global and durable on purpose. Left alone, fastembed stores
+# weights under tempfile.gettempdir(), which the OS reaps on its own schedule while
+# the venv survives — so recall later fails on a missing model and the only recovery
+# is a re-download. Set RAG_MODEL_CACHE to keep weights vault-local instead. The
+# resolved path is recorded in .rag/config.json and reported by doctor.sh.
 #
 # Default is fastembed + bge-base (contextual, 768-dim, quantized ONNX ~210MB, CPU,
 # offline) — the best-quality-within-reason local retriever. Lighter alt:
@@ -121,11 +128,19 @@ import os, sys, json
 sys.path.insert(0, os.environ["RAG_BINDIR"])
 from rag_embed import Embedder
 wiki = sys.argv[1]
-e = Embedder()                    # loads + downloads the model
+# Pass the wiki so the prefetch reads the same .rag/config.json the later build and
+# query reads — they are three separate processes, and a cache path resolved in only
+# one of them is the same class of bug this pins down.
+e = Embedder(wiki)                # loads + downloads the model
 dim = len(e.embed(["probe"])[0])
 cfg = {"backend": "local", "lib": e.lib, "model": e.model, "dim": dim}
+if e.cache:                       # effective path — inspectable, checkable by doctor
+    cfg["model_cache"] = e.cache
+if e.cache_pin:                   # only record an explicit choice, never the default
+    cfg["model_cache_pin"] = e.cache_pin
 json.dump(cfg, open(os.path.join(wiki, ".rag", "config.json"), "w"), indent=2)
 print("rag-setup: ready — %s via %s (%d-dim). Wrote .rag/config.json" % (e.model, e.lib, dim))
+print("rag-setup: model cache %s" % e.cache)
 PY
 
 echo "rag-setup: next — engine/bin/rag-build.sh to index the vault"

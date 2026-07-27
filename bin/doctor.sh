@@ -56,7 +56,23 @@ fi
 sec "embedding model"
 CFG="$WIKI/.rag/config.json"
 if [ -f "$CFG" ] && [ -x "$VENV/bin/python" ]; then
-  "$VENV/bin/python" -c 'import json;c=json.load(open("'"$CFG"'"));print("  %s via %s (%s-dim)"%(c.get("model"),c.get("lib"),c.get("dim")))'
+  # Also report where the weights live and whether they are still there. The cache is
+  # the one piece of the runtime the engine doesn't own the lifetime of, so a missing
+  # model should be visible here rather than first surfacing mid-checkpoint.
+  "$VENV/bin/python" - "$CFG" <<'PY'
+import json, os, sys
+c = json.load(open(sys.argv[1]))
+print("  %s via %s (%s-dim)" % (c.get("model"), c.get("lib"), c.get("dim")))
+cache = c.get("model_cache")
+if not cache:
+    print("  cache: not recorded (provisioned by an older engine — rerun rag-setup.sh)")
+elif not os.path.isdir(cache):
+    print("  cache: %s — MISSING (rerun engine/bin/rag-setup.sh)" % cache)
+elif not os.listdir(cache):
+    print("  cache: %s — EMPTY (rerun engine/bin/rag-setup.sh)" % cache)
+else:
+    print("  cache: %s%s" % (cache, " (pinned)" if c.get("model_cache_pin") else ""))
+PY
 else
   echo "no model configured (.rag/config.json absent)"
 fi

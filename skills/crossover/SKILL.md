@@ -92,4 +92,4 @@ On a bundle match it removes the files and rewrites every `[[slug]]` reference t
 - **Resumable** — the `.crossover/` ledgers hold each batch's state (`<id>.outbound` at the origin; `<id>.inbound` + `<id>.manifest` at the destination, which is what makes a half-arrived batch resumable), so an interrupted migration is safe to re-drive. Commit the ledgers as migration provenance.
 - **One batch = one connected cluster** where practical, so a half-moved graph doesn't strand links on both ends.
 - New pages that *belong* to the destination should be **created there directly**, not created at the origin and migrated.
-- In-session only; never wire any mode into a hook. See [[lesson-no-claude-in-hooks]].
+- In-session by default; the constraint is structural — no mode may run from a hook that fires on an event its own child can re-trigger. A deliberately-initiated run with a re-entry sentinel, a concurrency bound, and a terminating path is legitimate. `finalize` soft-deletes at the origin, so it stays human-confirmed regardless. See [[lesson-no-claude-in-hooks]].
