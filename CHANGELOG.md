@@ -4,7 +4,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [1.26.3] — 2026-07-27
+
+Patch — the upkeep queue no longer parks the vault's self-page as perpetually stale; `huggingface_hub` advances to 1.25.1, and a CI smoke test pins `crossover`'s fail-closed contract against regression. Adopt with `bin/adopt.sh` or `update.sh`; `update.sh` re-syncs the vault's `.rag/venv` to the new pin automatically.
 
 ### Changed
 - **`huggingface_hub` pinned 1.24.0 → 1.25.1** in `scaffold/rag-requirements.txt`, clearing the update `doctor.sh` had been flagging (engine issue #2). Verified by **install *and* use** across the **whole supported range**, per the pinned-deps rule: fresh venvs on Python 3.12.13, 3.13.14 and 3.14.6 each installed the full pinned set and produced real 768-dim, fully non-degenerate `bge-base` embeddings offline. Cosine was **identical on all three and identical to the 1.24.0 baseline measured the same way**, which is the result that matters here — the bump does not perturb embedding output, so vaults keep their existing `.rag` index instead of silently drifting into vectors that no longer compare against what was already built.
