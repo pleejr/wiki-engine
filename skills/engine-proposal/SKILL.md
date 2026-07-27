@@ -1,6 +1,6 @@
 ---
 name: engine-proposal
-description: This skill should be used on BOTH ends of a wiki-engine improvement handoff. On the CONSUMER end: a vault discovers an engine improvement during normal work and hands it UPSTREAM to the engine-dev vault — genericized and boundary-scrubbed so no consumer-private context leaks, and without creating any node in the consumer vault. It strips consumer identifiers (vault/org/repo names, usernames, emails, absolute paths, values, secrets), restates the problem in engine-generic terms, runs a deterministic boundary scan, and emits a self-contained copy-pastable kickoff block. On the ENGINE-DEV end (intake): it drives a critical design-review pass over an arriving proposal before any shape is chosen, then files the project and records which findings were accepted or rejected. Also the route for a DEFECT found while running the engine in a consumer vault, which cannot fix it in place (a local edit to the pinned engine/ submodule is discarded by the next update): the same channel carries a defect-report block that separates the observation from the suggested fix, names the failure shape (fail-closed / fail-open / data-loss), and confirms the bug is still live at the pinned version. Triggers: "engine-proposal", "propose an engine change", "propose this upstream", "send this idea to the engine-dev vault", "package this as an engine improvement", "scrub this and hand it to the engine", "this should live in the engine, not here", "act on this proposal", "intake this engine proposal", "here is a HANDOFF block", "I found a bug in the engine", "this looks like an engine bug", "report this defect upstream", "the engine is broken here", "file this engine bug", "should I fix this in engine/ or send it upstream". Distinct from crossover (which MOVES an existing canonical vault page to another vault with sha256 integrity + soft-delete + tombstones) — engine-proposal ORIGINATES a new, forward-only idea that never was and shouldn't become a consumer node: no integrity handshake, no origin deletion; the only shared surface is the boundary gate. Distinct from checkpoint (which curates content INTO this vault) — engine-proposal creates no consumer node by default. NOT for moving an existing note between vaults (use crossover) or recording a decision/lesson in this vault (use checkpoint).
+description: This skill should be used on BOTH ends of a wiki-engine improvement handoff. On the CONSUMER end: a vault discovers an engine improvement during normal work and hands it UPSTREAM to the engine-dev vault — genericized and boundary-scrubbed so no consumer-private context leaks, and without creating any node in the consumer vault. It strips consumer identifiers (vault/org/repo names, usernames, emails, absolute paths, values, secrets), restates the problem in engine-generic terms, runs a deterministic boundary scan, and emits a self-contained copy-pastable kickoff block. On the ENGINE-DEV end (intake): it drives a critical design-review pass over an arriving proposal before any shape is chosen, then files the project and records which findings were accepted or rejected. Also the route for a DEFECT found while running the engine in a consumer vault, which cannot fix it in place (a local edit to the pinned engine/ submodule is discarded by the next update): the same channel carries a defect-report block that separates the observation from the suggested fix, names the failure shape (fail-closed / fail-open / data-loss), and confirms the bug is still live at the pinned version. Triggers: "engine-proposal", "propose an engine change", "propose this upstream", "send this idea to the engine-dev vault", "package this as an engine improvement", "scrub this and hand it to the engine", "this should live in the engine, not here", "act on this proposal", "intake this engine proposal", "here is a HANDOFF block", "I found a bug in the engine", "this looks like an engine bug", "report this defect upstream", "the engine is broken here", "file this engine bug", "should I fix this in engine/ or send it upstream", "did my proposal ship", "what happened to the proposal I sent", "is that engine proposal still open", "check my outbox against the engine". Distinct from crossover (which MOVES an existing canonical vault page to another vault with sha256 integrity + soft-delete + tombstones) — engine-proposal ORIGINATES a new, forward-only idea that never was and shouldn't become a consumer node: no integrity handshake, no origin deletion; the only shared surface is the boundary gate. Distinct from checkpoint (which curates content INTO this vault) — engine-proposal creates no consumer node by default. NOT for moving an existing note between vaults (use crossover) or recording a decision/lesson in this vault (use checkpoint).
 status: active
 summary: "genericize + boundary-scrub a consumer vault's engine improvement OR defect report into a self-contained, scan-verified handoff block for the engine-dev vault (creates no consumer node); on the engine-dev end, reproduce/design-review before building."
 updated: 2026-07-27
@@ -128,8 +128,31 @@ Any finding → revise the block (return to §2) and re-scan. Do not hand off un
 ## 5. Hand off — create NO consumer node
 
 - Present the clean block for the user to paste into the engine-dev vault's session.
-- **Optional** traceability only: `engine-proposal.sh stash --vault "$WIKI_PATH" --slug <slug>` writes the block to `.engine-proposal/<slug>.outbox` (git-ignored scratch). This is the *only* file this skill may create in the consumer vault — never a project or memory page.
+- **Stash it — this is required, not optional.** `engine-proposal.sh stash --vault "$WIKI_PATH" --slug <slug>` writes the block to `.engine-proposal/<slug>.outbox` (git-ignored scratch). This is the *only* file this skill may create in the consumer vault — never a project or memory page.
+  - **Why it stopped being optional:** the handoff is forward-only, so if the block is not kept, it cannot be re-sent. That is not hypothetical — of two proposals that needed nudging, only the stashed one could be; the other had to be reconstructed from an unrelated note that happened to cover the same ground. It is also what `status` enumerates.
+  - `stash` rejects a `--slug` that disagrees with the block's own `slug:` line. They are the same key; letting them diverge means every later lookup silently asks about a different proposal.
 - Do **not** run checkpoint and do **not** create a project/memory/lesson node here. The engine-dev vault owns the resulting project, notes, lessons, and skill.
+
+## 5b. Ask what happened to it — `status`, not a grep
+
+```bash
+$WIKI_PATH/engine/bin/engine-proposal.sh status --vault "$WIKI_PATH"
+$WIKI_PATH/engine/bin/engine-proposal.sh status --vault "$WIKI_PATH" --slug <slug>
+```
+
+Reports every stashed block as **shipped** (with the release, and whether your pin already has it), **merged** (landed, not yet released), **rejected** (with the reason), **partially accepted**, **open** (received, in progress — do not re-send), or **unknown** (the engine has no record of it — re-sending is the right move). It reads the engine repo's `PROPOSALS.md` plus the `Proposal:` commit trailers; no network.
+
+Three things to know before trusting an answer:
+
+- **`unknown` and `open` are different answers.** The engine writes a row when a proposal *arrives*, so `unknown` means it never got there — a paste that was never intaken, or a session that dropped it. That is the case where re-sending is correct; `open` is the case where re-sending is noise.
+- **The outbox is git-ignored and per-machine**, so a bare `status` only sees blocks stashed on *this* machine. An empty result is not evidence that nothing is outstanding, and it says so. Use `--slug` to ask about a proposal drafted elsewhere.
+- **It resolves against `origin/main` when the submodule has it**, not the pinned tag — otherwise anything that shipped after your pin reads as still open. It prints the horizon it used. If it says it resolved against `HEAD` only, run `update` first.
+
+**Never hand-maintain a `status:` line on a stashed block.** Derived status cannot go stale; a hand-kept one drifts, which is the failure that produced this subcommand.
+
+## 5c. Nothing to grep — do NOT reach for the git log
+
+If a consumer asks "did my proposal ship?", the answer is `status`, not a keyword search of the engine's commit subjects. Guessed keywords against reworded prose is how already-shipped blocks sat in the outbox as clutter while genuinely open ones looked identical to rejected ones.
 
 ## 6. Intake — receiving a proposal (engine-dev session)
 
@@ -161,7 +184,20 @@ If none is installed, do the pass inline against this checklist — it is delibe
 - **Defaults + capability** — what does the *default* do after the change, and does the escape hatch preserve the old behavior rather than remove it?
 - **Unverifiable criteria** — which acceptance criteria can't be mechanically checked as written?
 
+**First, record that it ARRIVED — before anything else.** Append a row to the engine's `PROPOSALS.md`:
+
+```
+| `<slug>` | open | received <date> |
+```
+
+Do this on arrival, not at the end. The reporter has no return channel, so this file is the only thing that can ever tell them what happened — and a proposal you **decline** produces no commit, no trailer and no release note, meaning the resolution path has no mechanical trigger to remind you. Writing the row first also makes `unknown` mean something on the consumer end: *the engine never received this*, which is a different instruction to the reporter than "we're working on it".
+
+- **Do not rename the slug to fit engine vocabulary.** It is the reporter's only correlation key, and renaming it silently severs their ability to match the result back — they will never learn why. If a rename is genuinely necessary, keep the incoming slug as an `alias` row pointing at the canonical one; `status` follows it.
+- The terminal outcome is an **edit of that row**, never a second row: `shipped` (detail `derived`, or an explicit `vX.Y.Z` for anything predating the trailer convention), `rejected`, or `partially-accepted`. **A `rejected` or `partially-accepted` row must carry the reason** — `lint-proposals.sh` rejects a bare one, because a decline the reporter cannot act on is the failure this whole mechanism exists to fix.
+
 **Then file it.** Create the project page under the proposal's slug, carrying its evidence and acceptance criteria; record the review's accepted *and* rejected findings in the project's **Key decisions** (append-only), so the reasoning survives the session. Build, ship, release — consumer vaults receive it on their next `update`.
+
+**Cite the slug on the implementing commit** as a `Proposal: <slug>` trailer, in the **final paragraph** beside `Co-authored-by:`. Git parses trailers only in the last block of a message, so a `Proposal:` line anywhere else is silently invisible — CI would read the commit as untagged and the reporter would see `open` forever. Merges are squashed, so the surface that matters is the **pull request description's** final paragraph. `bin/lint-proposals.sh` hard-fails on a misplaced line rather than treating it as "no trailer", and on any trailer with no ledger row.
 
 **Then review the diff, before you push.** The design pass above and the acceptance criteria it produces are both derived from the *design* — so a defect that lives outside the design's frame is invisible to both, and to the tests you wrote from those criteria. Reading the change as written is the only layer that catches it. The worked example is this gate's own first use: the reviewed design was sound and every acceptance criterion passed, while the implementation ran its cache-migration side effect during a *probe* for a library that wasn't installed — outside the design's frame, so nothing upstream could have seen it.
 
