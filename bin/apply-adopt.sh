@@ -16,6 +16,12 @@
 # Usage:
 #   apply-adopt.sh [--wiki DIR] [--force] [--check] [--settings FILE]
 #     --check  report pending steps without applying (exit 1 if any would change)
+#
+# Env:
+#   CLAUDE_SKILLS_DIR   where skill symlinks go (default ${CLAUDE_CONFIG_DIR:-~/.claude}/skills).
+#                       For an EPHEMERAL vault, each machine-shared surface is gated on its
+#                       OWN redirect: --settings contains settings.json, this contains the
+#                       skills dir. Containing one never licenses writing the other.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,24 +79,45 @@ fi
 # the steps themselves and both failed: one tested `[ -n "$CLAUDE_SETTINGS" ]`, which the
 # export above makes permanently true, so the guard never fired; the other enumerated
 # ephemeral path prefixes that happened to be macOS-shaped and did not match a CI runner's
-# temp dir. Steps consult $ADOPT_WIRE_MACHINE and do not re-implement the test.
+# temp dir. Steps consult the flags below and do not re-implement the test.
 #
-# Machine-shared surfaces are the machine's real settings.json and ~/.claude/skills — a
+# Machine-shared surfaces are the machine's real settings.json and its skills directory. A
 # throwaway vault touching either leaves damage that outlives it: a permanent SessionStart
 # hook, or skill symlinks aimed at a directory that later disappears (those keep resolving
 # until it is cleaned, so nothing announces the breakage).
-_real_settings="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-ADOPT_WIRE_MACHINE=1
+#
+# ONE FLAG PER SURFACE, not one flag for both. A single flag was the bug: redirecting
+# --settings is the documented way to contain a throwaway vault, and it flipped the shared
+# flag on — licensing the skills step to repoint the machine's REAL ~/.claude/skills at
+# the throwaway engine. The settings redirect isolates settings.json; nothing about it
+# isolates the skills directory. Each surface is now gated on ITS OWN redirect, so
+# containing one cannot silently authorize writing the other.
+_claude_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+_real_settings="$_claude_dir/settings.json"
+_real_skills="$_claude_dir/skills"
+
+# Where skill symlinks go. Honors CLAUDE_CONFIG_DIR, which the previous hardcoded
+# "$HOME/.claude/skills" in the step did not — so a machine with that variable set had the
+# skills step aiming somewhere the rest of the engine never looked.
+ADOPT_SKILLS_DIR="${CLAUDE_SKILLS_DIR:-$_real_skills}"
+
+ADOPT_WIRE_SETTINGS=1
+ADOPT_WIRE_SKILLS=1
 case "$WIKI" in
   "${TMPDIR:-/nonexistent-tmpdir}"*|"${RUNNER_TEMP:-/nonexistent-runnertmp}"*|\
   /private/tmp/*|/tmp/*|/var/folders/*|*/scratchpad/*|*/_temp/*)
-    # Ephemeral vault: wiring is allowed ONLY when the caller redirected settings
-    # somewhere other than the real file, which is what "isolated" actually means.
-    [ "$SETTINGS" != "$_real_settings" ] || ADOPT_WIRE_MACHINE=0 ;;
+    # Ephemeral vault: each surface may be written only when the caller redirected THAT
+    # surface somewhere other than the real one, which is what "isolated" actually means.
+    [ "$SETTINGS" != "$_real_settings" ]          || ADOPT_WIRE_SETTINGS=0
+    [ "$ADOPT_SKILLS_DIR" != "$_real_skills" ]    || ADOPT_WIRE_SKILLS=0 ;;
 esac
-export ADOPT_WIRE_MACHINE
-[ "$ADOPT_WIRE_MACHINE" -eq 0 ] && \
-  echo "adopt: ephemeral vault ($WIKI) — skipping machine-level wiring (settings, skill links)" >&2
+export ADOPT_WIRE_SETTINGS ADOPT_WIRE_SKILLS ADOPT_SKILLS_DIR
+# Name the surface AND the redirect that would allow it — a bare "skipping machine-level
+# wiring" told the caller nothing about which knob to turn.
+[ "$ADOPT_WIRE_SETTINGS" -eq 0 ] && \
+  echo "adopt: ephemeral vault ($WIKI) — not writing the machine's settings.json (redirect with --settings)" >&2
+[ "$ADOPT_WIRE_SKILLS" -eq 0 ] && \
+  echo "adopt: ephemeral vault ($WIKI) — not repointing $ADOPT_SKILLS_DIR (redirect with \$CLAUDE_SKILLS_DIR)" >&2
 
 changes=""; failed=0
 for step in "$ADOPT_D"/*.sh; do

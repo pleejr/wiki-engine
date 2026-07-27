@@ -19,7 +19,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILLS_SRC="$ENGINE_ROOT/skills"
-DEST="$HOME/.claude/skills"
+# Same resolution as apply-adopt.sh and skill-sources.sh. This used to hardcode
+# "$HOME/.claude/skills", so on a machine that sets CLAUDE_CONFIG_DIR the two skill-linking
+# paths disagreed about where skills live — the bootstrap wrote one place and adoption
+# another. One rule, three call sites.
+DEST="${CLAUDE_SKILLS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills}"
 FORCE=0 CHECK=0
 
 while [ $# -gt 0 ]; do

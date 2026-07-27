@@ -22,10 +22,10 @@ require_engine_asset "$ENSURE_HOOK" file "the add-only hook writer"
 # Never wire a REAL settings.json boot hook for an EPHEMERAL vault (test / CI / scratchpad):
 # ensure-hook keys the command on WIKI_PATH, so a throwaway vault leaves a permanent,
 # un-dedupable SessionStart hook behind. See [[lesson-ephemeral-vault-settings-pollution]].
-# apply-adopt.sh decides this once (see ADOPT_WIRE_MACHINE there). Deliberately NOT
+# apply-adopt.sh decides this once (see ADOPT_WIRE_SETTINGS there). Deliberately NOT
 # re-derived here: the two previous in-step versions of this test both failed silently —
 # one could never be false, the other missed CI temp paths.
-[ "${ADOPT_WIRE_MACHINE:-1}" = "1" ] || exit 0
+[ "${ADOPT_WIRE_SETTINGS:-1}" = "1" ] || exit 0
 
 cmd="WIKI_PATH=$WIKI $ENGINE/bin/session-boot.sh"
 

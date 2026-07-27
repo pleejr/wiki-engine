@@ -50,7 +50,9 @@
 #                         worktree without having to thread an id through every call.
 #   WIKI_WORKTREE_ROOT    parent dir for worktrees (default $WIKI_PATH/.worktrees, git-excluded)
 #   WIKI_WT_STALE_HOURS   bare-`gc` age threshold for a clean orphan (default 48)
-#   WIKI_LEASE_STALE_MIN  a lease unrefreshed this long counts as dead (default 120)
+#   WIKI_LEASE_STALE_MIN  a lease unrefreshed this long counts as dead (default 120). The
+#                         clock is the FALLBACK: a session whose worktree and branch are
+#                         both gone has provably finished and is dead immediately.
 #   WIKI_LOCK_WAIT_SEC    how long `integrate` waits for the lock (default 120)
 #   VAULT_INTEGRATE=1     set by `integrate`; lets the guard allow its own merge commit
 set -uo pipefail
@@ -84,10 +86,41 @@ lease_file() { printf '%s/%s.lease' "$LEASE_DIR" "$(session_id)"; }
 # key=value read from a lease file (values never contain newlines)
 lease_get() { awk -F= -v k="$2" '$1==k { sub(/^[^=]*=/,""); print; exit }' "$1" 2>/dev/null; }
 
-# A lease is LIVE if refreshed within LEASE_STALE_MIN. Time-based rather than pid-based:
-# the pid recorded here is the helper script's, not the agent's, and dies immediately —
-# so liveness has to come from the session continuing to touch its lease.
+# A session that FINISHED CLEANLY leaves proof: `integrate` merged its branch and `gc`
+# removed both the worktree and the branch. When both are gone the lease describes a
+# session that cannot still be writing, whatever its heartbeat says — so this is stronger
+# evidence than the clock, and it is available immediately instead of LEASE_STALE_MIN
+# later. Without it a finished session is reported as a live peer for up to two hours,
+# and a registry that shows ghosts stops being read.
+#
+# Deliberately conservative — it answers "provably finished", never "probably gone":
+#   - worktree still on disk     -> not proven (a crashed session leaves its worktree)
+#   - branch still exists        -> not proven (unintegrated commits; nothing may delete it)
+#   - worktree is the CANONICAL checkout -> unjudgeable, since `lease` run from canonical
+#     records canonical, which never disappears. Falls through to the clock.
+# Anything not proven dead stays subject to the heartbeat test below, so a crashed
+# session is still reaped on time as before.
+lease_finished() {
+  local wt br
+  wt="$(lease_get "$1" worktree)"; br="$(lease_get "$1" branch)"
+  [ -n "$wt" ] && [ -n "$br" ] || return 1
+  [ "$wt" != "$WIKI" ] || return 1
+  [ ! -d "$wt" ] || return 1
+  [ -z "$(git -C "$WIKI" branch --list "$br" 2>/dev/null)" ] || return 1
+  return 0
+}
+
+# A lease is LIVE if its session has not provably finished AND it was refreshed within
+# LEASE_STALE_MIN. The clock is the fallback, not the only test: it is time-based rather
+# than pid-based because the pid recorded here is the helper script's, not the agent's,
+# and dies immediately — so for a session that simply stops, liveness can only come from
+# it continuing to touch its lease.
+#
+# Decided in ONE place so `peers`, `for_other_live_leases` and `gc` cannot disagree about
+# who is live — three call sites re-deriving this is how a guard ends up wrong differently
+# in each of them.
 lease_live() {
+  lease_finished "$1" && return 1
   local hb; hb="$(lease_get "$1" heartbeat)"
   [ -n "$hb" ] || return 1
   [ $(( $(now_epoch) - hb )) -lt $(( LEASE_STALE_MIN * 60 )) ]
@@ -268,7 +301,17 @@ case "$CMD" in
 
   lease)
     shift
-    wt="$(cd "$PWD" && git rev-parse --show-toplevel 2>/dev/null || echo "$WIKI")"
+    # Record THIS SESSION's worktree, preferring the one `ensure` keyed to it over the
+    # CWD's toplevel. CWD was the only source before, which recorded whatever repo the
+    # shell happened to sit in — an unrelated one if `lease` is called from elsewhere.
+    # That field is now load-bearing: lease_finished() reads it to decide a session has
+    # provably ended, so a wrong path there means a ghost that never reaps, or worse, a
+    # live session judged finished because some other repo's directory is missing.
+    if [ -d "$WT_ROOT/$(session_id)" ]; then
+      wt="$WT_ROOT/$(session_id)"
+    else
+      wt="$(cd "$PWD" && git rev-parse --show-toplevel 2>/dev/null || echo "$WIKI")"
+    fi
     branch="$(git -C "$wt" symbolic-ref --short HEAD 2>/dev/null || echo '?')"
     write_lease "$wt" "$branch" "$@"
     # Advisory overlap warning. Compares declared path PREFIXES — deliberately coarse,
@@ -395,8 +438,11 @@ case "$CMD" in
       done < <(git -C "$WIKI" worktree list --porcelain 2>/dev/null)
     fi
     git -C "$WIKI" worktree prune 2>/dev/null || true
-    # Reap leases whose session stopped refreshing, so `peers` shows live sessions only —
-    # a registry that accumulates ghosts stops being read.
+    # Reap leases for sessions that provably finished (worktree and branch both gone) or
+    # stopped refreshing, so `peers` shows live sessions only — a registry that accumulates
+    # ghosts stops being read. Runs AFTER the worktree sweep above on purpose: retiring a
+    # worktree is exactly what makes its lease provably dead, so the same gc that removes
+    # the directory also clears the entry, instead of leaving a ghost until the clock.
     reaped=0
     if [ -d "$LEASE_DIR" ]; then
       for lf in "$LEASE_DIR"/*.lease; do
