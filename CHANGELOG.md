@@ -4,6 +4,20 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.41.0] — 2026-07-27
+
+Patch-shaped — `gc` could never reap a `wt/*` branch whose worktree was already gone, because a branch was only ever evaluated as a *side effect* of retiring its worktree. Third route to the same unbounded accumulation. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **An orphan `wt/*` branch was unreapable by any invocation.** Branch deletion lived inside `retire_worktree`, so it ran only when a worktree was being retired; the bare `gc` sweep looks for stale *worktrees* and therefore never reached a branch whose worktree had already been removed — by a crashed session, or by `git worktree remove` called directly. Such a branch accumulated forever, which is the same growth v1.28.2 and v1.38.0 were each cut to stop, arrived at by a third route.
+  - **Found in the wild, not by inspection**: retiring this session's own worktree left one behind that was provably contained by **both** the ancestry and the v1.38.0 content test, held zero commits ahead of `main`, and still had to be deleted by hand.
+  - The containment logic is now `retire_branch`, called by **both** paths — so the worktree route and the sweep can no longer disagree about what "contained" means, and a future change to one is a change to both.
+  - **A branch checked out anywhere is excluded by decision, not by accident.** It belongs to a live session (or to canonical). `git branch -D` would refuse regardless, but relying on that would make the skip incidental; CI asserts the *assessed* count excludes it rather than only checking the outcome.
+  - Fail-safe direction unchanged throughout: an orphan holding real work is kept, named as `UNINTEGRATED CONTENT`, and asserted still readable afterwards.
+
+### Notes
+- Found while running `checkpoint` — the ritual exercised `ensure` → `integrate` → `gc` and surfaced a gap that no test covered because no test had ever left a branch without its worktree.
+
 ## [1.40.0] — 2026-07-27
 
 Minor — a new **`upkeep sync-clones`** verb: a guarded, fast-forward-only clone refresh, so a drain reflects true upstream instead of whatever the local clones happen to be at. The detector stays offline. Adopt with `bin/adopt.sh` or `update.sh`.

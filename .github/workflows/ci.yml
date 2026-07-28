@@ -1217,3 +1217,73 @@ jobs:
             || { echo "  FAIL verify-status reached the network"; fail=1; }
 
           exit "$fail"
+
+      - name: gc sweeps orphan wt/* branches, and never a live one
+        run: |
+          # A wt/* branch was only ever evaluated as a SIDE EFFECT of retiring its
+          # worktree, and the bare sweep looks only for stale worktrees — so a branch
+          # whose worktree was already gone (crashed session, worktree removed some other
+          # way) was unreapable by ANY invocation and simply accumulated. Third route to
+          # the same unbounded growth v1.28.2 and v1.38.0 were each cut to stop; found in
+          # the wild on a vault whose orphan was provably contained by both tests and
+          # still needed deleting by hand.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-orphan"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          WT="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+          fail=0
+          V="$RUNNER_TEMP/orphan"; mkdir -p "$V/memory"; git -C "$V" init -q .
+          printf 'seed\n' > "$V/memory/seed.md"
+          git -C "$V" -c core.hooksPath=/dev/null add -A
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm seed
+          mk() {
+            W="$(WIKI_PATH="$V" WIKI_WT_SESSION="$1" "$WT" ensure 2>/dev/null)"
+            printf '%s\n' "$2" > "$W/memory/$2.md"
+            git -C "$W" -c core.hooksPath=/dev/null add -A
+            git -C "$W" -c core.hooksPath=/dev/null commit -qm "$2"
+            printf '%s' "$W"
+          }
+
+          # (a) orphan whose content IS on main (squash-merged), worktree already gone
+          W1="$(mk orphaned sq)"
+          git -C "$V" merge -q --squash wt/orphaned >/dev/null 2>&1
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm "squashed (#1)"
+          git -C "$V" worktree remove --force "$W1"
+          # (b) orphan holding REAL work — must be kept, and still readable afterwards
+          W2="$(mk stranded strand)"
+          git -C "$V" worktree remove --force "$W2"
+          # (c) a LIVE worktree's branch — the sweep must not even assess it
+          W3="$(mk live alive)"
+
+          out="$(WIKI_PATH="$V" "$WT" gc 2>&1)"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'deleted wt/orphaned' \
+            && echo "  ok   an orphan branch with no worktree is finally reaped" \
+            || { echo "  FAIL orphan branch still unreapable"; fail=1; }
+          git -C "$V" show main:memory/sq.md >/dev/null 2>&1 \
+            || { echo "  FAIL reaped an orphan whose content is NOT on main"; fail=1; }
+
+          printf '%s' "$out" | grep -q 'kept wt/stranded — UNINTEGRATED CONTENT' \
+            && echo "  ok   an orphan holding real work is kept and named" \
+            || { echo "  FAIL stranded orphan mis-reported"; fail=1; }
+          git -C "$V" show wt/stranded:memory/strand.md >/dev/null 2>&1 \
+            && echo "  ok   ...and its work is still readable" \
+            || { echo "  FAIL stranded work destroyed"; fail=1; }
+
+          # The live branch must be skipped BY DECISION, not merely because `branch -D`
+          # would have refused — so assert the count excludes it, not just the outcome.
+          printf '%s' "$out" | grep -q 'assessed 2 orphan branch(es)' \
+            && echo "  ok   a checked-out branch is excluded from the sweep by decision" \
+            || { echo "  FAIL live branch was assessed"; printf '%s\n' "$out"; fail=1; }
+          [ -d "$W3" ] && git -C "$V" rev-parse --verify -q wt/live >/dev/null \
+            && echo "  ok   the live worktree and its branch are untouched" \
+            || { echo "  FAIL a live session's worktree or branch was disturbed"; fail=1; }
+
+          # Idempotent: a second sweep reaps nothing new and keeps reporting the stranded one.
+          out2="$(WIKI_PATH="$V" "$WT" gc 2>&1)"
+          printf '%s' "$out2" | grep -q 'deleted' \
+            && { echo "  FAIL second sweep deleted something"; fail=1; } \
+            || echo "  ok   a second sweep is a no-op"
+
+          exit "$fail"
