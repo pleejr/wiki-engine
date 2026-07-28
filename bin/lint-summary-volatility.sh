@@ -151,6 +151,16 @@ for f in "$PROJ_DIR"/*.md; do
 done
 
 if [ "$SEED" = 1 ]; then
+  # A clean vault gets NO baseline file. An empty one suppresses nothing and its only
+  # effect is to look like an exemption list to the next reader — and it would make a
+  # later `--seed-baseline` look already-run to the add-only adoption step, which skips
+  # when the file exists. The tool decides this, not the caller: the adoption step used to
+  # carry its own copy of the same test, and two places deciding one thing is how they
+  # drift apart.
+  if [ "${#HITS[@]}" -eq 0 ]; then
+    echo "summary-volatility: nothing to grandfather — no baseline written"
+    exit 0
+  fi
   {
     echo "# .wiki-gates-summary-baseline — grandfathered project summaries."
     echo "# Seeded by lint-summary-volatility.sh --seed-baseline. One <slug>\\t<sha256(summary)>"

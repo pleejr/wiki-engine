@@ -41,12 +41,10 @@ if [ -n "${ADOPT_CHECK:-}" ]; then
   exit 0
 fi
 
-# A vault that is already clean gets no file at all — an empty baseline is a file whose
-# only effect is to look like an exemption list, and it would suppress nothing.
-if "$ENGINE/bin/lint-summary-volatility.sh" --wiki "$WIKI" --quiet >/dev/null 2>&1; then
-  exit 0
-fi
-
+# Whether a clean vault gets a file is decided ONCE, inside --seed-baseline (it writes
+# nothing when there is nothing to grandfather). This step deliberately does not re-test
+# it: a second copy of the same rule is how the two drift apart.
 out="$("$ENGINE/bin/lint-summary-volatility.sh" --wiki "$WIKI" --seed-baseline 2>&1)" || {
   echo "FAILED: adopt: could not seed $BASE_FILE — $out" >&2; exit 1; }
+[ -f "$WIKI/$BASE_FILE" ] || exit 0     # nothing to grandfather; stay silent
 echo "ADOPTED: adopt: seeded $BASE_FILE — existing project summaries grandfathered; new ones are enforced"
