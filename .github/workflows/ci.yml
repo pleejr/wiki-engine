@@ -1176,17 +1176,41 @@ jobs:
           # (6) the ENGINE-DEV work-list must exist and must not need a consumer vault.
           # Without this verb the queue is a storage format, not a work-list, and draining
           # it means ls + grep — which is the gap the proposal was explicitly closing.
-          "$EP" queue --repo "$GITHUB_WORKSPACE" >/dev/null 2>&1 \
+          # Asserted against a FIXTURE queue, never the repo's own. The first version of
+          # this test grepped the live queue for the drain instructions — which `queue`
+          # only prints when something is open — and the very next commit drained the
+          # queue, turning a green test red with no code change. An assertion whose truth
+          # depends on ordinary repo contents is not testing the code.
+          QR="$RUNNER_TEMP/queuefix"; mkdir -p "$QR/proposals"
+          cp PROPOSALS.md "$QR/PROPOSALS.md"
+          printf -- '---\nslug: fixture-open\noutcome: open\nreceived: 2026-01-02\n---\n' > "$QR/proposals/fixture-open.md"
+          printf -- '---\nslug: fixture-done\noutcome: accepted\nreceived: 2026-01-01\nrelease: v1.0.0\n---\n' > "$QR/proposals/fixture-done.md"
+          "$EP" queue --repo "$QR" >/dev/null 2>&1 \
             && echo "  ok   queue runs in the engine repo with no --vault" \
             || { echo "  FAIL queue requires a vault or failed"; fail=1; }
-          "$EP" queue --repo "$GITHUB_WORKSPACE" 2>&1 | grep -q 'OPEN' \
-            && echo "  ok   queue reports the open work-list" \
-            || { echo "  FAIL queue printed no open section"; fail=1; }
-          # and it must tell the reader NOT to hand-edit the generated ledger, since the
-          # skill's old intake step did exactly that and would now trip the drift gate
-          "$EP" queue --repo "$GITHUB_WORKSPACE" 2>&1 | grep -q 'NEVER hand-edit PROPOSALS.md' \
+          "$EP" queue --repo "$QR" 2>&1 | grep -q 'fixture-open' \
+            && echo "  ok   queue lists an open proposal" \
+            || { echo "  FAIL queue did not list the open proposal"; fail=1; }
+          "$EP" queue --repo "$QR" 2>&1 | grep -q 'fixture-done' \
+            && { echo "  FAIL a resolved proposal appeared without --all"; fail=1; } \
+            || echo "  ok   resolved proposals are hidden without --all"
+          "$EP" queue --repo "$QR" --all 2>&1 | grep -q 'fixture-done' \
+            && echo "  ok   --all reveals resolved proposals" \
+            || { echo "  FAIL --all did not list resolved"; fail=1; }
+          # the drain instructions must name the derived-ledger rule, since the skill's old
+          # intake step hand-edited PROPOSALS.md and would now trip the drift gate
+          "$EP" queue --repo "$QR" 2>&1 | grep -q 'NEVER hand-edit PROPOSALS.md' \
             && echo "  ok   queue names the derived-ledger rule at the point of use" \
             || { echo "  FAIL drain instructions omit the derived-ledger rule"; fail=1; }
+          # a DRAINED queue must say so and must not print drain instructions for nothing
+          rm -f "$QR/proposals/fixture-open.md"
+          out_d="$("$EP" queue --repo "$QR" 2>&1)"
+          printf '%s' "$out_d" | grep -q 'queue is drained' \
+            && echo "  ok   a drained queue says so" \
+            || { echo "  FAIL drained queue not reported"; fail=1; }
+          printf '%s' "$out_d" | grep -q 'To process one' \
+            && { echo "  FAIL drain instructions printed with nothing to drain"; fail=1; } \
+            || echo "  ok   no drain instructions when there is nothing to drain"
 
           exit "$fail"
 

@@ -4,6 +4,11 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Fixed (CI only — untagged, per the tagging rule)
+- **A queue assertion was coupled to the repo's own contents and went red with no code change.** It grepped the live queue for the drain instructions, which `queue` prints only when something is open — and the commit immediately after recorded that proposal's outcome, draining the queue. Green to red on ordinary work. Re-pointed at a **fixture** queue, and widened while there: an open proposal is listed, a resolved one is hidden without `--all` and revealed with it, a drained queue says so, and drain instructions are **not** printed when there is nothing to drain. An assertion whose truth depends on ordinary repo state is not testing the code.
+
 ## [1.44.0] — 2026-07-28
 
 Minor — proposals become **files in a versioned queue directory**, submitted by pull request, replacing the copy-paste channel. Adopt with `bin/adopt.sh` or `update.sh`; the existing ledger migrates automatically and every recorded slug resolves identically before and after. Reported through `engine-proposal` as `engine-proposal-file-queue`.
