@@ -4,6 +4,33 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.44.0] — 2026-07-28
+
+Minor — proposals become **files in a versioned queue directory**, submitted by pull request, replacing the copy-paste channel. Adopt with `bin/adopt.sh` or `update.sh`; the existing ledger migrates automatically and every recorded slug resolves identically before and after. Reported through `engine-proposal` as `engine-proposal-file-queue`.
+
+### Added
+- **`proposals/<slug>.md` — the queue, and the source of truth.** The filename is the correlation key. Frontmatter carries only what git cannot answer: `outcome:` (`open` | `accepted` | `partially-accepted` | `rejected` | `alias`), `received:`, `reason:` (required for a decline), `alias:`. **`shipped` stays derived** from `git tag --contains` on the trailer commit — the release does not exist when the trailer is written, and this engine already rejected storing it once.
+- **`submit` and `push`, deliberately two verbs.** `submit` runs the fail-closed boundary scan first, prepares a branch locally, and prints the exact text that will become public; `push` performs the irreversible act and forks on demand for a consumer without write access.
+- **`bin/gen-proposals-ledger.sh`** renders `PROPOSALS.md` from the queue between sentinels, and `lint-proposals.sh` gained a drift check so a hand-edit is caught at pre-commit rather than in review.
+- **`status` distinguishes three local states** — never written, written-locally, submitted-pending — from local evidence alone.
+
+### Changed
+- **`outcome` and `shipped` are now orthogonal.** The old single-column table could say only one, so a proposal that was *partially accepted* and *shipped* had to pick. `project-summary-volatility-gate` is exactly that case and is now recorded as both.
+
+### Notes — what the intake review changed
+The transport diagnosis was right and is kept whole. Four decisions were changed before building.
+
+- **`submit` does not push.** The proposal specified scan → branch → commit → open PR as one verb. But the repo is **public** (verified, not assumed), and the scan matches only *derived* identifiers — it cannot see **semantic** leakage, where a private workflow is described in generic-sounding prose. Copy-paste was doing unglamorous safety work: a human necessarily read the text at the moment of publication. Automating end-to-end would have deleted the only review of *meaning* while claiming to improve safety. Splitting the verbs keeps that review without restoring the clipboard.
+- **Acceptance criterion 4 had no mechanism.** "Written locally" vs "submitted" cannot be distinguished by a tool that is offline by design — `status` resolves against `origin/main` only when something already fetched it, and an open-but-unmerged PR is in neither the pin nor `origin/main`. Now derived from local markers written at prepare and push time, with the per-machine limitation stated in the output rather than left to imply "nothing outstanding".
+- **The banner return path was dropped as specified.** `session-boot.sh` and `session-preflight.sh` make **zero** network calls, so a nudge would report stale outcomes indefinitely on a machine that never runs `update.sh` — observed live the same day, where a shipped proposal read `unknown` until an explicit fetch. Outcomes arrive at **pin-bump time** instead: honest, offline, and already a moment the operator is paying attention. A return channel that silently lags is this project's own failure mode relocated one layer down.
+- **`PROPOSALS.md` is generated, not retired.** Retiring it in this change would also rewrite the `Proposal:` trailer contract, `lint-proposals.sh` (which hard-errors on a trailer with no row), and the CI job — including the literal-citation reading shipped hours earlier in v1.42.1. The objection to keeping it was *two sources that can disagree*; a generated file cannot disagree with what generated it. Retiring it is a separate, safe change once nothing reads it.
+
+### Notes — build
+- **`received:` for migrated rows is the date the row entered the ledger, not necessarily the arrival date**, and the files say so. For three rows the release demonstrably predates it; the true date was never recorded, so it is stated rather than back-filled with a guess.
+- **The generator emptied `PROPOSALS.md` on its first run** — `awk -v` cannot carry a multi-line string, and the failure was silent enough that `mv` installed the empty result. It now splices from a file and **refuses to write an empty ledger**, because a generator that empties its target has failed regardless of what awk's exit status said.
+- **A CI assertion was testing the fixture's limits, not the code**: it required a *derived* release to resolve inside a fixture engine that has no `Proposal:` trailers in history. Re-pointed at a back-filled row, which resolves without trailers. Same family as the v1.43.0 fixture note.
+- The step's `sed -i` was GNU-only. Made portable so the step can still be extracted and run on a workstation, which is how several real defects surfaced this week.
+
 ## [1.43.0] — 2026-07-28
 
 Minor — a project page's one-line index hook must now name **identity** rather than current state, enforced by a deterministic gate through a content-hashed ratchet. Adopt with `bin/adopt.sh` or `update.sh`; adoption seeds a baseline so an existing vault goes green rather than red. Reported through `engine-proposal` as `project-summary-volatility-gate`.

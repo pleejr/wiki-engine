@@ -1074,6 +1074,107 @@ jobs:
 
           exit "$fail"
 
+      - name: The proposal queue is the source of truth, and submit cannot leak
+        run: |
+          # The queue directory replaces the copy-paste channel. Two properties dominate
+          # everything else here, and both are asserted by INTRODUCING the failure:
+          #   1. the engine repo is PUBLIC, so `submit` must refuse a block that fails the
+          #      boundary scan and must leave NOTHING behind on that path — no branch, no
+          #      queue file, no marker. There is no bypass flag by design.
+          #   2. the generated ledger must reproduce what the hand-maintained table said,
+          #      or the correlation key means something different before and after.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-queue"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          EP="$GITHUB_WORKSPACE/bin/engine-proposal.sh"
+          fail=0
+
+          # (1) the ledger is derived, and --check catches a hand-edit
+          ./bin/gen-proposals-ledger.sh --repo "$GITHUB_WORKSPACE" --check >/dev/null 2>&1 \
+            && echo "  ok   PROPOSALS.md is in sync with proposals/" \
+            || { echo "  FAIL committed ledger is stale"; fail=1; }
+          cp PROPOSALS.md "$RUNNER_TEMP/ledger.bak"
+          # portable rewrite (BSD sed needs an arg to -i; GNU does not) so this step can be
+          # extracted and verified on a workstation, which is how several real bugs surfaced
+          sed 's/| `upkeep-sync-clones` | shipped | derived |/| `upkeep-sync-clones` | rejected | x |/' PROPOSALS.md > "$RUNNER_TEMP/l.tmp"
+          mv "$RUNNER_TEMP/l.tmp" PROPOSALS.md
+          ./bin/gen-proposals-ledger.sh --repo "$GITHUB_WORKSPACE" --check >/dev/null 2>&1 \
+            && { echo "  FAIL a hand-edited ledger row was not detected"; fail=1; } \
+            || echo "  ok   a hand-edited ledger row is caught as drift"
+          cp "$RUNNER_TEMP/ledger.bak" PROPOSALS.md
+
+          # (2) a malformed queue entry fails rather than rendering a half-row
+          mkdir -p "$RUNNER_TEMP/qrepo/proposals"
+          cp PROPOSALS.md "$RUNNER_TEMP/qrepo/PROPOSALS.md"
+          printf -- '---\nslug: bad\noutcome: rejected\n---\n' > "$RUNNER_TEMP/qrepo/proposals/bad.md"
+          ./bin/gen-proposals-ledger.sh --repo "$RUNNER_TEMP/qrepo" >/dev/null 2>&1 \
+            && { echo "  FAIL a rejected entry with no reason rendered anyway"; fail=1; } \
+            || echo "  ok   rejected without a reason fails the generator"
+          printf -- '---\nslug: mismatch\noutcome: open\nreceived: 2026-01-01\n---\n' > "$RUNNER_TEMP/qrepo/proposals/other.md"
+          rm -f "$RUNNER_TEMP/qrepo/proposals/bad.md"
+          ./bin/gen-proposals-ledger.sh --repo "$RUNNER_TEMP/qrepo" >/dev/null 2>&1 \
+            && { echo "  FAIL filename/slug divergence rendered anyway"; fail=1; } \
+            || echo "  ok   a slug disagreeing with its filename fails the generator"
+
+          # (3) THE SAFETY TEST — a dirty block must be refused with no side effects
+          T="$RUNNER_TEMP/subq"; mkdir -p "$T"
+          ENG="$T/engine"; mkdir -p "$ENG/proposals"; git -C "$ENG" init -q .
+          echo seed > "$ENG/README.md"; git -C "$ENG" add -A; git -C "$ENG" commit -qm seed
+          V="$T/vault"; mkdir -p "$V"; git -C "$V" init -q .
+          printf -- '---\nboundary: personal\n---\n' > "$V/CLAUDE.md"; : > "$V/.gitignore"
+          git -C "$V" add -A; git -C "$V" commit -qm seed
+          printf 'slug: dirty\nboundary: generic\n\nreach me at someone@example.org\n' \
+            | ENGINE_REPO="$ENG" "$EP" submit --vault "$V" --slug dirty >/dev/null 2>&1 \
+            && { echo "  FAIL submit accepted a block that fails the scan"; fail=1; } \
+            || echo "  ok   submit refuses a block that fails the boundary scan"
+          [ "$(git -C "$ENG" branch --list 'proposal/*' | wc -l)" -eq 0 ] \
+            && echo "  ok   refusal left no branch behind" \
+            || { echo "  FAIL a branch survived a refused submit"; fail=1; }
+          [ -e "$ENG/proposals/dirty.md" ] \
+            && { echo "  FAIL a queue file survived a refused submit"; fail=1; } \
+            || echo "  ok   refusal left no queue file"
+          [ -e "$V/.engine-proposal/dirty.prepared" ] \
+            && { echo "  FAIL a marker survived a refused submit"; fail=1; } \
+            || echo "  ok   refusal left no marker"
+
+          # (4) a CLEAN block prepares locally and does NOT publish
+          printf 'slug: cleanq\nboundary: generic\n\nA generic problem statement.\n' \
+            | ENGINE_REPO="$ENG" "$EP" submit --vault "$V" --slug cleanq >/dev/null 2>&1 \
+            && echo "  ok   a clean block prepares" \
+            || { echo "  FAIL a clean block was refused"; fail=1; }
+          [ -f "$V/.engine-proposal/cleanq.prepared" ] \
+            && echo "  ok   prepare records a local marker" \
+            || { echo "  FAIL no prepared marker"; fail=1; }
+          git -C "$ENG" remote -v | grep -q . \
+            && { echo "  FAIL fixture gained a remote; the no-publish assertion is void"; fail=1; } \
+            || echo "  ok   nothing was published (fixture has no remote at all)"
+
+          # (5) the three local states are distinguishable WITHOUT network
+          cp -R "$ENG" "$V/engine"; git -C "$V/engine" checkout -q main
+          cp PROPOSALS.md "$V/engine/PROPOSALS.md"
+          git -C "$V/engine" add -A; git -C "$V/engine" commit -qm ledger
+          "$EP" status --vault "$V" --slug cleanq 2>&1 | grep -q 'WRITTEN LOCALLY' \
+            && echo "  ok   written-locally is distinct" \
+            || { echo "  FAIL written-locally not reported"; fail=1; }
+          mv "$V/.engine-proposal/cleanq.prepared" "$V/.engine-proposal/cleanq.submitted"
+          "$EP" status --vault "$V" --slug cleanq 2>&1 | grep -q 'SUBMITTED, not yet merged' \
+            && echo "  ok   submitted-pending is distinct" \
+            || { echo "  FAIL submitted-pending not reported"; fail=1; }
+          "$EP" status --vault "$V" --slug never-existed 2>&1 | grep -q 'unknown' \
+            && echo "  ok   never-existed is still unknown" \
+            || { echo "  FAIL unknown collapsed"; fail=1; }
+          # ...and a migrated slug still resolves exactly as the old table said. Uses a
+          # BACK-FILLED row (explicit release:), not a `derived` one: deriving a release
+          # needs a Proposal: trailer in history, which this fixture engine does not have,
+          # so a derived slug would fail here for a reason that has nothing to do with the
+          # migration. Asserting it anyway would be testing the fixture's limits, not the code.
+          "$EP" status --vault "$V" --slug crossover-export-split-default 2>&1 | grep -q 'v1.24.0' \
+            && echo "  ok   a migrated slug resolves to the release the old table named" \
+            || { echo "  FAIL migration changed an existing answer"; fail=1; }
+
+          exit "$fail"
+
       - name: A project summary must name identity, not state
         run: |
           # The gate is a PROXY for a SCHEMA rule, enforced through a content-hashed

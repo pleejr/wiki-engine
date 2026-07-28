@@ -251,8 +251,27 @@ do_status() {
       canon="${l_det[$idx]}"
     fi
     if ! idx="$(ledger_find "$canon")"; then
-      printf '    unknown — no row in the engine ledger at %s.\n' "$horizon"
-      printf '    The engine has no record of receiving this. Re-sending is the right move.\n'
+      # NOT in the engine's ledger. Three different situations used to collapse into one
+      # "unknown", which told the reporter to re-send even when a submission was already
+      # open. They are distinguishable from LOCAL evidence alone — no network, which
+      # matters because `status` is offline by design and resolves against origin/main
+      # only when something already fetched it.
+      local pmark="$VAULT/.engine-proposal/$canon.prepared"
+      local smark="$VAULT/.engine-proposal/$canon.submitted"
+      if [[ -f "$smark" ]]; then
+        printf '    SUBMITTED, not yet merged — branch %s was pushed from this machine.\n' "$(cat "$smark")"
+        printf '    Do NOT re-send; the pull request is the record. It becomes "open" here once merged.\n'
+      elif [[ -f "$pmark" ]]; then
+        printf '    WRITTEN LOCALLY, never submitted — prepared on branch %s, still unpushed.\n' "$(cat "$pmark")"
+        printf '    Nothing has reached the engine and nothing is public yet. Run `push` to submit.\n'
+      else
+        printf '    unknown — no row in the engine ledger at %s, and nothing prepared here.\n' "$horizon"
+        printf '    The engine has no record of receiving this. Re-sending is the right move.\n'
+      fi
+      # The markers are per-machine: a proposal submitted from ANOTHER machine has no
+      # marker here and reads as unknown. Say so rather than let the silence imply
+      # "nothing outstanding" — the same trap the empty-outbox message already warns about.
+      [[ -f "$smark" || -f "$pmark" ]] || printf '    (local markers are per-machine; a submission from another machine leaves none here)\n'
       [[ "$ref" == "HEAD" ]] && printf '    (resolved against the pin only — no origin/main fetched; run update.sh first)\n'
       continue
     fi
@@ -319,9 +338,114 @@ do_status() {
   return 0
 }
 
+
+# --- submit / push -------------------------------------------------------------
+# The proposal channel becomes files in the engine's `proposals/` queue, submitted by PR.
+# SPLIT DELIBERATELY INTO TWO VERBS, and this is the safety-critical decision in the whole
+# design: `submit` prepares locally and stops; `push` performs the irreversible act.
+#
+# WHY NOT ONE VERB. The engine repository is PUBLIC, so a committed proposal and its pull
+# request are permanently public — a leak is a git object that force-push cannot reliably
+# retract once forks, clones and cached views exist. The boundary scan is fail-closed and
+# runs first, but it only matches identifiers it can DERIVE from the vault (slug, git
+# identity, home paths). It cannot see SEMANTIC leakage: a private workflow described in
+# generic-sounding prose passes every pattern and still discloses. Under the old
+# copy-paste channel a human necessarily read the text at the moment of publication — the
+# only review of *meaning* anywhere in the chain. Collapsing prepare and push into one
+# unattended verb would delete that review while claiming to improve safety.
+#
+# There is NO --force on the scan. Whatever it would mean, the failure it enables is
+# unrecoverable; an override worth having would require the scan to have run and PASSED on
+# a prior revision, not to be skipped.
+ENGINE_REPO="${ENGINE_REPO:-}"
+
+engine_repo_path() {
+  [[ -n "$ENGINE_REPO" ]] && { printf '%s' "$ENGINE_REPO"; return; }
+  # the vault's pinned submodule is the engine checkout every consumer already has
+  printf '%s' "$VAULT/engine"
+}
+
+submit_marker_dir() { printf '%s' "$VAULT/.engine-proposal"; }
+
+do_submit() {
+  local block; block="$(read_input)"
+  [[ -n "$block" ]] || die "empty input — nothing to submit"
+  [[ -n "${SLUG:-}" ]] || die "--slug is required: it is the correlation key and the filename"
+
+  # FAIL-CLOSED, FIRST. Nothing is branched, committed or written on this path if the
+  # scan finds anything.
+  if ! printf '%s\n' "$block" | do_scan; then
+    die "boundary scan FAILED — nothing prepared. Fix the block and re-run; there is no bypass."
+  fi
+
+  local eng; eng="$(engine_repo_path)"
+  [[ -d "$eng/.git" ]] || die "no engine checkout at $eng (set ENGINE_REPO to a clone you can branch in)"
+
+  local br="proposal/$SLUG"
+  git -C "$eng" rev-parse --verify "$br" >/dev/null 2>&1 \
+    && die "branch $br already exists in $eng — a proposal is already prepared; push it or delete the branch"
+
+  local base; base="$(git -C "$eng" symbolic-ref --short HEAD 2>/dev/null || echo main)"
+  git -C "$eng" checkout -q -b "$br" || die "could not create $br"
+  mkdir -p "$eng/proposals"
+  local f="$eng/proposals/$SLUG.md"
+  {
+    printf -- '---\nslug: %s\noutcome: open\nreceived: %s\n---\n\n' "$SLUG" "$(date +%Y-%m-%d)"
+    printf '%s\n' "$block"
+  } > "$f"
+  git -C "$eng" add "proposals/$SLUG.md"
+  git -C "$eng" -c core.hooksPath=/dev/null commit -q -m "proposal: $SLUG" \
+    || { git -C "$eng" checkout -q "$base"; die "commit failed"; }
+
+  mkdir -p "$(submit_marker_dir)"
+  printf '%s\n' "$br" > "$(submit_marker_dir)/$SLUG.prepared"
+
+  cat <<EOF
+
+engine-proposal: PREPARED on branch $br in $eng
+  scan: clean (fail-closed; it ran before anything was written)
+
+  ┌─ THIS TEXT BECOMES PERMANENTLY PUBLIC WHEN YOU PUSH ────────────────────────
+$(sed 's/^/  │ /' "$f")
+  └─────────────────────────────────────────────────────────────────────────────
+
+  The scan matches identifiers it can derive from this vault. It CANNOT judge whether
+  the prose itself discloses something private. Read the block above as the reviewer,
+  because after the push there is no retraction that works.
+
+  To publish:  engine-proposal.sh push --vault "$VAULT" --slug $SLUG
+  To discard:  git -C "$eng" checkout $base && git -C "$eng" branch -D $br
+EOF
+}
+
+do_push() {
+  [[ -n "${SLUG:-}" ]] || die "--slug is required"
+  local eng; eng="$(engine_repo_path)"
+  local marker="$(submit_marker_dir)/$SLUG.prepared"
+  [[ -f "$marker" ]] || die "nothing prepared for '$SLUG' — run submit first (it scans; push does not)"
+  local br; br="$(cat "$marker")"
+  git -C "$eng" rev-parse --verify "$br" >/dev/null 2>&1 || die "branch $br is gone — re-run submit"
+
+  command -v gh >/dev/null 2>&1 || die "gh CLI not found — needed to open the pull request"
+
+  # No write access is assumed: gh forks on demand. The fork is PUBLIC too, which the
+  # consumer is told rather than left to discover.
+  echo "engine-proposal: pushing $br and opening a pull request (forking if you lack write access)."
+  echo "  Note: if a fork is created it is public, like the upstream repository."
+  if ! gh pr create --repo "$(git -C "$eng" remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/.]+)(\.git)?$#\1#')" \
+        --head "$br" --title "proposal: $SLUG" --body-file "$eng/proposals/$SLUG.md" 2>&1; then
+    die "pull request failed — the branch is still local at $br, nothing was published"
+  fi
+  printf '%s\n' "$br" > "$(submit_marker_dir)/$SLUG.submitted"
+  rm -f "$marker"
+  echo "engine-proposal: submitted. status will now report it as submitted-pending until merged."
+}
+
 case "$CMD" in
   scan)   do_scan ;;
   stash)  do_stash ;;
+  submit) do_submit ;;
+  push)   do_push ;;
   status) do_status ;;
-  *) die "usage: engine-proposal.sh {scan|stash|status} --vault DIR [...]  (got '${CMD:-}')" ;;
+  *) die "usage: engine-proposal.sh {scan|stash|submit|push|status} --vault DIR [...]  (got '${CMD:-}')" ;;
 esac
