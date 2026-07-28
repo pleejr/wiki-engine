@@ -4,6 +4,20 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.45.1] — 2026-07-28
+
+Patch — the GitHub Release title is no longer cut at punctuation inside an inline code span, and the logic that derives it is now testable. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the file queue as `release-title-splitter-cuts-inside-code-spans` — the first proposal submitted end-to-end through the queue itself.
+
+### Fixed
+- **A colon inside a code span ended the release title.** The derivation stripped backticks one step *before* splitting on clause punctuation, destroying the very markers that distinguish a token from a boundary — so a summary containing `` `Proposal:` `` published as *"<version> — the Proposal"*. The split is now code-span aware: punctuation inside backticks belongs to a token (a trailer name, a filename, a ratio) and ends nothing. The reporter identified the ordering as the mechanism rather than guessing at the symptom, and that read was correct.
+
+### Changed
+- **`bin/release-title.sh`** — the derivation moved out of `release.yml`. Inline, it ran **only on a version-tag push**, so no check ever exercised it, and it had been wrong twice on that account: once slicing mid-word and leaving raw markdown, once on this. A copy in a test and a copy in the workflow would drift; one script used by both cannot.
+
+### Notes
+- Nine assertions, including both directions of the fix — a colon inside a span must **not** cut, and the same colon outside one must still cut — plus a guard that **every** shipped CHANGELOG section yields a non-empty title.
+- **This release closes the loop the queue was built for.** The defect was found on 2026-07-28 while shipping v1.42.1, worked around by hand-checking each title for four releases, submitted through `submit`/`push` once those verbs were fixed, merged as its own arrival record, and drained from the queue. No copy-paste at any point.
+
 ## [1.45.0] — 2026-07-28
 
 Minor — project pages get the decay signal repo pages already had, drainable through the existing queue. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the file queue as `project-page-staleness-queue`.

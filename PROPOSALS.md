@@ -49,6 +49,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `push-verb-omits-git-push` | shipped | derived |
 | `rag-capture-dirties-canonical-blocks-integrate` | shipped | derived |
 | `rag-model-cache-durable-path` | shipped | v1.26.0 |
+| `release-title-splitter-cuts-inside-code-spans` | shipped | derived |
 | `session-banner-pending-proposal-nudge` | alias | engine-proposal-file-queue |
 | `skills-hardcode-boundary-value` | shipped | derived |
 | `submit-branches-from-head-not-main` | shipped | derived |
