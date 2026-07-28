@@ -1224,6 +1224,52 @@ jobs:
 
           exit "$fail"
 
+      - name: The release title survives punctuation inside a code span
+        run: |
+          # This logic lived inline in release.yml, which runs only on a version-tag push —
+          # so no check ever exercised it, and it shipped wrong twice: once slicing mid-word
+          # and leaving raw markdown, once cutting at a colon inside `Proposal:` and
+          # publishing "<version> — the Proposal". Extracted to bin/release-title.sh
+          # precisely so this step can exist.
+          fail=0
+          t() { printf '%s' "$1" | ./bin/release-title.sh; }
+          eq() { [ "$2" = "$3" ] && echo "  ok   $1" || { echo "  FAIL $1"; echo "        got:      [$2]"; echo "        expected: [$3]"; fail=1; }; }
+
+          # the reported defect: a colon inside a code span is NOT a clause boundary
+          got="$(t 'Patch — the `Proposal:` citation convention required a placement.')"
+          eq "code-span colon does not end the title" "$got" "the Proposal: citation convention required a placement"
+          # ...and the same colon OUTSIDE a span still does
+          got="$(t 'Minor — a new tool: it renders things. And more.')"
+          eq "a real clause boundary still cuts" "$got" "a new tool"
+          # emphasis markers are stripped, never treated as boundaries
+          got="$(t 'Minor — **a new** `gen-x.sh` tool; it helps.')"
+          eq "bold and code markers are removed" "$got" "a new gen-x.sh tool"
+          # no dangling punctuation
+          got="$(t 'Patch — one clause; two.')"
+          eq "trailing punctuation is trimmed" "$got" "one clause"
+          # headings and bullets are skipped in favour of the first prose line
+          got="$(printf '### Added\n- a bullet\nreal prose here.\n' | ./bin/release-title.sh)"
+          eq "headings and bullets are skipped" "$got" "real prose here"
+          # long clause degrades to a word boundary + ellipsis, never a mid-word slice
+          got="$(t 'Minor — aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo pppp qqqq')"
+          case "$got" in *…) echo "  ok   a long clause ends in an ellipsis" ;; *) echo "  FAIL no ellipsis: [$got]"; fail=1 ;; esac
+          case "$got" in *" "…|*[a-z]…) : ;; esac
+          printf '%s' "$got" | grep -qE '[a-z]…$' && echo "  ok   the cap lands on a word boundary" \
+            || { echo "  FAIL cap sliced mid-word or oddly: [$got]"; fail=1; }
+          # an unclosed backtick must degrade, not explode
+          got="$(t 'Patch — a stray `backtick that never closes, so what happens.')"
+          [ -n "$got" ] && echo "  ok   an unclosed code span degrades safely" \
+                        || { echo "  FAIL unclosed span produced nothing"; fail=1; }
+          # every CHANGELOG section in the repo must produce a non-empty title
+          miss=0
+          for v in $(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | tr -d '#[] ' ); do
+            n="$(awk -v ver="$v" '$0 ~ "^## \\["ver"\\]"{f=1;next} /^## \[/{f=0} f' CHANGELOG.md)"
+            [ -n "$(printf '%s' "$n" | ./bin/release-title.sh)" ] || { echo "  FAIL v$v yields an empty title"; miss=1; }
+          done
+          [ "$miss" = 0 ] && echo "  ok   every shipped CHANGELOG section yields a title" || fail=1
+
+          exit "$fail"
+
       - name: Project pages get a derived, drainable staleness signal
         run: |
           # The age is DERIVED, not read from frontmatter. The proposal keyed on `updated:`;

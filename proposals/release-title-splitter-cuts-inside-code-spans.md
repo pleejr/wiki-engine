@@ -1,7 +1,8 @@
 ---
 slug: release-title-splitter-cuts-inside-code-spans
-outcome: open
+outcome: accepted
 received: 2026-07-28
+reason: "accepted as reported, with the mechanism the report identified — the strip ran before the split, destroying the markers the split needed. Shape (a), a code-span-aware pass; also extracted to bin/release-title.sh so CI can exercise logic that previously ran only on a tag push"
 ---
 
 HANDOFF — engine defect report
