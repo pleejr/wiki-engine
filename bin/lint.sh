@@ -13,11 +13,14 @@
 #   7. provenance present    — every repos/ page carries a sources: block with
 #                              ref: + sha: (a version-keyed node must record what it
 #                              was ingested from, so freshness is checkable)
-#   8. link integrity        — lint-links.sh: a dangling [[link]] that NEARLY matches
+#   8. summary volatility    — a project page's summary: must name IDENTITY, not state;
+#                              a decaying summary goes false with no edit at all. Skipped
+#                              for done/ pages (frozen claims), flagged for unknown status
+#   9. link integrity        — lint-links.sh: a dangling [[link]] that NEARLY matches
 #                              a real slug is an error (typo / stale slug after a
 #                              rename); one that matches nothing is a stub per SCHEMA
 #                              and stays a warning
-#   9. foreign boundary      — no other-boundary identifiers in this vault's pages.
+#  10. foreign boundary      — no other-boundary identifiers in this vault's pages.
 #                              OPT-IN: inactive until the vault supplies a patterns
 #                              file, and says so rather than passing silently
 #
@@ -225,11 +228,21 @@ if [ -d "$WIKI/repos" ]; then
 fi
 [ "$rt" -eq 0 ] && echo "ok: no repo page records a git-describe ref"
 
-# 8. link integrity -------------------------------------------------------------
+# 8. summary volatility ---------------------------------------------------------
+# A project page's summary: is the machine-read surface (the index buckets are
+# generated from it) but lives in frontmatter, away from the Current state section
+# SCHEMA marks "overwritten each session" — so a summary holding a decaying fact goes
+# false with no edit to the page. Enforced via a content-hashed baseline rather than a
+# warning: lint.sh is the pre-commit gate, and a warn on pre-existing offenders is
+# standing noise on every commit forever.
+section "summary volatility"
+"$SCRIPT_DIR/lint-summary-volatility.sh" --wiki "$WIKI" || rc=1
+
+# 9. link integrity -------------------------------------------------------------
 section "link integrity"
 "$SCRIPT_DIR/lint-links.sh" --wiki "$WIKI" $STRICT || rc=1
 
-# 9. foreign boundary -----------------------------------------------------------
+# 10. foreign boundary ----------------------------------------------------------
 # The motivating case for the whole gates project: a personal-boundary vault should
 # mechanically reject work-org identifiers, instead of relying on a human noticing
 # during an import. Necessarily consumer-specific — only the vault knows which

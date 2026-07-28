@@ -47,3 +47,4 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `upkeep-tolerate-describe-refs` | shipped | derived |
 | `upkeep-sync-clones` | shipped | derived |
 | `rag-capture-dirties-canonical-blocks-integrate` | shipped | derived |
+| `project-summary-volatility-gate` | partially-accepted | shape kept; warn-by-default inverted to an enforced content-hashed ratchet, slug allowlist replaced by summary hashing, and the `live` marker dropped as unreproduced |
