@@ -942,3 +942,91 @@ jobs:
             || { echo "  FAIL fresh vault is dirty:"; printf '%s\n' "$st"; fail=1; }
 
           exit "$fail"
+
+      - name: gc reaps a squash-merged branch, keeps genuinely unintegrated work
+        run: |
+          # REGRESSION: gc judged containment with `merge-base --is-ancestor`, which is
+          # equivalent to "is this merged" ONLY for the fast-forward `integrate`
+          # performs. A vault whose house workflow is branch -> PR -> squash-merge lands
+          # the work as a NEW commit with a different sha, so this fired on every single
+          # session — unbounded wt/* accumulation, which is what v1.28.2 was cut to stop,
+          # plus a "delete by hand" line that always fires and therefore stops being read.
+          # The keep is fail-safe and must STAY fail-safe; what changes is that a
+          # genuinely stranded branch is now worded differently from the noise.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-gcsq"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          WT="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+          fail=0
+          V="$RUNNER_TEMP/gcsq"; mkdir -p "$V/memory"; git -C "$V" init -q .
+          printf 'seed\n' > "$V/memory/seed.md"
+          git -C "$V" -c core.hooksPath=/dev/null add -A
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm seed
+          mk() {
+            W="$(WIKI_PATH="$V" WIKI_WT_SESSION="$1" "$WT" ensure 2>/dev/null)"
+            printf '%s\n' "$2" > "$W/memory/$2.md"
+            git -C "$W" -c core.hooksPath=/dev/null add -A
+            git -C "$W" -c core.hooksPath=/dev/null commit -qm "$2"
+            printf '%s' "$W"
+          }
+
+          # (1) squash-merged — the reported case, and the one that used to be kept
+          W1="$(mk squashed sq)"
+          git -C "$V" merge -q --squash wt/squashed >/dev/null 2>&1
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm "squashed PR (#1)"
+          out="$(WIKI_PATH="$V" "$WT" gc "$W1" 2>&1)"
+          printf '%s' "$out" | grep -q "deleted wt/squashed" \
+            && echo "  ok   a squash-merged branch is reaped" \
+            || { echo "  FAIL squash-merged branch kept:"; printf '%s\n' "$out"; fail=1; }
+          # and its content really was on main — never delete on a guess
+          git -C "$V" show main:memory/sq.md >/dev/null 2>&1 \
+            || { echo "  FAIL reaped a branch whose content is NOT on main"; fail=1; }
+
+          # (2) fast-forward integrate — the v1.28.2 path must not regress. `integrate`
+          # only runs from INSIDE the worktree; running it from elsewhere is a no-op that
+          # silently leaves the branch unintegrated, which makes this test meaningless.
+          W2="$(mk ffwd ff)"
+          ( cd "$W2" && WIKI_PATH="$V" WIKI_WT_SESSION=ffwd "$WT" integrate >/dev/null 2>&1 )
+          git -C "$V" merge-base --is-ancestor wt/ffwd main \
+            || { echo "  FAIL fixture: integrate did not fast-forward, so the check below proves nothing"; fail=1; }
+          out="$(WIKI_PATH="$V" "$WT" gc "$W2" 2>&1)"
+          printf '%s' "$out" | grep -q "deleted wt/ffwd (already contained" \
+            && echo "  ok   a fast-forward-integrated branch is still reaped by ancestry" \
+            || { echo "  FAIL v1.28.2 path regressed:"; printf '%s\n' "$out"; fail=1; }
+
+          # (3) genuinely unintegrated — kept, and reported DISTINGUISHABLY from the noise
+          W3="$(mk stranded strand)"
+          out="$(WIKI_PATH="$V" "$WT" gc "$W3" 2>&1)"
+          printf '%s' "$out" | grep -q "kept wt/stranded — UNINTEGRATED CONTENT" \
+            && echo "  ok   stranded work is kept and named as unintegrated" \
+            || { echo "  FAIL stranded branch mis-reported:"; printf '%s\n' "$out"; fail=1; }
+          git -C "$V" show wt/stranded:memory/strand.md >/dev/null 2>&1 \
+            && echo "  ok   the stranded work is still recoverable" \
+            || { echo "  FAIL stranded work was destroyed"; fail=1; }
+
+          # (4) merge-tree unavailable (git < 2.38) must KEEP and say it could not tell —
+          # a different report from "has unintegrated work", which is the whole point.
+          FAKE="$RUNNER_TEMP/fakebin"; mkdir -p "$FAKE"
+          REALGIT="$(command -v git)"
+          printf '#!/bin/sh\nif [ "$1" = "-C" ]; then d=$2; shift 2; fi\nif [ "$1" = "merge-tree" ]; then echo "usage: git merge-tree" >&2; exit 129; fi\nexec %s ${d:+-C "$d"} "$@"\n' "$REALGIT" > "$FAKE/git"
+          chmod +x "$FAKE/git"
+          V2="$RUNNER_TEMP/gcold"; mkdir -p "$V2/memory"; git -C "$V2" init -q .
+          printf 'seed\n' > "$V2/memory/seed.md"
+          git -C "$V2" -c core.hooksPath=/dev/null add -A
+          git -C "$V2" -c core.hooksPath=/dev/null commit -qm seed
+          W4="$(WIKI_PATH="$V2" WIKI_WT_SESSION=old "$WT" ensure 2>/dev/null)"
+          printf 'x\n' > "$W4/memory/x.md"
+          git -C "$W4" -c core.hooksPath=/dev/null add -A
+          git -C "$W4" -c core.hooksPath=/dev/null commit -qm x
+          git -C "$V2" merge -q --squash wt/old >/dev/null 2>&1
+          git -C "$V2" -c core.hooksPath=/dev/null commit -qm squashed
+          out="$(PATH="$FAKE:$PATH" WIKI_PATH="$V2" "$WT" gc "$W4" 2>&1)"
+          printf '%s' "$out" | grep -q "could not determine containment" \
+            && echo "  ok   an unsupported git reports 'could not determine', not a false keep" \
+            || { echo "  FAIL old-git path mis-reported:"; printf '%s\n' "$out"; fail=1; }
+          git -C "$V2" rev-parse --verify wt/old >/dev/null 2>&1 \
+            && echo "  ok   ...and keeps the branch" \
+            || { echo "  FAIL deleted a branch it could not evaluate"; fail=1; }
+
+          exit "$fail"

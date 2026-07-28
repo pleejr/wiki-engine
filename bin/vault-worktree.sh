@@ -210,7 +210,44 @@ retire_worktree() {
           log "vault-worktree: deleted $br (already contained in $mainref)"
         fi
       else
-        log "vault-worktree: kept branch $br (commits not in $mainref — integrate or delete by hand)"
+        # ANCESTRY IS THE WRONG QUESTION FOR A SQUASH-MERGING VAULT. It is equivalent to
+        # containment only when the branch reached main by the fast-forward `integrate`
+        # performs. A vault whose house workflow is branch -> PR -> squash-merge lands
+        # the work as a NEW commit with a different sha, so the branch tip is not an
+        # ancestor of main and this arm fired on every single session — the same
+        # unbounded wt/* accumulation v1.28.2 was cut to stop, and a "delete by hand"
+        # line that always fires is one operators stop reading.
+        #
+        # So when ancestry says no, ask the question actually meant: does merging this
+        # branch into main CHANGE main? If the merge result tree IS main's tree, the
+        # branch contributes nothing and is contained however it got there. Conservative
+        # by construction: only an exact match with main's own tree deletes. A
+        # conflicting merge still writes a tree (with markers), which differs from
+        # main's and so reports as unintegrated — correct, since a branch that
+        # conflicts does hold content main lacks. An unsupported git writes no tree at
+        # all and reports "could not determine". Every uncertain path keeps,
+        # deliberately: deleting an unmerged branch costs work, keeping a merged one
+        # costs a stale ref.
+        local mtree res rc
+        mtree="$(git -C "$WIKI" rev-parse "$mainref^{tree}" 2>/dev/null)"
+        res="$(git -C "$WIKI" merge-tree --write-tree "$mainref" "$br" 2>/dev/null | head -1)"; rc=$?
+        if [ -n "$res" ] && [ "$(git -C "$WIKI" cat-file -t "$res" 2>/dev/null)" = "tree" ]; then
+          if [ "$res" = "$mtree" ]; then
+            if git -C "$WIKI" branch -D "$br" >/dev/null 2>&1; then
+              log "vault-worktree: deleted $br (content already in $mainref — squash-merged or equivalent)"
+            fi
+          else
+            # The valuable keep: real content absent from main. Name the files, so the
+            # one branch that needs a human is not worded identically to the noise.
+            local n
+            n="$(git -C "$WIKI" diff --name-only "$mtree" "$res" 2>/dev/null | wc -l | tr -d " ")"
+            log "vault-worktree: kept $br — UNINTEGRATED CONTENT ($n file(s) not in $mainref); integrate or delete by hand"
+          fi
+        else
+          # merge-tree unavailable (git < 2.38) or the merge conflicts. Either way the
+          # answer is unknown, which is a DIFFERENT report from "has unintegrated work".
+          log "vault-worktree: kept $br — could not determine containment (merge-tree rc=$rc); check by hand"
+        fi
       fi ;;
   esac
   return 0

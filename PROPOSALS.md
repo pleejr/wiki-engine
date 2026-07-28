@@ -39,3 +39,4 @@ An implementing commit carries `Proposal: <slug>` **in its final paragraph**, al
 | `gate-inert-relative-hookspath` | shipped | derived |
 | `skills-hardcode-boundary-value` | shipped | derived |
 | `adopt-reconcile-gitignore` | shipped | derived |
+| `gc-containment-squash-merge` | shipped | derived |
