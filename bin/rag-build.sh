@@ -175,4 +175,17 @@ os.replace(tmp, INDEX)
 print("rag-build: %d files, %d chunks (%d embedded, %d reused%s) -> %s"
       % (len(files) - skipped, len(records), embedded, reused,
          (", %d skipped" % skipped) if skipped else "", os.path.relpath(INDEX, WIKI)))
+
+# The cross-boundary filter reports ALWAYS, including zero. Its skip is correct but was
+# silent, so a page mis-stamped with another vault's boundary vanished from recall with
+# no message anywhere: committed, linted, indexed, unanswerable. Three states have to be
+# distinguishable, and only one of them used to print — a steady nonzero is normal for a
+# vault legitimately holding foreign pages, a *newly* nonzero one on a vault that should
+# hold none is the signal, and "not armed" must never look like "armed and clean".
+if VBOUND is None:
+    print("rag-build: cross-boundary filter NOT ARMED — no parseable 'boundary:' in "
+          "CLAUDE.md, so nothing was filtered")
+else:
+    print("rag-build: cross-boundary filter armed (%s) — %d page(s) skipped"
+          % (VBOUND, skipped))
 PY

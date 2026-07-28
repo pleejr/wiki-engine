@@ -792,3 +792,73 @@ jobs:
             || { echo "  FAIL lint red on a clean fixture"; ./bin/lint-proposals.sh --repo "$SRC"; fail=1; }
 
           exit "$fail"
+
+      - name: Boundary is asked of the vault, never named by the engine
+        run: |
+          # SCHEMA.md: each consuming wiki declares its own boundary; the engine is
+          # boundary-agnostic. Two skills named a value anyway — one of them inside a
+          # copy-me frontmatter template — and crossover.sh REWROTE every imported page
+          # to a hardcoded literal. The consequence chain was silent end to end: a
+          # mis-stamped page passes the boundary-present gate, is committed and indexed,
+          # and is then dropped from semantic recall by rag-build's cross-boundary skip,
+          # with no message anywhere. Latent, not observed — which is the point: the only
+          # thing preventing it was a model resolving a contradiction correctly every time.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-bnd"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-bnd.json"
+          fail=0
+
+          # A vault on a boundary the templates never named — the case that would break.
+          V="$RUNNER_TEMP/bndvault"
+          ./bin/new-wiki.sh --path "$V" --boundary work --email ci@example.com \
+            --git-name CI --engine-url "$PWD" --no-link-skills --no-rag >/dev/null 2>&1
+          [ "$(./bin/vault-boundary.sh --wiki "$V")" = "work" ] \
+            || { echo "FAIL: vault-boundary did not read the declaration"; fail=1; }
+
+          # A clean vault must PASS: a gate that is always red is one that gets bypassed.
+          ./bin/lint.sh --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   clean vault passes the boundary-match gate" \
+            || { echo "  FAIL clean vault is red"; ./bin/lint.sh --wiki "$V"; fail=1; }
+
+          # ...and a mis-stamped page must FAIL, naming the file and both values.
+          printf -- '---\ntitle: M\ncreated: 2026-01-01\nupdated: 2026-01-01\ntype: memory\ntags: [x]\nboundary: personal\n---\n\n# M\n\n[[a]] [[b]]\n' > "$V/memory/mis.md"
+          out="$(./bin/lint.sh --wiki "$V" 2>&1 || true)"
+          printf '%s' "$out" | grep -q "boundary: personal, but this vault declares work" \
+            && echo "  ok   mis-stamped page is caught at write time" \
+            || { echo "  FAIL mis-stamp passed the gate"; printf '%s\n' "$out"; fail=1; }
+          rm -f "$V/memory/mis.md"
+
+          # crossover must stamp the DESTINATION's boundary, not a literal. This is the
+          # instance that lived in executable code rather than in skill prose.
+          O="$RUNNER_TEMP/bndorigin"; mkdir -p "$O/memory"
+          printf -- '---\ntitle: N\nboundary: personal\n---\n\nBody.\n' > "$O/memory/n.md"
+          ./bin/crossover.sh export --vault "$O" --batch B1 memory/n.md > "$RUNNER_TEMP/bnd.txt" 2>/dev/null
+          ./bin/crossover.sh import --vault "$V" < "$RUNNER_TEMP/bnd.txt" >/dev/null 2>&1
+          grep -qx 'boundary: work' "$V/memory/n.md" \
+            && echo "  ok   crossover stamps the destination's declared boundary" \
+            || { echo "  FAIL crossover stamped: $(grep '^boundary:' "$V/memory/n.md")"; fail=1; }
+
+          # An undeterminable destination must leave the tag ALONE rather than guess —
+          # fabricating one is how the original bug did its damage.
+          B="$RUNNER_TEMP/bndbare"; mkdir -p "$B"
+          ./bin/crossover.sh import --vault "$B" < "$RUNNER_TEMP/bnd.txt" >/dev/null 2>&1
+          grep -qx 'boundary: personal' "$B/memory/n.md" \
+            && echo "  ok   no declaration -> boundary left untouched, not guessed" \
+            || { echo "  FAIL a bare destination was stamped anyway"; fail=1; }
+
+          # The lint-docs check is LOAD-BEARING, proven by reinstating the literal at each
+          # of the sites that actually carried it.
+          for site in skills/checkpoint/SKILL.md skills/wiki-repo/SKILL.md bin/crossover.sh; do
+            cp "$site" "$RUNNER_TEMP/site.bak"
+            printf '\nboundary: personal\n' >> "$site"
+            ./bin/lint-docs.sh >/dev/null 2>&1 \
+              && { echo "  FAIL lint-docs green with the literal reinstated in $site"; fail=1; } \
+              || echo "  ok   red when $site names a boundary literal"
+            cp "$RUNNER_TEMP/site.bak" "$site"
+          done
+          ./bin/lint-docs.sh >/dev/null \
+            || { echo "  FAIL lint-docs red on a clean tree"; fail=1; }
+
+          exit "$fail"

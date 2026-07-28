@@ -205,6 +205,14 @@ do_export() {
 # delete.
 do_import() {
   local line key val
+  # Ask the DESTINATION what boundary it declares. Resolved once, before any item is
+  # written, so a half-imported batch cannot end up split across two values.
+  local DEST_BOUNDARY
+  DEST_BOUNDARY="$("$(dirname "${BASH_SOURCE[0]}")/vault-boundary.sh" --wiki "$VAULT" 2>/dev/null || true)"
+  if [[ -z "$DEST_BOUNDARY" ]]; then
+    echo "crossover: NOTE — destination declares no parseable boundary in CLAUDE.md;" >&2
+    echo "crossover:   leaving each page's frontmatter boundary as-is rather than guessing." >&2
+  fi
   local batch="" src="" bundle="" blocks_seen=0 blk="" blk_count=""
   local cur_path="" cur_sha="" cur_data="" in_data=0 in_manifest=0
   # accumulator (prior ledger, then this stream on top), upserted by path
@@ -250,8 +258,22 @@ do_import() {
       if [[ "$got" != "$cur_sha" ]]; then
         status="hash-mismatch"
       else
-        # crossover into this vault flips the boundary tag
-        sed -E 's/^(boundary:[[:space:]]*)[a-z]+/\1personal/' "$tmp" > "$out"
+        # Crossover into this vault flips the boundary tag to THE DESTINATION'S OWN,
+        # asked of the vault rather than named here. This line hardcoded `personal`,
+        # which meant importing into a vault on any other boundary stamped every page
+        # with a value that vault does not use — and the only thing downstream of a
+        # mis-stamp was rag-build silently dropping the page from recall. Committed,
+        # linted, indexed, invisible.
+        #
+        # An undeterminable destination boundary leaves the tag UNCHANGED rather than
+        # guessing. Fabricating one is how the original bug did damage; the page then
+        # carries its origin boundary, which lint's boundary-match gate reports at the
+        # next write — visible, instead of silent.
+        if [[ -n "$DEST_BOUNDARY" ]]; then
+          sed -E "s/^(boundary:[[:space:]]*)[a-z][a-z0-9-]*/\\1$DEST_BOUNDARY/" "$tmp" > "$out"
+        else
+          cat "$tmp" > "$out"
+        fi
         if [[ -e "$abs" ]] && cmp -s "$abs" "$out"; then
           status="written"          # already landed byte-identical: a re-paste is idempotent
         elif [[ -e "$abs" && $OVERWRITE -eq 0 ]]; then

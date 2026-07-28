@@ -69,7 +69,7 @@ On the other machine, in its own vault session:
 $WIKI_PATH/engine/bin/crossover.sh import --vault "$WIKI_PATH" < paste-block
 ```
 
-Run it **once per pasted block** — import accumulates into `.crossover/<id>.inbound`, so blocks may arrive in any order and across separate sessions. It re-verifies every hash, writes files to the same relative paths, and **rewrites `boundary:` to `personal`** (or whatever the destination declares — adjust if the destination isn't personal).
+Run it **once per pasted block** — import accumulates into `.crossover/<id>.inbound`, so blocks may arrive in any order and across separate sessions. It re-verifies every hash, writes files to the same relative paths, and **rewrites `boundary:` to whatever the destination vault declares in its own `CLAUDE.md`** — read by `bin/vault-boundary.sh`, not named by the engine. A destination with no parseable declaration has its pages left untouched rather than guessed at; `lint.sh` reports the resulting mismatch at the next write.
 
 Each run prints a **receipt covering the whole batch**: `status all-verified` once every item has landed intact, otherwise `status incomplete` with the outstanding items listed (`missing`, `hash-mismatch`, `exists-skipped`). Only the last, all-verified receipt goes back to the origin.
 
