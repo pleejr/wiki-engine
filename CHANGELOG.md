@@ -6,7 +6,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [1.43.0] — 2026-07-28
 
-Minor — a project page's `summary:` is now constrained to name **identity**, not state, with a deterministic gate enforcing it through a content-hashed ratchet. Adopt with `bin/adopt.sh` or `update.sh`; adoption seeds a baseline so an existing vault goes green rather than red. Reported through `engine-proposal` as `project-summary-volatility-gate`.
+Minor — a project page's one-line index hook must now name **identity** rather than current state, enforced by a deterministic gate through a content-hashed ratchet. Adopt with `bin/adopt.sh` or `update.sh`; adoption seeds a baseline so an existing vault goes green rather than red. Reported through `engine-proposal` as `project-summary-volatility-gate`.
+
+*(First clause deliberately avoids an inline `summary:` token — `release.yml` cuts the release title at the first `.`, `;` or `:` followed by whitespace, so a colon inside a code span truncates it. Queued as `release-title-splitter-cuts-inside-code-spans`; this is the workaround until that ships.)*
 
 ### Added
 - **`SCHEMA.md`: `summary:` names identity, not state.** The Projects buckets are generated from `status:`/`summary:`, so `summary:` is the machine-read surface of a project page — yet it lives in frontmatter, away from the `Current state` section SCHEMA already marks "overwritten each session". Authors fill it with current standing ("built, not deployed", "still on v1.2"), which goes **false through the passage of time with no edit to the page at all**; the generated index then advertises a state the page's own body contradicts, and every existing gate passes because every existing gate is structurally sound. It is also duplication — the index already renders standing as the bucket heading. **This is the part that retires the class:** a summary naming no decaying fact cannot decay.
