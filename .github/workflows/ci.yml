@@ -308,13 +308,24 @@ jobs:
           printf '#!/usr/bin/env bash\nexit 0\n' > "$V/engine/bin/vault-worktree.sh"
           chmod +x "$V/engine/bin/lint.sh" "$V/engine/bin/vault-worktree.sh"
           cp scaffold/pre-commit "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"
-          git -C "$V" config core.hooksPath .githooks
+          # Absolute, exactly as adopt.d/30 now writes it. Setting the old relative
+          # `.githooks` here is what makes this step go red — see the reinstatement
+          # check below, which proves that rather than asserting it.
+          git -C "$V" config core.hooksPath "$V/.githooks"
           # engine/ must be ABSENT from the worktree, which is the whole point: a real
           # vault carries it as a submodule and `git worktree add` never populates it.
           # Ignoring it here reproduces that. Without this the fixture commits engine/ as
           # tracked content, the worktree gets a copy, and the test passes even with the
           # bug reinstated — which is exactly what happened on the first attempt.
-          printf 'engine/\n' > "$V/.gitignore"
+          #
+          # .githooks/ must be UNTRACKED for the same reason, one layer up. Adoption
+          # creates it and never commits it (the engine does not commit into a consumer's
+          # vault), so on a real vault it exists only in the canonical checkout. This
+          # fixture used to leave it tracked, the worktree therefore got a copy, and a
+          # relative core.hooksPath resolved there — so this test passed for two releases
+          # while the shipped wiring was inert in every real worktree. Same false-fixture
+          # shape as the engine/ line above, which is the point worth noticing.
+          printf 'engine/\n.githooks/\n' > "$V/.gitignore"
           printf 'seed\n' > "$V/memory/seed.md"
           git -C "$V" -c core.hooksPath=/dev/null add -A
           git -C "$V" -c core.hooksPath=/dev/null commit -qm seed
@@ -325,6 +336,76 @@ jobs:
           out="$(git -C "$RUNNER_TEMP/wg-wt" commit -m "from worktree" 2>&1 || true)"
           printf '%s\n' "$out" | grep -q "GATE RAN" \
             || { echo "the vault gate did NOT run from inside a worktree:"; printf '%s\n' "$out"; exit 1; }
+          echo "ok: gate runs from a linked worktree with .githooks/ untracked"
+
+          # LOAD-BEARING, PROVEN — not asserted. Each of the three shipped instances of
+          # "the gate is inert and nothing says so" is reinstated in turn; every one must
+          # make a worktree commit succeed ungated. A regression test for this class is
+          # worth nothing unless it goes red for the bugs that actually happened, and the
+          # v1.28.1 test's first version did not.
+          probe() {  # $1 = label; commits in a fresh worktree, echoes whether the gate ran
+            git -C "$V" worktree add -q "$RUNNER_TEMP/probe-$1" -b "wt/$1" main
+            printf '%s\n' "$1" > "$RUNNER_TEMP/probe-$1/memory/$1.md"
+            git -C "$RUNNER_TEMP/probe-$1" add -A
+            git -C "$RUNNER_TEMP/probe-$1" commit -m "$1" 2>&1 || true
+          }
+
+          # (1) v1.34.0 — relative core.hooksPath, inert in every worktree
+          git -C "$V" config core.hooksPath .githooks
+          probe relhooks | grep -q "GATE RAN" \
+            && { echo "FAIL: relative hooksPath did not disarm the gate — test is blind"; exit 1; } \
+            || echo "ok: red when core.hooksPath is relative (v1.34.0 bug)"
+          git -C "$V" config core.hooksPath "$V/.githooks"
+
+          # (2) v1.28.1 — hook resolves engine/ from the WORKTREE root, which has no submodule
+          sed 's#^CANON=.*#CANON="$ROOT"#' scaffold/pre-commit > "$V/.githooks/pre-commit"
+          chmod +x "$V/.githooks/pre-commit"
+          probe showtop | grep -q "GATE RAN" \
+            && { echo "FAIL: worktree-root engine resolution did not disarm the gate"; exit 1; } \
+            || echo "ok: red when the hook resolves engine/ from the worktree root (v1.28.1 bug)"
+
+          # (3) v1.32.0 — the hook was never installed anywhere
+          rm -f "$V/.githooks/pre-commit"
+          probe nohook | grep -q "GATE RAN" \
+            && { echo "FAIL: a missing hook did not disarm the gate"; exit 1; } \
+            || echo "ok: red when no hook is installed at all (v1.32.0 bug)"
+          cp scaffold/pre-commit "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"
+
+      - name: Adoption repairs a vault wired by an earlier release
+        run: |
+          # The upgrade path, end to end through the real adoption entry point: a vault
+          # carrying the OLD relative core.hooksPath must come out of adoption armed, with
+          # no manual step. Without this, every already-adopted vault keeps the broken
+          # wiring forever — adoption only ever set hooksPath when it was UNSET, and on
+          # these vaults it is set, to exactly the wrong value.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-upgrade"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-upgrade.json"
+          V="$RUNNER_TEMP/upg"; mkdir -p "$V/memory"
+          git -C "$V" init -q .
+          printf 'engine/\n.githooks/\n' > "$V/.gitignore"
+          printf 'seed\n' > "$V/memory/seed.md"
+          git -C "$V" add -A && git -C "$V" commit -qm seed && git -C "$V" branch -M main
+          # the state an earlier release left behind
+          mkdir -p "$V/.githooks"
+          cp scaffold/pre-commit "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"
+          git -C "$V" config core.hooksPath .githooks
+
+          WIKI="$V" ENGINE="$PWD" ADOPT_LIB="$PWD/bin/adopt-lib.sh" ADOPT_CHECK="" \
+            bash adopt.d/30-vault-git-hooks.sh
+          got="$(git -C "$V" config --local core.hooksPath)"
+          [ "$got" = "$V/.githooks" ] \
+            || { echo "adoption did not repair the relative hooksPath (got '$got')"; exit 1; }
+          echo "ok: relative hooksPath repaired to absolute"
+
+          # ...and a foreign hooksPath is still never stolen (v1.28.0 property).
+          git -C "$V" config core.hooksPath .myhooks
+          WIKI="$V" ENGINE="$PWD" ADOPT_LIB="$PWD/bin/adopt-lib.sh" ADOPT_CHECK="" \
+            bash adopt.d/30-vault-git-hooks.sh >/dev/null
+          [ "$(git -C "$V" config --local core.hooksPath)" = ".myhooks" ] \
+            || { echo "a foreign core.hooksPath was stolen"; exit 1; }
+          echo "ok: a foreign hooksPath is left alone"
 
       - name: Ephemeral vaults must not touch the machine's real config
         run: |
@@ -481,8 +562,13 @@ jobs:
             || { echo "the pre-commit gate was NOT installed"; exit 1; }
           cmp -s scaffold/pre-commit "$V/.githooks/pre-commit" \
             || { echo "the installed hook does not match the shipped template"; exit 1; }
-          [ "$(git -C "$V" config --local core.hooksPath)" = ".githooks" ] \
-            || { echo "core.hooksPath was not set"; exit 1; }
+          # ABSOLUTE, not the relative `.githooks` this asserted until v1.35.0. A relative
+          # hooksPath is resolved against the working tree making the commit, so it meant
+          # `<worktree>/.githooks` — a directory that does not exist, because .githooks/ is
+          # never committed. This assertion passing was compatible with the gate running in
+          # no worktree at all, which is where every permitted commit is made.
+          [ "$(git -C "$V" config --local core.hooksPath)" = "$V/.githooks" ] \
+            || { echo "core.hooksPath is not the vault's absolute .githooks: $(git -C "$V" config --local core.hooksPath)"; exit 1; }
 
           # ADD-ONLY, both halves: a hook the vault wrote is never overwritten, and a
           # hooksPath deliberately aimed elsewhere is never stolen.
