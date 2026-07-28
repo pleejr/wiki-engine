@@ -149,6 +149,22 @@ do_scan() {
 
 # ============================================================ stash ===========
 do_stash() {
+  # RETIRED as of v1.46.0 — the copy-paste channel it served is no longer the way
+  # proposals travel. `submit` + `push` put the block in the engine's queue as a committed
+  # file, so the durability `stash` provided (a forward-only handoff cannot be re-sent if
+  # the block was not kept) is now the transport's own property.
+  #
+  # The verb still WORKS, deliberately: deleting a documented subcommand from a consumed
+  # component is a breaking change, and this engine reserves that for a MAJOR with a
+  # reviewed migration. It warns instead, and nothing teaches it any more.
+  cat >&2 <<'DEPRECATED'
+engine-proposal: `stash` is RETIRED — proposals now travel as files in the engine's queue.
+  Use:  engine-proposal.sh submit --vault DIR --slug ID   (scans, prepares, prints)
+        engine-proposal.sh push   --vault DIR --slug ID   (publishes)
+  A stashed block is invisible to the engine: nothing observes a git-ignored, per-machine
+  outbox, so "sent" and "never arrived" look identical from here. Writing it anyway.
+DEPRECATED
+
   [[ -n "$SLUG" ]] || die "--slug is required for stash"
   [[ "$SLUG" =~ ^[A-Za-z0-9._-]+$ ]] || die "slug must be [A-Za-z0-9._-]: $SLUG"
   local block; block="$(read_input)"
@@ -539,5 +555,5 @@ case "$CMD" in
   push)   do_push ;;
   queue)  do_queue ;;
   status) do_status ;;
-  *) die "usage: engine-proposal.sh {scan|stash|submit|push|status} --vault DIR | queue [--repo DIR] [--all] [...]  (got '${CMD:-}')" ;;
+  *) die "usage: engine-proposal.sh {scan|submit|push|status} --vault DIR | queue [--repo DIR] [--all]   (stash: retired, still accepted) [...]  (got '${CMD:-}')" ;;
 esac

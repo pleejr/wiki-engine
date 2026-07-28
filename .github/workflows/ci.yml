@@ -790,6 +790,25 @@ jobs:
             echo "  FAIL stash accepted a slug that disagrees with the block"; fail=1
           else echo "  ok   stash rejects filename/slug divergence"; fi
 
+          # RETIREMENT (v1.46.0). `stash` still runs — deleting a documented subcommand from
+          # a consumed component is breaking, and this engine reserves that for a MAJOR — but
+          # it must SAY it is retired, and nothing may teach it any more. Both halves are
+          # asserted, because a deprecation nobody sees is not a deprecation.
+          printf 'slug: dep\nboundary: generic\n\nx\n' | ./bin/engine-proposal.sh stash --vault "$V" --slug dep 2>&1 \
+            | grep -q 'is RETIRED' \
+            && echo "  ok   stash warns that it is retired" \
+            || { echo "  FAIL stash retired silently"; fail=1; }
+          # the skill must not instruct anyone to use it (historical mentions are fine;
+          # an imperative is not)
+          grep -nE '^\s*[-*].*`stash`' skills/engine-proposal/SKILL.md | grep -viE 'retired' \
+            && { echo "  FAIL the skill still prescribes stash"; fail=1; } \
+            || echo "  ok   no skill instruction prescribes stash"
+          # and submit/push must be what the skill actually tells you to run
+          grep -q 'engine-proposal.sh submit' skills/engine-proposal/SKILL.md \
+            && grep -q 'engine-proposal.sh push' skills/engine-proposal/SKILL.md \
+            && echo "  ok   the skill teaches submit and push" \
+            || { echo "  FAIL the skill does not teach the replacement"; fail=1; }
+
           # A slug displaced out of the final paragraph must still be RECOGNIZED. This is
           # the shape GitHub produces on every squash merge: it appends its own separator
           # and Co-authored-by footer AFTER the PR body, so the slug the author put last

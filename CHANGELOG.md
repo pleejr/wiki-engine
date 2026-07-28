@@ -4,6 +4,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.46.0] — 2026-07-28
+
+Minor — the copy-paste proposal channel is retired. `submit`/`push` are the way proposals travel; `stash` still runs, warns, and is no longer taught anywhere. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Completes the sequencing `engine-proposal-file-queue` asked for.
+
+### Changed
+- **`stash` is retired.** It existed because a forward-only copy-paste handoff that was not kept could not be re-sent — which happened twice, and one of those could not be recovered at all. `submit` makes the block a committed file, so that durability is now the transport's own property. A stashed block is **invisible to the engine**, which is the defect the queue removed: nothing observes a git-ignored, per-machine outbox, so *sent* and *never arrived* look identical from the consumer's chair.
+- The skill and `USAGE.md` no longer teach it. `status`'s outbox reading stays, so anyone holding a legacy block is not stranded.
+
+### Notes
+- **The verb is not deleted, deliberately.** Removing a documented subcommand from a consumed component is a breaking change, and this engine reserves that for a MAJOR with a reviewed migration — `update.sh` refuses a MAJOR bump precisely so that decision is never made by accident. Retirement is about the channel no longer being taught or used; deletion can ride a v2.0.0 whenever one is warranted.
+- **The sequencing condition was met before this shipped, not assumed.** `engine-proposal-file-queue` asked that copy-paste be retired only *after* the queue accepted a real end-to-end submission — not on merge. That has now happened twice: three submissions from a second vault across an account boundary, and one from this vault, all landing as pull requests with no clipboard step.
+- CI asserts **both halves** of a retirement, because a deprecation nobody sees is not a deprecation: `stash` must say it is retired, and no imperative in the skill may prescribe it while `submit`/`push` must be what it actually teaches.
+
 ## [1.45.1] — 2026-07-28
 
 Patch — the GitHub Release title is no longer cut at punctuation inside an inline code span, and the logic that derives it is now testable. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the file queue as `release-title-splitter-cuts-inside-code-spans` — the first proposal submitted end-to-end through the queue itself.
