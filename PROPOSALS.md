@@ -43,7 +43,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `engine-proposal-file-queue` | partially-accepted | transport diagnosis kept whole; submit split from push because the repo is public and the scan cannot see semantic leakage, the submitted-vs-local criterion re-specified on local evidence since status is offline, the banner return path replaced by pin-bump delivery, and PROPOSALS.md generated rather than retired to avoid rewriting the trailer gate |
 | `gate-inert-relative-hookspath` | shipped | derived |
 | `gc-containment-squash-merge` | shipped | derived |
-| `project-page-staleness-queue` | open | received 2026-07-28 |
+| `project-page-staleness-queue` | partially-accepted | shape and status-gating kept; the signal is derived from git rather than the hand-maintained updated: field, which was measured drifting three days on two of three active pages, and a reviewed: marker was added — the alternative the proposal rejected — because without a clock reset the queue can never be drained to zero |
 | `project-summary-volatility-gate` | partially-accepted | shape kept; warn-by-default inverted to an enforced content-hashed ratchet, slug allowlist replaced by summary hashing, and the `live` marker dropped as unreproduced |
 | `proposal-slug-roundtrip` | shipped | derived |
 | `push-verb-omits-git-push` | shipped | derived |
