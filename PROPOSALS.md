@@ -40,7 +40,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `adopt-reconcile-gitignore` | shipped | derived |
 | `adopt-step-asset-resolution` | shipped | v1.32.0 |
 | `crossover-export-split-default` | shipped | v1.24.0 |
-| `engine-proposal-file-queue` | open | received 2026-07-28 |
+| `engine-proposal-file-queue` | partially-accepted | transport diagnosis kept whole; submit split from push because the repo is public and the scan cannot see semantic leakage, the submitted-vs-local criterion re-specified on local evidence since status is offline, the banner return path replaced by pin-bump delivery, and PROPOSALS.md generated rather than retired to avoid rewriting the trailer gate |
 | `gate-inert-relative-hookspath` | shipped | derived |
 | `gc-containment-squash-merge` | shipped | derived |
 | `project-summary-volatility-gate` | partially-accepted | shape kept; warn-by-default inverted to an enforced content-hashed ratchet, slug allowlist replaced by summary hashing, and the `live` marker dropped as unreproduced |
