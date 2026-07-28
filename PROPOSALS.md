@@ -48,3 +48,5 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `upkeep-sync-clones` | shipped | derived |
 | `rag-capture-dirties-canonical-blocks-integrate` | shipped | derived |
 | `project-summary-volatility-gate` | partially-accepted | shape kept; warn-by-default inverted to an enforced content-hashed ratchet, slug allowlist replaced by summary hashing, and the `live` marker dropped as unreproduced |
+| `engine-proposal-file-queue` | open | received 2026-07-28 |
+| `session-banner-pending-proposal-nudge` | alias | engine-proposal-file-queue |
