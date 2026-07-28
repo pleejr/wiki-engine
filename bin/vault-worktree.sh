@@ -175,6 +175,71 @@ same_repo_worktree() {
   [ "$common" = "$main_common" ]
 }
 
+# retire_branch <branch> — delete a wt/* branch IF its commits are already contained.
+#
+# Shared by both callers on purpose. This used to live inline in retire_worktree, which
+# meant a branch was only ever evaluated as a side effect of retiring its WORKTREE — so a
+# branch whose worktree was already gone was never assessed by anything, and the bare
+# sweep (which looks only for stale worktrees) could never reach it. Such a branch was
+# unreapable by any invocation, accumulating exactly the way v1.28.2 and v1.38.0 were cut
+# to stop. Same fail-safe direction throughout: every uncertain path keeps.
+retire_branch() {
+  local br="$1"
+  case "$br" in wt/*) ;; *) return 0 ;; esac
+    # Containment is judged against LOCAL main, not `git branch -d`'s default.
+    # `-d` compares to the branch's UPSTREAM (origin/main), so a session branch that
+    # `integrate` just fast-forwarded into local main is still reported "not fully
+    # merged" whenever main has not been pushed yet — leaving a wt/* branch behind
+    # after every single session. `merge-base --is-ancestor` asks the question we
+    # actually mean: are these commits already contained in main? Only then -D.
+    local mainref
+    mainref="$(git -C "$WIKI" symbolic-ref --short HEAD 2>/dev/null || echo main)"
+    if git -C "$WIKI" merge-base --is-ancestor "$br" "$mainref" 2>/dev/null; then
+      if git -C "$WIKI" branch -D "$br" >/dev/null 2>&1; then
+        log "vault-worktree: deleted $br (already contained in $mainref)"
+      fi
+    else
+      # ANCESTRY IS THE WRONG QUESTION FOR A SQUASH-MERGING VAULT. It is equivalent to
+      # containment only when the branch reached main by the fast-forward `integrate`
+      # performs. A vault whose house workflow is branch -> PR -> squash-merge lands
+      # the work as a NEW commit with a different sha, so the branch tip is not an
+      # ancestor of main and this arm fired on every single session — the same
+      # unbounded wt/* accumulation v1.28.2 was cut to stop, and a "delete by hand"
+      # line that always fires is one operators stop reading.
+      #
+      # So when ancestry says no, ask the question actually meant: does merging this
+      # branch into main CHANGE main? If the merge result tree IS main's tree, the
+      # branch contributes nothing and is contained however it got there. Conservative
+      # by construction: only an exact match with main's own tree deletes. A
+      # conflicting merge still writes a tree (with markers), which differs from
+      # main's and so reports as unintegrated — correct, since a branch that
+      # conflicts does hold content main lacks. An unsupported git writes no tree at
+      # all and reports "could not determine". Every uncertain path keeps,
+      # deliberately: deleting an unmerged branch costs work, keeping a merged one
+      # costs a stale ref.
+      local mtree res rc
+      mtree="$(git -C "$WIKI" rev-parse "$mainref^{tree}" 2>/dev/null)"
+      res="$(git -C "$WIKI" merge-tree --write-tree "$mainref" "$br" 2>/dev/null | head -1)"; rc=$?
+      if [ -n "$res" ] && [ "$(git -C "$WIKI" cat-file -t "$res" 2>/dev/null)" = "tree" ]; then
+        if [ "$res" = "$mtree" ]; then
+          if git -C "$WIKI" branch -D "$br" >/dev/null 2>&1; then
+            log "vault-worktree: deleted $br (content already in $mainref — squash-merged or equivalent)"
+          fi
+        else
+          # The valuable keep: real content absent from main. Name the files, so the
+          # one branch that needs a human is not worded identically to the noise.
+          local n
+          n="$(git -C "$WIKI" diff --name-only "$mtree" "$res" 2>/dev/null | wc -l | tr -d " ")"
+          log "vault-worktree: kept $br — UNINTEGRATED CONTENT ($n file(s) not in $mainref); integrate or delete by hand"
+        fi
+      else
+        # merge-tree unavailable (git < 2.38) or the merge conflicts. Either way the
+        # answer is unknown, which is a DIFFERENT report from "has unintegrated work".
+        log "vault-worktree: kept $br — could not determine containment (merge-tree rc=$rc); check by hand"
+      fi
+    fi
+}
+
 # Remove ONE clean worktree + its wt/ branch. Refuses if it has uncommitted changes
 # (never discard working-tree edits) and deletes the branch only with `-d` (merged-only),
 # so committed-but-unintegrated work survives too. Returns 0 iff the worktree was removed.
@@ -196,59 +261,7 @@ retire_worktree() {
   git -C "$WIKI" worktree remove --force "$wt" 2>/dev/null || return 1
   log "vault-worktree: removed $wt"
   case "$br" in
-    wt/*)
-      # Containment is judged against LOCAL main, not `git branch -d`'s default.
-      # `-d` compares to the branch's UPSTREAM (origin/main), so a session branch that
-      # `integrate` just fast-forwarded into local main is still reported "not fully
-      # merged" whenever main has not been pushed yet — leaving a wt/* branch behind
-      # after every single session. `merge-base --is-ancestor` asks the question we
-      # actually mean: are these commits already contained in main? Only then -D.
-      local mainref
-      mainref="$(git -C "$WIKI" symbolic-ref --short HEAD 2>/dev/null || echo main)"
-      if git -C "$WIKI" merge-base --is-ancestor "$br" "$mainref" 2>/dev/null; then
-        if git -C "$WIKI" branch -D "$br" >/dev/null 2>&1; then
-          log "vault-worktree: deleted $br (already contained in $mainref)"
-        fi
-      else
-        # ANCESTRY IS THE WRONG QUESTION FOR A SQUASH-MERGING VAULT. It is equivalent to
-        # containment only when the branch reached main by the fast-forward `integrate`
-        # performs. A vault whose house workflow is branch -> PR -> squash-merge lands
-        # the work as a NEW commit with a different sha, so the branch tip is not an
-        # ancestor of main and this arm fired on every single session — the same
-        # unbounded wt/* accumulation v1.28.2 was cut to stop, and a "delete by hand"
-        # line that always fires is one operators stop reading.
-        #
-        # So when ancestry says no, ask the question actually meant: does merging this
-        # branch into main CHANGE main? If the merge result tree IS main's tree, the
-        # branch contributes nothing and is contained however it got there. Conservative
-        # by construction: only an exact match with main's own tree deletes. A
-        # conflicting merge still writes a tree (with markers), which differs from
-        # main's and so reports as unintegrated — correct, since a branch that
-        # conflicts does hold content main lacks. An unsupported git writes no tree at
-        # all and reports "could not determine". Every uncertain path keeps,
-        # deliberately: deleting an unmerged branch costs work, keeping a merged one
-        # costs a stale ref.
-        local mtree res rc
-        mtree="$(git -C "$WIKI" rev-parse "$mainref^{tree}" 2>/dev/null)"
-        res="$(git -C "$WIKI" merge-tree --write-tree "$mainref" "$br" 2>/dev/null | head -1)"; rc=$?
-        if [ -n "$res" ] && [ "$(git -C "$WIKI" cat-file -t "$res" 2>/dev/null)" = "tree" ]; then
-          if [ "$res" = "$mtree" ]; then
-            if git -C "$WIKI" branch -D "$br" >/dev/null 2>&1; then
-              log "vault-worktree: deleted $br (content already in $mainref — squash-merged or equivalent)"
-            fi
-          else
-            # The valuable keep: real content absent from main. Name the files, so the
-            # one branch that needs a human is not worded identically to the noise.
-            local n
-            n="$(git -C "$WIKI" diff --name-only "$mtree" "$res" 2>/dev/null | wc -l | tr -d " ")"
-            log "vault-worktree: kept $br — UNINTEGRATED CONTENT ($n file(s) not in $mainref); integrate or delete by hand"
-          fi
-        else
-          # merge-tree unavailable (git < 2.38) or the merge conflicts. Either way the
-          # answer is unknown, which is a DIFFERENT report from "has unintegrated work".
-          log "vault-worktree: kept $br — could not determine containment (merge-tree rc=$rc); check by hand"
-        fi
-      fi ;;
+    wt/*) retire_branch "$br" ;;
   esac
   return 0
 }
@@ -487,7 +500,31 @@ case "$CMD" in
         lease_live "$lf" || { rm -f "$lf" 2>/dev/null && reaped=$((reaped+1)); }
       done
     fi
-    log "vault-worktree: gc removed $removed worktree(s), reaped $reaped dead lease(s)"
+    # ORPHAN BRANCHES — a wt/* branch whose worktree is already gone. Nothing else ever
+    # looks at these: a branch is otherwise evaluated only as a side effect of retiring
+    # its worktree, and the sweep above only finds stale WORKTREES. So a branch left
+    # behind by a crashed session, or by a worktree removed some other way, was
+    # unreapable by any invocation of this tool and simply accumulated — the same
+    # unbounded growth v1.28.2 and v1.38.0 were each cut to stop, arrived at by a third
+    # route. Found in the wild on a vault whose orphan was provably contained by BOTH
+    # the ancestry and the content test, and still needed deleting by hand.
+    #
+    # A branch that is checked out ANYWHERE is skipped: it belongs to a live session
+    # (or to canonical), and this sweep must never touch a tree someone is working in.
+    # `branch -D` would refuse anyway, but relying on that would make the skip an
+    # accident rather than a decision.
+    attached="$(git -C "$WIKI" worktree list --porcelain 2>/dev/null \
+                | awk '/^branch /{sub(/^branch refs\/heads\//,""); print}')"
+    orphans=0
+    while IFS= read -r ob; do
+      [ -n "$ob" ] || continue
+      printf '%s\n' "$attached" | grep -qxF "$ob" && continue
+      orphans=$((orphans+1))
+      retire_branch "$ob"
+    done <<EOF
+$(git -C "$WIKI" for-each-ref --format='%(refname:short)' 'refs/heads/wt/*' 2>/dev/null)
+EOF
+    log "vault-worktree: gc removed $removed worktree(s), reaped $reaped dead lease(s), assessed $orphans orphan branch(es)"
     ;;
   list)
     git -C "$WIKI" worktree list
