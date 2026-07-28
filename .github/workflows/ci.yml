@@ -562,8 +562,13 @@ jobs:
             || { echo "the pre-commit gate was NOT installed"; exit 1; }
           cmp -s scaffold/pre-commit "$V/.githooks/pre-commit" \
             || { echo "the installed hook does not match the shipped template"; exit 1; }
-          [ "$(git -C "$V" config --local core.hooksPath)" = ".githooks" ] \
-            || { echo "core.hooksPath was not set"; exit 1; }
+          # ABSOLUTE, not the relative `.githooks` this asserted until v1.35.0. A relative
+          # hooksPath is resolved against the working tree making the commit, so it meant
+          # `<worktree>/.githooks` — a directory that does not exist, because .githooks/ is
+          # never committed. This assertion passing was compatible with the gate running in
+          # no worktree at all, which is where every permitted commit is made.
+          [ "$(git -C "$V" config --local core.hooksPath)" = "$V/.githooks" ] \
+            || { echo "core.hooksPath is not the vault's absolute .githooks: $(git -C "$V" config --local core.hooksPath)"; exit 1; }
 
           # ADD-ONLY, both halves: a hook the vault wrote is never overwritten, and a
           # hooksPath deliberately aimed elsewhere is never stolen.
