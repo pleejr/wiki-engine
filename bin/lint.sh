@@ -195,6 +195,36 @@ if [ -d "$WIKI/repos" ]; then
 fi
 [ "$pp" -eq 0 ] && echo "ok: every repo page carries sources: ref/sha provenance"
 
+# 7b. ref is a clean tag, not a git-describe string ------------------------------
+# SCHEMA's convention is `ref: <latest release tag>`, and nothing enforced it — so
+# ingest commonly wrote the full describe form vX.Y.Z-<N>-g<sha>, which can never
+# equal a clean tag and therefore false-flagged the page for refresh forever.
+#
+# DELIBERATELY A NEGATIVE CHECK. Asserting a ref IS a clean tag is not something lint
+# can do: tags are arbitrary strings (`stable`, `release-2024-01`), so the only real
+# test is "does this tag exist in the clone?" — and that would make the write-time
+# gate depend on every documented repo being cloned at a particular path on whatever
+# machine is committing. A gate that cannot run everywhere gets loosened until it
+# cannot fail. Rejecting the describe FORM needs no clone, cannot false-positive on a
+# legitimate tag (nobody names one `v1.0.0-3-gabc1234`), and prevents exactly the
+# regression this exists for.
+section "repo ref is a clean tag"
+rt=0
+if [ -d "$WIKI/repos" ]; then
+  for f in "$WIKI/repos"/*.md; do
+    [ -f "$f" ] || continue
+    r="$(awk '/^[[:space:]]*-?[[:space:]]*ref:/{sub(/^[^:]*:[[:space:]]*/,""); gsub(/[[:space:]"'"'"'`]/,""); print; exit}' "$f")"
+    [ -n "$r" ] || continue
+    if printf '%s' "$r" | grep -qE -- '-[0-9]+-g[0-9a-f]{7,}$'; then
+      printf '  ✗ %s — ref: %s is a git-describe string, not a tag\n' "${f#$WIKI/}" "$r"
+      printf '      Record the base tag (%s); the commit offset is already in sha:.\n' \
+        "$(printf '%s' "$r" | sed -E 's/-[0-9]+-g[0-9a-f]{7,}$//')"
+      rt=1; rc=1
+    fi
+  done
+fi
+[ "$rt" -eq 0 ] && echo "ok: no repo page records a git-describe ref"
+
 # 8. link integrity -------------------------------------------------------------
 section "link integrity"
 "$SCRIPT_DIR/lint-links.sh" --wiki "$WIKI" $STRICT || rc=1

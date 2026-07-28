@@ -43,7 +43,9 @@ Plus general knowledge in `entities/`, `concepts/`, `comparisons/`, `queries/`, 
   ```yaml
   sources:
     - repo: <name>
-      ref:  <latest release tag>   # primary freshness signal
+      ref:  <latest release tag>   # primary freshness signal; the BASE tag only —
+                                   # `git describe --tags --abbrev=0`, never the full
+                                   # describe form (lint rejects vX.Y.Z-<N>-g<sha>)
       sha:  <HEAD sha>             # fallback for untagged drift
       ingested: <date>
   ```
