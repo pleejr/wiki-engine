@@ -4,6 +4,22 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.38.0] — 2026-07-27
+
+Minor — `gc` judged branch containment by **ancestry**, which is only equivalent to "merged" for the fast-forward `integrate` performs. A vault whose workflow is branch → PR → **squash-merge** therefore accumulated `wt/*` branches forever, and the "delete by hand" line fired on every session until it stopped being read. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **`gc` never reaped a squash-merged session branch.** `merge-base --is-ancestor <branch> <main>` asks the right question only if the branch reached `main` by fast-forward. A squash-merge lands the work as a **new commit with a different sha**, so the branch tip is not an ancestor, and `gc` kept it — reported across **seven** consecutive worktree cycles in one session, each needing a manual diff-and-delete. Exactly the unbounded accumulation v1.28.2 was cut to stop.
+  - **When ancestry says no, `gc` now asks a content question**: does merging this branch into `main` *change* `main`? If the merge result tree **is** `main`'s own tree, the branch contributes nothing and is contained however it got there. `git merge-tree --write-tree`, no working tree touched.
+  - **v1.28.2 made the question right; this makes it the right question.** That release fixed containment being judged against the *upstream* rather than local `main`. This is the adjacent case: containment judged by *ancestry* rather than by content.
+- **The genuinely stranded branch was worded identically to the noise.** On the same run, `gc` also surfaced a real unintegrated branch holding a session's stranded checkpoint — a correct and valuable keep, indistinguishable in the output from dozens of false ones. Keeps are now three distinct reports: `deleted … (already contained)`, `deleted … (content already in main — squash-merged or equivalent)`, `kept … — UNINTEGRATED CONTENT (N file(s) not in main)`, and `kept … — could not determine containment`.
+
+### Notes
+- **The fail-safe asymmetry is preserved, deliberately and by construction.** Deleting an unmerged branch costs work; keeping a merged one costs a stale ref. Only an *exact* match against `main`'s own tree deletes, so anything the branch still adds keeps it. A conflicting merge still writes a tree, which differs from `main`'s and so reports as unintegrated — correct, since a branch that conflicts does hold content `main` lacks. A git older than 2.38 writes no tree and reports "could not determine". **Every uncertain path keeps.**
+- **Letting the vault declare its integration style through the config seam was rejected.** Inferring by content is strictly better: it needs no configuration, cannot be set wrong, and is correct for a vault that uses both styles — which is the normal case, since `integrate` fast-forwards locally while the same vault's pull requests squash.
+- **CI pins all four arms, including the two that must not change.** The fast-forward path is asserted still reaped *and* the fixture asserts `integrate` actually fast-forwarded first — without that, the test proves nothing, which is how the first version of it passed while `integrate` had silently no-opped. The stranded branch is asserted both kept *and* still readable, and the old-git path is asserted to keep rather than guess.
+- Reported upstream from a consumer vault through `engine-proposal` as a defect report, strengthened by the reporter from "observed once" to a counted seven-cycle recurrence before sending — which is what moved it from an anecdote to a per-session tax.
+
 ## [1.37.0] — 2026-07-27
 
 Minor — adoption never reconciled an existing vault's `.gitignore`, and the template omitted three artifacts the engine itself creates. A vault got **dirtier the more of the engine it adopted**, and one missing entry carried a safety property outright. Adopt with `bin/adopt.sh` or `update.sh`.
