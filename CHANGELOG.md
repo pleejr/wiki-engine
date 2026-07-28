@@ -4,6 +4,24 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.40.0] — 2026-07-27
+
+Minor — a new **`upkeep sync-clones`** verb: a guarded, fast-forward-only clone refresh, so a drain reflects true upstream instead of whatever the local clones happen to be at. The detector stays offline. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`bin/upkeep.sh sync-clones [--check]`.** `upkeep scan` and `verify-status` measure freshness against the **local clone's HEAD** — offline and deterministic by design, and that design is right. But it means a drain is only as current as the clones on that machine: when a clone lags, the drain refreshes the page and stamps `verified:` against a sha behind the real release.
+  - **The asymmetry is what makes this worth engine support rather than a documented habit.** A lagging clone produces a **false negative** — the page looks verified and current, so nothing flags it. The failure is invisible in exactly the output that exists to surface staleness, and the cost is a second full drain once someone notices, because the first has written a misleading signal the second must overwrite.
+  - **Conservative by construction: every state is decided before anything is touched.** Only a proven fast-forward is applied — `git merge --ff-only` runs solely after `merge-base --is-ancestor` has already established the case. No force, no stash, no rebase. **`git pull` is deliberately not used**: it consults `pull.rebase` and friends, so what it actually did would depend on the operator's config rather than on this code. CI asserts the absence of all four **at the command level**, by reading the verb's own source, not merely by observing outcomes.
+  - **A skip is a reported outcome, not an error.** A dirty tree, a detached HEAD, a branch tracking no upstream, a diverged branch, and a failed fetch are each named in the output. Silence about a clone the tool refuses to touch would recreate the original bug one level up, with the operator again believing everything was current.
+  - **The vault's own checkout is never pulled** — a point the proposal did not raise. A vault that documents itself has one page whose clone *is* the tree a session is working in, possibly with a live worktree holding uncommitted work; pulling it from underneath is the exact hazard the concurrency model exists to prevent, and no freshness benefit could justify it. Matched by physical path, as `scan`'s self-page suppression already does.
+  - **It stays a separate, deliberate step, and the detector stays offline.** Folding a fetch into a "just tell me what is stale" command would trade away the determinism that lets `scan` run anywhere — including with no network, and on intentionally pinned clones — and would add latency and failure modes to a read-only-sounding verb. CI proves it by running `scan` and `verify-status` under a `git` that dies on any network verb.
+
+### Notes
+- **`--check` is deliberately hedged.** It reports what it *would attempt*, not what would happen: divergence is only knowable after a fetch, so promising the fast-forward would be a claim `--check` cannot make without doing the thing it exists to avoid.
+- **This block was a reconstruction, and was weighted as one.** The original was handed off ~2026-07-24 before `stash` was mandatory; no copy survived, and it was rebuilt from a consumer lesson note covering the same ground. The reporter flagged that explicitly rather than passing it off as the original. The underlying gap — `stash` being optional — was closed in v1.34.0, so this failure mode does not recur.
+- Second consecutive proposal whose original never arrived; both were re-sent only because v1.34.0's `status` could distinguish "unknown" from "queued". This one closes the six-block backlog that discovery produced.
+- Reported upstream from a consumer vault through `engine-proposal`.
+
 ## [1.39.0] — 2026-07-27
 
 Minor — `upkeep`'s tag-aware detector compared a page's recorded `ref` against the clone's **clean** tag, while ingest commonly recorded the full `git describe` form. Those can never be equal, so every such page was flagged stale forever and the one genuinely-stale page was buried among them. Adopt with `bin/adopt.sh` or `update.sh`.

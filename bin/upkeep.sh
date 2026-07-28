@@ -34,6 +34,7 @@
 #   verify   — a repos/ page that is un-verified or verified-stale (verify-status.sh --todo).
 #
 # Usage:
+#   upkeep.sh sync-clones [--check]   ff-only pull the clones backing repo pages
 #   upkeep.sh scan                (re)build the queue from current vault state
 #   upkeep.sh list [--pending]    show the queue (all, or only pending)
 #   upkeep.sh next                print the next pending item (empty ⇒ drained)
@@ -60,14 +61,14 @@ while [ $# -gt 0 ]; do
     --wiki)     WIKI="$2"; shift 2;;
     --pending)  PENDING_ONLY=1; shift;;
     -h|--help)  grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
-    scan|list|next|done) CMD="$1"; shift;;
+    scan|list|next|done|sync-clones) CMD="$1"; shift;;
     *) if [ -z "$CMD" ]; then echo "unknown arg: $1" >&2; exit 1; fi; ARG="$1"; shift;;
   esac
 done
 
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
-[ -n "$CMD" ]  || { echo "error: need a command (scan|list|next|done)" >&2; exit 1; }
+[ -n "$CMD" ]  || { echo "error: need a command (sync-clones|scan|list|next|done)" >&2; exit 1; }
 [ -n "$REPOS_ROOT" ] || REPOS_ROOT="$(cd "$WIKI/.." && pwd)"   # sibling repos by default
 
 UPKEEP_DIR="$WIKI/.upkeep"
@@ -179,6 +180,95 @@ build_rows() {
 }
 
 case "$CMD" in
+  sync-clones)
+    # WHY THIS IS A SEPARATE, DELIBERATE VERB AND NOT PART OF scan.
+    # scan and verify-status measure freshness against the LOCAL clone's HEAD, offline
+    # and deterministically. That is right and load-bearing: it is what lets them run
+    # anywhere, including with no network and on intentionally pinned clones. But it
+    # means a drain is only as current as the clones on this machine — and a lagging
+    # clone produces a FALSE NEGATIVE: the page refreshes, `verified:` is stamped
+    # against a sha behind the real release, and the vault reports a clean fully-
+    # verified state that is quietly wrong. The failure is invisible in exactly the
+    # output meant to surface staleness, and the cost is a second full drain once
+    # someone notices. So the network step is opt-in and explicit; folding a fetch into
+    # a "just tell me what is stale" command would trade that determinism away and add
+    # latency and failure modes to a read-only-sounding verb.
+    #
+    # CONSERVATIVE BY CONSTRUCTION. Every state is DECIDED before anything is touched,
+    # and only a proven fast-forward is applied. No force, no stash, no rebase, and no
+    # merge that could ever create a commit: `git merge --ff-only` is issued solely
+    # after `merge-base --is-ancestor` has already proven the fast-forward. `git pull`
+    # is deliberately NOT used — it consults pull.rebase and friends, so what it
+    # actually does depends on the operator's config rather than on this code.
+    #
+    # A SKIP IS A REPORTED OUTCOME, NOT AN ERROR. Silence about a clone the tool
+    # refuses to touch would recreate the original bug one level up: the operator would
+    # again believe everything was current when it was not.
+    # --check arrives via the shared parser's ARG slot, not as a positional here
+    sc_check=""
+    [ "$ARG" = "--check" ] && sc_check=1
+    [ -d "$WIKI/repos" ] || { echo "upkeep: no repos/ — nothing to sync"; exit 0; }
+    synced=0; skipped=0; current=0
+    for f in "$WIKI/repos"/*.md; do
+      [ -f "$f" ] || continue
+      slug="$(basename "$f" .md)"
+      repo="$(page_repo "$f")"; [ -n "$repo" ] || repo="$slug"
+      clone="$REPOS_ROOT/$repo"
+      [ -d "$clone/.git" ] || continue
+
+      # THE VAULT'S OWN CLONE IS NEVER TOUCHED. A vault that documents itself has one
+      # page whose clone IS this vault — the tree a session is working in, possibly
+      # with a live worktree holding uncommitted work. Pulling it underneath that is
+      # the exact hazard the concurrency model exists to prevent, and no freshness
+      # benefit could justify it. Matched by physical path, as the scan does.
+      if [ "$(cd "$clone" && pwd -P)" = "$(cd "$WIKI" && pwd -P)" ]; then
+        printf '  skip   %-28s this vault'"'"'s own checkout — never pulled from under a session\n' "$repo"
+        skipped=$((skipped+1)); continue
+      fi
+      if [ -n "$(git -C "$clone" status --porcelain 2>/dev/null)" ]; then
+        printf '  skip   %-28s uncommitted changes\n' "$repo"; skipped=$((skipped+1)); continue
+      fi
+      br="$(git -C "$clone" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+      if [ -z "$br" ]; then
+        printf '  skip   %-28s detached HEAD\n' "$repo"; skipped=$((skipped+1)); continue
+      fi
+      if ! up="$(git -C "$clone" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+        printf '  skip   %-28s %s tracks no upstream\n' "$repo" "$br"; skipped=$((skipped+1)); continue
+      fi
+      if [ -n "$sc_check" ]; then
+        # Deliberately hedged: divergence is only knowable AFTER a fetch, so --check
+        # can report what it would attempt but must not promise the fast-forward.
+        printf '  would  %-28s fetch %s, then ff-only if it is one\n' "$repo" "$up"; continue
+      fi
+      if ! git -C "$clone" fetch --quiet 2>/dev/null; then
+        printf '  skip   %-28s fetch failed (offline?)\n' "$repo"; skipped=$((skipped+1)); continue
+      fi
+      local_sha="$(git -C "$clone" rev-parse HEAD 2>/dev/null)"
+      up_sha="$(git -C "$clone" rev-parse '@{u}' 2>/dev/null)"
+      if [ "$local_sha" = "$up_sha" ]; then
+        printf '  current %-27s %s\n' "$repo" "$br"; current=$((current+1)); continue
+      fi
+      # Decide BEFORE acting: only a proven fast-forward is applied. Anything else —
+      # diverged, or upstream rewound — is reported and left exactly as it was.
+      if git -C "$clone" merge-base --is-ancestor HEAD '@{u}' 2>/dev/null; then
+        if git -C "$clone" merge --ff-only --quiet '@{u}' 2>/dev/null; then
+          printf '  synced %-28s %s -> %s\n' "$repo" "${local_sha:0:9}" "$(git -C "$clone" rev-parse --short HEAD)"
+          synced=$((synced+1))
+        else
+          printf '  skip   %-28s fast-forward refused by git\n' "$repo"; skipped=$((skipped+1))
+        fi
+      else
+        printf '  skip   %-28s diverged from %s\n' "$repo" "$up"; skipped=$((skipped+1))
+      fi
+    done
+    if [ -n "$sc_check" ]; then
+      echo "upkeep: sync-clones --check — nothing was fetched or modified"
+    else
+      printf 'upkeep: sync-clones — %d synced, %d already current, %d skipped (skips are reported, not errors)\n' \
+        "$synced" "$current" "$skipped"
+      echo "upkeep: now run 'upkeep.sh scan' so the queue reflects the updated clones"
+    fi
+    ;;
   scan)
     lock; trap unlock EXIT
     rows="$(build_rows | LC_ALL=C sort -t$'\t' -k1,1)"

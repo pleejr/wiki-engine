@@ -41,3 +41,4 @@ An implementing commit carries `Proposal: <slug>` **in its final paragraph**, al
 | `adopt-reconcile-gitignore` | shipped | derived |
 | `gc-containment-squash-merge` | shipped | derived |
 | `upkeep-tolerate-describe-refs` | shipped | derived |
+| `upkeep-sync-clones` | shipped | derived |
