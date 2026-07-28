@@ -392,8 +392,19 @@ do_submit() {
   git -C "$eng" rev-parse --verify "$br" >/dev/null 2>&1 \
     && die "branch $br already exists in $eng — a proposal is already prepared; push it or delete the branch"
 
-  local base; base="$(git -C "$eng" symbolic-ref --short HEAD 2>/dev/null || echo main)"
-  git -C "$eng" checkout -q -b "$br" || die "could not create $br"
+  # Branch from MAIN, never from wherever HEAD happens to sit. `submit` leaves its own
+  # branch checked out, so a second proposal cut from HEAD lands on the first one's branch
+  # and its pull request carries BOTH files. Reported on the second submission ever made
+  # through this channel; the first could not expose it, because the bug needs a prior
+  # proposal branch to still be checked out.
+  #
+  # Prefer origin/main when it exists: the local main may itself be behind, and a proposal
+  # based on stale main is a needless rebase for whoever intakes it.
+  local base="main"
+  git -C "$eng" rev-parse --verify -q main >/dev/null 2>&1 || base="$(git -C "$eng" symbolic-ref --short HEAD 2>/dev/null || echo main)"
+  local start="$base"
+  git -C "$eng" rev-parse --verify -q "origin/$base" >/dev/null 2>&1 && start="origin/$base"
+  git -C "$eng" checkout -q -b "$br" "$start" || die "could not create $br from $start"
   mkdir -p "$eng/proposals"
   local f="$eng/proposals/$SLUG.md"
   {
@@ -410,6 +421,7 @@ do_submit() {
   cat <<EOF
 
 engine-proposal: PREPARED on branch $br in $eng
+  based on: $start   (one proposal per branch; not cut from whatever was checked out)
   scan: clean (fail-closed; it ran before anything was written)
 
   ┌─ THIS TEXT BECOMES PERMANENTLY PUBLIC WHEN YOU PUSH ────────────────────────
@@ -439,9 +451,20 @@ do_push() {
   # consumer is told rather than left to discover.
   echo "engine-proposal: pushing $br and opening a pull request (forking if you lack write access)."
   echo "  Note: if a fork is created it is public, like the upstream repository."
+  # PUSH FIRST. `gh pr create --head <br>` expects the head ref to already exist on the
+  # remote; it does not push for you when the target repo is pinned with --repo, so the
+  # PR failed with "Head sha can't be blank / No commits between main and <br>". Found on
+  # the verb's first real use — nothing had ever exercised the publish half before.
+  #
+  # This is the irreversible step: everything up to here is local and discardable.
+  if ! git -C "$eng" push -q --set-upstream origin "$br" 2>&1; then
+    die "could not push $br to origin — you may lack write access. Fork the repo and push there, then open the pull request by hand; nothing was published."
+  fi
+  echo "engine-proposal: pushed $br"
+
   if ! gh pr create --repo "$(git -C "$eng" remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/.]+)(\.git)?$#\1#')" \
         --head "$br" --title "proposal: $SLUG" --body-file "$eng/proposals/$SLUG.md" 2>&1; then
-    die "pull request failed — the branch is still local at $br, nothing was published"
+    die "branch $br IS pushed, but opening the pull request failed — open it by hand from that branch rather than re-running push."
   fi
   printf '%s\n' "$br" > "$(submit_marker_dir)/$SLUG.submitted"
   rm -f "$marker"

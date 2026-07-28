@@ -101,7 +101,14 @@ jobs:
           echo "ok: bands correct, degrades cleanly"
 
       - name: Engine docs are soft-wrapped
-        run: ./bin/reflow.sh --check $(find . -type d -name .git -prune -o \( -name '*.md' -o -name '*.tmpl' \) -print)
+        run: |
+          # proposals/ is EXCLUDED: those files are consumer-authored payloads, not engine
+          # documentation. A submitter writes them in their own vault and has no reason to
+          # know this repo's soft-wrap convention — so applying it here made every arrival
+          # redden main for a rule that should not govern incoming content at all. Same
+          # class as the ledger-staleness failure: the merge that RECORDS arrival must not
+          # be the thing that breaks the build.
+          ./bin/reflow.sh --check $(find . -type d \( -name .git -o -name proposals \) -prune -o \( -name '*.md' -o -name '*.tmpl' \) -print)
 
       - name: Usage docs cover all skills + no stale command refs
         run: ./bin/lint-docs.sh
