@@ -4,6 +4,22 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.42.1] — 2026-07-28
+
+Patch — the `Proposal:` citation convention required a placement that the project's own workflow made impossible, so following the instructions produced a state CI rejected. Placement is no longer required. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Closes [#60](https://github.com/pleejr/wiki-engine/issues/60).
+
+### Fixed
+- **A citation is now read wherever it appears, instead of only in the final paragraph.** The convention was `Proposal: <slug>` in the commit's last block, so git's trailer parser would see it — and for a squashed merge, that meant the **pull request description's** final paragraph. But GitHub appends its own `---------` + `Co-authored-by:` footer to the squash body, which then *becomes* the last block. The slug the author put last stops being last, `%(trailers:key=Proposal)` returns nothing, and `lint-proposals.sh` hard-fails.
+  - **The instruction and the check disagreed, and GitHub decided the outcome.** This is not an edge case: it fires on every PR whose body ends as the skill instructs. v1.42.0 hit it, and `main` went red on merge.
+  - **Detected at the worst possible moment.** The failure is only visible *after* the squash, when the sole remedy is amending the tip of a published branch and force-pushing. v1.42.0 required exactly that.
+  - **Placement was never what the slug is for.** It is a correlation key; git-parseability bought nothing except compatibility with `%(trailers)` — an implementation detail of the two scripts this repo owns. `bin/lint-proposals.sh` and `bin/engine-proposal.sh status` now both read the literal line, and are kept in step deliberately: if only one had changed, a shipped proposal would read as `unknown` to the reporter.
+  - The old placement error has nothing left to protect — an unparsed line is no longer read as untagged — so it is now a **note**, not a failure. It still tells you `git log --format='%(trailers:key=Proposal)'` will not show what lint found.
+- **Quoted examples are skipped rather than rejected.** Under the old count-mismatch scheme, a commit quoting the convention at column 0 tripped a loud error, fixable by indenting. Reading literally would instead have *silently credited* the quote as a real citation, so quote-handling had to move from "error out" to "don't look there": lines inside a ``` fence are ignored by both scripts. CI asserts both directions — a fenced slug with no ledger row must not fail lint, and **the same slug unfenced must still fail**, so the skip cannot quietly widen into swallowing real citations.
+
+### Notes
+- **The regression test carries its own fixture guard.** It asserts that git genuinely *cannot* parse the constructed footer shape before asserting that lint can — otherwise a fixture that accidentally kept the trailer parseable would pass while proving nothing. Same class as the v1.42.0 fixture that created the capture file fresh and erased the condition under test.
+- Two earlier rows shipped `derived` before this surfaced, so the convention had been holding on the shape of those particular PR bodies rather than on anything guaranteed.
+
 ## [1.42.0] — 2026-07-28
 
 Minor — the SessionEnd capture hook and the concurrency guard were each correct and jointly deadlocked the vault's most-travelled path: every session ended by dirtying canonical, and the next session's `integrate` refused. Fixed at both the cause and the over-breadth. Adopt with `bin/adopt.sh` or `update.sh`; existing vaults need the one-line migration under **Migration**.
