@@ -127,10 +127,7 @@ Any finding → revise the block (return to §2) and re-scan. Do not hand off un
 
 ## 5. Hand off — submit to the queue (`stash` remains for the legacy channel)
 
-**Proposals are files in the engine's `proposals/` queue, submitted by pull request.** The
-copy-paste channel lost blocks and could not tell you: a stashed block lived in a
-git-ignored, per-machine outbox that nothing observed, so *sent* and *never arrived* were
-indistinguishable from the consumer's chair.
+**Proposals are files in the engine's `proposals/` queue, submitted by pull request.** The copy-paste channel lost blocks and could not tell you: a stashed block lived in a git-ignored, per-machine outbox that nothing observed, so *sent* and *never arrived* were indistinguishable from the consumer's chair.
 
 ```bash
 $WIKI_PATH/engine/bin/engine-proposal.sh submit --vault "$WIKI_PATH" --slug <slug> --file <draft.md>
@@ -138,26 +135,13 @@ $WIKI_PATH/engine/bin/engine-proposal.sh submit --vault "$WIKI_PATH" --slug <slu
 $WIKI_PATH/engine/bin/engine-proposal.sh push   --vault "$WIKI_PATH" --slug <slug>
 ```
 
-**`submit` and `push` are two verbs on purpose, and this is the safety decision in the whole
-design.** The engine repository is **public**, so a committed proposal and its pull request
-are permanently public — a leak is a git object that force-push cannot reliably retract once
-forks, clones and cached views exist. `submit` runs the fail-closed boundary scan *first*
-(nothing is branched, committed or written if it finds anything), prepares the branch
-locally, and prints the exact text that will become public. `push` performs the irreversible
-act.
+**`submit` and `push` are two verbs on purpose, and this is the safety decision in the whole design.** The engine repository is **public**, so a committed proposal and its pull request are permanently public — a leak is a git object that force-push cannot reliably retract once forks, clones and cached views exist. `submit` runs the fail-closed boundary scan *first* (nothing is branched, committed or written if it finds anything), prepares the branch locally, and prints the exact text that will become public. `push` performs the irreversible act.
 
-**Read the printed block before pushing.** The scan matches identifiers it can *derive* from
-your vault — slug, git identity, home paths. It cannot judge whether the prose itself
-discloses something private: a private workflow described in generic-sounding terms passes
-every pattern. Under copy-paste a human necessarily read the text at the moment of
-publication; that review is now yours to perform deliberately. There is **no bypass flag**,
-because the failure it would enable is the one with no undo.
+**Read the printed block before pushing.** The scan matches identifiers it can *derive* from your vault — slug, git identity, home paths. It cannot judge whether the prose itself discloses something private: a private workflow described in generic-sounding terms passes every pattern. Under copy-paste a human necessarily read the text at the moment of publication; that review is now yours to perform deliberately. There is **no bypass flag**, because the failure it would enable is the one with no undo.
 
 **You do not need write access.** `push` forks on demand — and the fork is public too.
 
-**Engine CI is a backstop, not the gate.** The scan derives its identifiers from *your*
-vault, which CI cannot see; CI can only apply generic patterns. A backstop described as a
-gate is how the real gate gets skipped.
+**Engine CI is a backstop, not the gate.** The scan derives its identifiers from *your* vault, which CI cannot see; CI can only apply generic patterns. A backstop described as a gate is how the real gate gets skipped.
 
 ## 5a. Hand off the legacy way — create NO consumer node
 
