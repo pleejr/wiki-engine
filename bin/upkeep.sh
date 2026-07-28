@@ -131,11 +131,24 @@ build_rows() {
       [ -d "$clone/.git" ] || continue
 
       if [ -n "$rec_ref" ] && [ "$rec_ref" != "$rec_sha" ]; then
-        # tagged page: compare recorded tag vs the clone's latest tag
+        # tagged page: compare recorded tag vs the clone's latest tag.
+        #
+        # TOLERATE A GIT-DESCRIBE REF. The convention is `ref: <latest release tag>`
+        # (SCHEMA), but it was never enforced, and ingest commonly recorded the full
+        # describe form vX.Y.Z-<N>-g<sha> instead. That never equals a clean tag, so
+        # EVERY such page was flagged for refresh forever — a queue where the one
+        # genuinely-stale page is buried among dozens of false ones is not a queue
+        # anyone drains, which is the same "a signal that always fires stops being
+        # read" failure as the always-kept gc branch and the always-red integrate.
+        #
+        # Normalising to the base tag loses nothing: the describe suffix's extra
+        # information (commit count + sha) is already carried by sources.sha, and the
+        # verify axis is the one that uses it. The two staleness axes stay independent.
+        rec_base="$(printf '%s' "$rec_ref" | sed -E 's/-[0-9]+-g[0-9a-f]{7,}$//')"
         clone_tag="$(git -C "$clone" describe --tags --abbrev=0 2>/dev/null || true)"
         if [ -n "$clone_tag" ]; then
-          [ "$rec_ref" != "$clone_tag" ] && \
-            printf 'refresh:%s\trefresh\trepos/%s.md\trecorded tag %s ≠ clone tag %s\tpending\n' "$slug" "$slug" "$rec_ref" "$clone_tag"
+          [ "$rec_base" != "$clone_tag" ] && \
+            printf 'refresh:%s\trefresh\trepos/%s.md\trecorded tag %s ≠ clone tag %s\tpending\n' "$slug" "$slug" "$rec_base" "$clone_tag"
           continue
         fi
         # clone has no tags reachable — fall through to sha comparison (best-effort)

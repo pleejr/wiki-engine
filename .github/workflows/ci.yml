@@ -1030,3 +1030,81 @@ jobs:
             || { echo "  FAIL deleted a branch it could not evaluate"; fail=1; }
 
           exit "$fail"
+
+      - name: A git-describe ref is tolerated, migrated, and then rejected
+        run: |
+          # The convention is `ref: <latest release tag>` (SCHEMA) and nothing enforced
+          # it, so ingest commonly wrote the full describe form vX.Y.Z-<N>-g<sha>. That
+          # can never equal a clean tag, so EVERY such page was flagged for refresh
+          # forever — a queue whose one real item sits among dozens of false ones is not
+          # a queue anyone drains. Same "a signal that always fires stops being read"
+          # failure as the always-kept gc branch and the always-red integrate check.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-ref"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          fail=0
+          C="$RUNNER_TEMP/refrepos/proj"; mkdir -p "$C"; git init -q "$C"
+          ( cd "$C" && echo a > a && git add -A && git commit -qm a && git tag v1.0.0 \
+              && echo b > b && git add -A && git commit -qm b )
+          DESC="$(git -C "$C" describe --tags)"        # v1.0.0-1-g<sha>
+          SHA="$(git -C "$C" rev-parse --short HEAD)"
+          V="$RUNNER_TEMP/refvault"; mkdir -p "$V/repos"
+          # (1) describe-form ref for the CURRENT tag — the false flag
+          printf -- '---\ntitle: P\ntype: repo\nboundary: personal\nsources:\n  repo: proj\n  ref: %s\n  sha: %s\n---\n\n# P\n\n[[a]] [[b]]\n' "$DESC" "$SHA" > "$V/repos/proj.md"
+          # (2) genuinely behind — must STILL be flagged, or the fix is just a mute button
+          printf -- '---\ntitle: Q\ntype: repo\nboundary: personal\nsources:\n  repo: proj\n  ref: v0.9.0\n  sha: %s\n---\n\n# Q\n\n[[a]] [[b]]\n' "$SHA" > "$V/repos/behind.md"
+
+          scan() { UPKEEP_REPOS_ROOT="$RUNNER_TEMP/refrepos" ./bin/upkeep.sh scan --wiki "$V" >/dev/null 2>&1
+                   awk -F'\t' '$2=="refresh"{print $3}' "$V/.upkeep/queue.tsv" 2>/dev/null; }
+          q="$(scan)"
+          printf '%s' "$q" | grep -q 'repos/proj.md' \
+            && { echo "  FAIL a describe ref for the current tag is still false-flagged"; fail=1; } \
+            || echo "  ok   a describe ref for the current tag is not flagged"
+          printf '%s' "$q" | grep -q 'repos/behind.md' \
+            && echo "  ok   a page genuinely behind the latest tag is still flagged" \
+            || { echo "  FAIL the real drift was muted along with the noise"; fail=1; }
+
+          # The gate must be RED before migration and GREEN after — and the migration
+          # ships in the same release precisely so the gate lands at zero. Shipping the
+          # gate alone would hand every affected vault a backlog it cannot commit past.
+          out="$(./bin/lint.sh --wiki "$V" 2>&1 || true)"
+          printf '%s' "$out" | grep -q 'is a git-describe string' \
+            && echo "  ok   lint rejects a describe-form ref" \
+            || { echo "  FAIL lint accepted a describe ref"; fail=1; }
+
+          WIKI="$V" ENGINE="$PWD" ADOPT_LIB="$PWD/bin/adopt-lib.sh" ADOPT_CHECK=1 \
+            bash adopt.d/50-normalize-repo-refs.sh | grep -q 'would normalise' \
+            && echo "  ok   --check reports the migration" \
+            || { echo "  FAIL --check said nothing"; fail=1; }
+          grep -qF "$DESC" "$V/repos/proj.md" \
+            && echo "  ok   --check did not write" \
+            || { echo "  FAIL --check modified the page"; fail=1; }
+
+          WIKI="$V" ENGINE="$PWD" ADOPT_LIB="$PWD/bin/adopt-lib.sh" ADOPT_CHECK="" \
+            bash adopt.d/50-normalize-repo-refs.sh >/dev/null
+          grep -qE '^  ref: v1\.0\.0$' "$V/repos/proj.md" \
+            && echo "  ok   the ref is normalised to its base tag" \
+            || { echo "  FAIL normalisation wrong: $(grep 'ref:' "$V/repos/proj.md")"; fail=1; }
+          # sha is the field that carries the commit offset; it must be untouched
+          grep -qE "^  sha: $SHA$" "$V/repos/proj.md" \
+            && echo "  ok   sha is untouched, so nothing was lost" \
+            || { echo "  FAIL sha was altered"; fail=1; }
+
+          cp "$V/repos/proj.md" "$RUNNER_TEMP/once"
+          WIKI="$V" ENGINE="$PWD" ADOPT_LIB="$PWD/bin/adopt-lib.sh" ADOPT_CHECK="" \
+            bash adopt.d/50-normalize-repo-refs.sh >/dev/null
+          diff -q "$V/repos/proj.md" "$RUNNER_TEMP/once" >/dev/null \
+            && echo "  ok   migration is idempotent" \
+            || { echo "  FAIL second run changed the page again"; fail=1; }
+
+          ./bin/lint.sh --wiki "$V" 2>&1 | grep -q 'no repo page records a git-describe ref' \
+            && echo "  ok   the gate is green after migration — it lands at zero" \
+            || { echo "  FAIL gate still red after migration"; fail=1; }
+
+          # ...and the real drift survives all of it.
+          scan | grep -q 'repos/behind.md' \
+            && echo "  ok   the genuine drift is still queued after migration" \
+            || { echo "  FAIL real drift lost"; fail=1; }
+
+          exit "$fail"

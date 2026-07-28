@@ -30,7 +30,7 @@ Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's c
    tags: [repo, ...]
    sources:
      - repo: <name>
-       ref: <tag>
+       ref: <the clone's latest release tag — `git describe --tags --abbrev=0`>
        sha: <sha>
        ingested: <today>
    boundary: <the value this vault declares in its CLAUDE.md — do not copy a literal>
@@ -39,6 +39,8 @@ Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's c
    Add **≥2 `[[wikilinks]]`** (to related repos/concepts). Keep it a *map*, not a transcript.
 5. **Update navigation**: add/refresh the `repos/` entry in `$WIKI_PATH/index.md`; append a dated `$WIKI_PATH/log.md` line.
 6. Report what changed and the new `ref`/`sha`.
+
+**`ref:` is the base tag, never a `git describe` string.** Use `git describe --tags --abbrev=0`, not `git describe --tags` — the full form `vX.Y.Z-<N>-g<sha>` can never equal a clean tag, so a page recording it is flagged stale by `upkeep` forever and the one genuinely-stale page is buried among the false ones. The commit offset that suffix encodes is already carried by `sha:`, so nothing is lost. `lint.sh` rejects the describe form.
 
 ## Rules
 - `boundary:` **must match what the vault declares in its own `CLAUDE.md`** — read it, never assume; the engine is boundary-agnostic and names no value. **No secrets** copied into the page (no `.env` values, keys, tokens).

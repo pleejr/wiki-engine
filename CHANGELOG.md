@@ -4,6 +4,27 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.39.0] — 2026-07-27
+
+Minor — `upkeep`'s tag-aware detector compared a page's recorded `ref` against the clone's **clean** tag, while ingest commonly recorded the full `git describe` form. Those can never be equal, so every such page was flagged stale forever and the one genuinely-stale page was buried among them. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **A `git describe` ref false-flagged a repo page for refresh, permanently.** SCHEMA's convention is `ref: <latest release tag>` and nothing enforced it, so pages commonly carried `vX.Y.Z-<N>-g<sha>`. `upkeep scan` compares against `git describe --tags --abbrev=0`, which the describe form never equals — reported by a consumer as **29 false refresh items out of 30**, with exactly one genuine drift. A queue whose real item is one line in thirty is not a queue anyone drains: the same "a signal that always fires stops being read" failure as the always-kept `gc` branch (v1.38.0) and the always-red `integrate` check.
+  - The detector now normalises a recorded ref to its base tag before comparing. **Nothing is lost by normalising**: the commit offset and sha the suffix encodes are already carried by `sources.sha`, and the two staleness axes stay independent — `refresh` compares provenance to the clone, `verify` compares `verified.against` to `sources.sha`.
+
+### Added
+- **`lint.sh` — `repo ref is a clean tag`.** Prevents ingest from reintroducing the form. **Deliberately a negative check**: asserting a ref *is* a clean tag is not something lint can do, because tags are arbitrary strings (`stable`, `release-2024-01`) and the only real test is "does this tag exist in the clone?" — which would make a write-time gate depend on every documented repo being cloned at a particular path on whatever machine is committing. A gate that cannot run everywhere gets loosened until it cannot fail. Rejecting the describe *form* needs no clone and cannot false-positive on a legitimate tag.
+- **`adopt.d/50-normalize-repo-refs.sh`, and it ships WITH the gate rather than after it.** The engine's gates are held **at zero**; shipping enforcement alone would have violated that on arrival, handing every affected vault a backlog it did not create, could not commit past, and had no tool to clear. The incoming proposal sequenced tolerance first and enforcement second for this reason — but sequencing does not fix it, because the tolerance makes the refs harmless, which is exactly why nobody would ever rewrite them. Narrow (only a trailing `-<N>-g<hex>`, only on a `ref:` line in `repos/`), reversible, idempotent, and `sha:` is untouched. Precedented, not novel: `update.sh` already rewrites the engine page's provenance and leaves it for review; adoption never commits into a consumer's vault.
+
+### Changed
+- **`wiki-repo` and `SCHEMA.md` now say which command to use** — `git describe --tags --abbrev=0`, not `git describe --tags` — and why, so the convention is stated where it is acted on rather than only where it is defined.
+
+### Notes
+- **This proposal was originally handed off ~2026-07-24 and never arrived.** The consumer recorded it as "handed off, engine-dev owns it" and waited three days on nothing. It was re-sent after v1.34.0's `engine-proposal.sh status` reported the slug as **`unknown` — no row in the engine ledger**, which under that convention means the engine has no record of receiving it. First real use of the round-trip, and the first case where "handed off" and "never arrived" were separable at all — the exact ambiguity `proposal-slug-roundtrip` was built to remove. Its arrival row here was written before any code was.
+- The reporter's 29:1 measurement does **not** reproduce on the reference vault, whose four repo pages carry clean refs — the defect is real by mechanism and confirmed on a fixture, but the ratio is a property of how a given vault's pages were ingested.
+- CI pins that the fix is not merely a mute button: a page genuinely behind the latest tag is asserted **still flagged**, before and after migration.
+- Reported upstream from a consumer vault through `engine-proposal`.
+
 ## [1.38.0] — 2026-07-27
 
 Minor — `gc` judged branch containment by **ancestry**, which is only equivalent to "merged" for the fast-forward `integrate` performs. A vault whose workflow is branch → PR → **squash-merge** therefore accumulated `wt/*` branches forever, and the "delete by hand" line fired on every session until it stopped being read. Adopt with `bin/adopt.sh` or `update.sh`.
