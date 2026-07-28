@@ -42,6 +42,15 @@ while IFS= read -r d; do
   fi
 done < "$DIRS_FILE"
 
+# Node folders are the ONE thing adoption creates that must be COMMITTED — everything
+# else it writes (.engine-adopted, .githooks/, the worktree parent) is per-machine and
+# git-ignored. Their .gitkeep files otherwise sit untracked indefinitely, and standing
+# `git status` noise is what trains an operator to skim past untracked paths. Say it,
+# rather than leaving "+ created" to be read as "and handled".
+if [ "$CHECK" -eq 0 ] && [ "$missing" -gt 0 ]; then
+  echo "  (these are vault content — commit their .gitkeep files; note that \`git commit -am\` will NOT stage them)"
+fi
+
 # Feature adoption (hooks etc.): run the versioned adopt.d steps via apply-adopt.sh.
 # This is what wires engine features that need more than a folder — e.g. the SessionStart
 # boot hook. Idempotent; --check reports pending steps without changing anything.

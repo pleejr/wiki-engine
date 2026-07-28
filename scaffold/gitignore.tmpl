@@ -18,3 +18,31 @@
 
 # OS cruft
 .DS_Store
+
+# Per-machine engine adoption marker (apply-adopt.sh): it records `git describe` of
+# the pinned engine for THIS checkout, so committing it would publish one machine's
+# adoption state to every other machine — and the fast path would then read a marker
+# that describes a different machine. apply-adopt.sh's header has always called this
+# file "per-machine, gitignored"; this line is what actually makes that true.
+.engine-adopted
+
+# The vault's write-time gate, installed by adoption. IGNORED ON PURPOSE, and this is
+# a decision rather than an oversight — the alternative is defensible, so leaving it
+# unstated meant each vault resolved it by accident.
+#
+# Installation stays per-machine and add-only: adoption never overwrites a hook the
+# vault wrote, and a vault that tracked its hook would keep whatever template it first
+# adopted, forever, with no upgrade path. Gate CORRECTNESS does not depend on this
+# either way — core.hooksPath is written as an ABSOLUTE path (v1.35.0) precisely so it
+# resolves from every linked worktree whether or not .githooks/ is tracked.
+#
+# A vault that already tracks .githooks/ keeps tracking it: this line only affects
+# untracked files, and adoption does not change a state a vault is already in.
+.githooks/
+
+# Per-session worktree parent (vault-worktree.sh). Engine-created and identical on
+# every machine, so it belongs in the tracked ignore file. It used to be hidden only
+# via .git/info/exclude, which is per-checkout and never cloned — so a second machine
+# showed it as untracked until that machine happened to run a worktree verb. The
+# exclude write is kept as a belt for vaults that have not yet reconciled.
+.worktrees/
