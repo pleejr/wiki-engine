@@ -825,14 +825,17 @@ jobs:
           git -C "$SRC" reset -q --hard HEAD~1
           git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: ghost2\n\nProposal: quoted-not-real\n')"
           L="$(./bin/lint-proposals.sh --repo "$SRC" 2>&1 || true)"
-          printf '%s' "$L" | grep -q "has no row in PROPOSALS.md" \
+          # Match the stable clause only. v1.44.1 reworded the sentence opener when the
+          # citation check began resolving against the queue ("has no proposal in
+          # proposals/ AND no row in ..."), which silently unhooked this assertion.
+          printf '%s' "$L" | grep -q "no row in PROPOSALS.md" \
             && echo "  ok   the same slug unfenced is still caught" \
             || { echo "  FAIL fence-skipping swallowed a real citation"; fail=1; }
           git -C "$SRC" reset -q --hard HEAD~1
 
           git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: ghost\n\nProposal: not-in-ledger\n')"
           L="$(./bin/lint-proposals.sh --repo "$SRC" 2>&1 || true)"   # -e would abort on the expected failure
-          printf '%s' "$L" | grep -q "has no row in PROPOSALS.md" \
+          printf '%s' "$L" | grep -q "no row in PROPOSALS.md" \
             && echo "  ok   lint catches a trailer with no ledger row" \
             || { echo "  FAIL lint missed an unledgered trailer"; fail=1; }
           git -C "$SRC" reset -q --hard HEAD~1
