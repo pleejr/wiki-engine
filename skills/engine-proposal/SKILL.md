@@ -146,9 +146,7 @@ $WIKI_PATH/engine/bin/engine-proposal.sh push   --vault "$WIKI_PATH" --slug <slu
 ## 5a. Hand off the legacy way — create NO consumer node
 
 - Present the clean block for the user to paste into the engine-dev vault's session.
-- **Stash it — this is required, not optional.** `engine-proposal.sh stash --vault "$WIKI_PATH" --slug <slug>` writes the block to `.engine-proposal/<slug>.outbox` (git-ignored scratch). This is the *only* file this skill may create in the consumer vault — never a project or memory page.
-  - **Why it stopped being optional:** the handoff is forward-only, so if the block is not kept, it cannot be re-sent. That is not hypothetical — of two proposals that needed nudging, only the stashed one could be; the other had to be reconstructed from an unrelated note that happened to cover the same ground. It is also what `status` enumerates.
-  - `stash` rejects a `--slug` that disagrees with the block's own `slug:` line. They are the same key; letting them diverge means every later lookup silently asks about a different proposal.
+- **Stash it — only if you are using the legacy copy-paste path.** `engine-proposal.sh stash --vault "$WIKI_PATH" --slug <slug>` writes the block to `.engine-proposal/<slug>.outbox` (git-ignored scratch). It was *required* when copy-paste was the only channel, because a forward-only handoff that was not kept could not be re-sent — which happened. **`submit` supersedes it:** the block becomes a committed file, so the durability the stash existed to provide is now the transport's own property. Keep `stash` for a vault that cannot reach the engine repo at all; otherwise prefer `submit`.
 - Do **not** run checkpoint and do **not** create a project/memory/lesson node here. The engine-dev vault owns the resulting project, notes, lessons, and skill.
 
 ## 5b. Ask what happened to it — `status`, not a grep
@@ -202,16 +200,31 @@ If none is installed, do the pass inline against this checklist — it is delibe
 - **Defaults + capability** — what does the *default* do after the change, and does the escape hatch preserve the old behavior rather than remove it?
 - **Unverifiable criteria** — which acceptance criteria can't be mechanically checked as written?
 
-**First, record that it ARRIVED — before anything else.** Append a row to the engine's `PROPOSALS.md`:
+**Arrival records itself.** A submitted proposal is a file in `proposals/<slug>.md`, and merging its pull request *is* the arrival record — there is no row to remember to write. That is the whole point of the queue: the `unknown`-vs-`open` distinction used to rest on a human remembering a bookkeeping step at the least interesting moment of the task.
+
+**See what is waiting:**
+
+```bash
+bin/engine-proposal.sh queue          # open proposals, oldest first
+bin/engine-proposal.sh queue --all    # include resolved ones
+```
+
+**Record the outcome by editing the proposal's own frontmatter**, then regenerate:
 
 ```
-| `<slug>` | open | received <date> |
+outcome: accepted | partially-accepted | rejected | alias
+reason:  "<required for rejected / partially-accepted>"
+alias:   <canonical slug, for alias>
 ```
 
-Do this on arrival, not at the end. The reporter has no return channel, so this file is the only thing that can ever tell them what happened — and a proposal you **decline** produces no commit, no trailer and no release note, meaning the resolution path has no mechanical trigger to remind you. Writing the row first also makes `unknown` mean something on the consumer end: *the engine never received this*, which is a different instruction to the reporter than "we're working on it".
+```bash
+bin/gen-proposals-ledger.sh           # PROPOSALS.md is DERIVED from the queue
+```
 
-- **Do not rename the slug to fit engine vocabulary.** It is the reporter's only correlation key, and renaming it silently severs their ability to match the result back — they will never learn why. If a rename is genuinely necessary, keep the incoming slug as an `alias` row pointing at the canonical one; `status` follows it.
-- The terminal outcome is an **edit of that row**, never a second row: `shipped` (detail `derived`, or an explicit `vX.Y.Z` for anything predating the trailer convention), `rejected`, or `partially-accepted`. **A `rejected` or `partially-accepted` row must carry the reason** — `lint-proposals.sh` rejects a bare one, because a decline the reporter cannot act on is the failure this whole mechanism exists to fix.
+**Never hand-edit `PROPOSALS.md`.** It is generated, and `lint-proposals.sh` fails on drift between the table and the queue. `outcome:` and *shipped* are **orthogonal** — a proposal can be `partially-accepted` and also shipped; shipped stays derived from `git tag --contains` on the trailer commit, never stored.
+
+- **Do not rename the slug to fit engine vocabulary.** It is the reporter's only correlation key, and renaming it silently severs their ability to match the result back. If a rename is genuinely necessary, add a file for the incoming slug with `outcome: alias` pointing at the canonical one; `status` follows it.
+- **A `rejected` or `partially-accepted` entry must carry the reason** — the generator refuses to render one without it, because a decline the reporter cannot act on is the failure this whole mechanism exists to fix.
 
 **Then file it.** Create the project page under the proposal's slug, carrying its evidence and acceptance criteria; record the review's accepted *and* rejected findings in the project's **Key decisions** (append-only), so the reasoning survives the session. Build, ship, release — consumer vaults receive it on their next `update`.
 

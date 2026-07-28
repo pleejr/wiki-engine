@@ -47,19 +47,26 @@ set -uo pipefail
 die() { printf 'engine-proposal: %s\n' "$*" >&2; exit 1; }
 
 CMD="${1:-}"; shift || true
-VAULT=""; FILE=""; SLUG=""
+VAULT=""; FILE=""; SLUG=""; REPO_ARG=""; QUEUE_ALL=0
 while (( $# )); do
   case "$1" in
     --vault) VAULT="${2:-}"; shift 2 ;;
+    --repo)  REPO_ARG="${2:-}"; shift 2 ;;
+    --all)   QUEUE_ALL=1; shift ;;
     --file)  FILE="${2:-}"; shift 2 ;;
     --slug)  SLUG="${2:-}"; shift 2 ;;
     -*) die "unknown flag: $1" ;;
     *)  die "unexpected argument: $1" ;;
   esac
 done
-[[ -n "$VAULT" ]] || die "--vault is required"
-[[ -d "$VAULT" ]] || die "vault not found: $VAULT"
-VAULT="$(cd "$VAULT" && pwd)"
+# `queue` is the ENGINE-DEV verb and runs in the engine repo, not a consumer vault, so it
+# is the one subcommand that must not demand --vault. Requiring it would have made the
+# work-list unusable from the only place it is meant to be used.
+if [[ "${CMD:-}" != "queue" ]]; then
+  [[ -n "$VAULT" ]] || die "--vault is required"
+  [[ -d "$VAULT" ]] || die "vault not found: $VAULT"
+  VAULT="$(cd "$VAULT" && pwd)"
+fi
 
 read_input() {
   if [[ -n "$FILE" ]]; then
@@ -441,11 +448,73 @@ do_push() {
   echo "engine-proposal: submitted. status will now report it as submitted-pending until merged."
 }
 
+# --- queue (ENGINE-DEV side) ---------------------------------------------------
+# The consumer verbs all need --vault. This one does not: it runs in the engine repo and
+# answers "what is waiting for me?" — the work-list half of the queue design, without
+# which the directory is only a storage format and draining it means `ls` plus grep.
+do_queue() {
+  local repo="${REPO_ARG:-}"
+  if [[ -z "$repo" ]]; then
+    repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  fi
+  local q="$repo/proposals"
+  [[ -d "$q" ]] || die "no proposals/ queue at $q (pass --repo for a different engine checkout)"
+
+  local fm_get; fm_get() {
+    awk -v key="$2" '
+      NR==1 && $0=="---" { f=1; next }
+      f && $0=="---" { exit }
+      f { if (index($0, key ":") == 1) { sub(/^[^:]*:[ \t]*/,""); gsub(/^"|"$/,""); print; exit } }
+    ' "$1" 2>/dev/null
+  }
+
+  local n_open=0 n_other=0 out_open="" out_other=""
+  local f slug outcome received reason
+  for f in "$q"/*.md; do
+    [[ -e "$f" ]] || continue
+    slug="$(basename "$f" .md)"
+    outcome="$(fm_get "$f" outcome)"
+    received="$(fm_get "$f" received)"
+    reason="$(fm_get "$f" reason)"
+    if [[ "$outcome" == "open" ]]; then
+      out_open+="$(printf '  %-52s received %s\n' "$slug" "${received:-?}")"$'\n'
+      n_open=$((n_open+1))
+    else
+      out_other+="$(printf '  %-52s %-20s %s\n' "$slug" "${outcome:-<none>}" "${reason:0:44}")"$'\n'
+      n_other=$((n_other+1))
+    fi
+  done
+
+  printf 'engine-proposal: queue at %s\n\n' "${q#$PWD/}"
+  if [[ "$n_open" -gt 0 ]]; then
+    printf 'OPEN — awaiting intake (%d):\n%s\n' "$n_open" "$out_open"
+  else
+    printf 'OPEN — awaiting intake: none. The queue is drained.\n\n'
+  fi
+  if [[ "${QUEUE_ALL:-0}" == "1" && "$n_other" -gt 0 ]]; then
+    printf 'RESOLVED (%d):\n%s\n' "$n_other" "$out_other"
+  elif [[ "$n_other" -gt 0 ]]; then
+    printf '(%d resolved; --all to list them)\n\n' "$n_other"
+  fi
+  # The drain instruction lives with the list, so it cannot drift away from it.
+  if [[ "$n_open" -gt 0 ]]; then
+    cat <<'EOF'
+To process one (see the skill's intake section):
+  1. Reproduce/verify its premises before choosing a shape.
+  2. Record the decision by editing proposals/<slug>.md frontmatter —
+     outcome: accepted | partially-accepted | rejected | alias  (+ reason: for a decline)
+  3. Regenerate the ledger:  bin/gen-proposals-ledger.sh
+     NEVER hand-edit PROPOSALS.md; it is derived, and lint-proposals.sh will catch it.
+EOF
+  fi
+}
+
 case "$CMD" in
   scan)   do_scan ;;
   stash)  do_stash ;;
   submit) do_submit ;;
   push)   do_push ;;
+  queue)  do_queue ;;
   status) do_status ;;
-  *) die "usage: engine-proposal.sh {scan|stash|submit|push|status} --vault DIR [...]  (got '${CMD:-}')" ;;
+  *) die "usage: engine-proposal.sh {scan|stash|submit|push|status} --vault DIR | queue [--repo DIR] [--all] [...]  (got '${CMD:-}')" ;;
 esac

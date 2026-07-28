@@ -1173,6 +1173,21 @@ jobs:
             && echo "  ok   a migrated slug resolves to the release the old table named" \
             || { echo "  FAIL migration changed an existing answer"; fail=1; }
 
+          # (6) the ENGINE-DEV work-list must exist and must not need a consumer vault.
+          # Without this verb the queue is a storage format, not a work-list, and draining
+          # it means ls + grep — which is the gap the proposal was explicitly closing.
+          "$EP" queue --repo "$GITHUB_WORKSPACE" >/dev/null 2>&1 \
+            && echo "  ok   queue runs in the engine repo with no --vault" \
+            || { echo "  FAIL queue requires a vault or failed"; fail=1; }
+          "$EP" queue --repo "$GITHUB_WORKSPACE" 2>&1 | grep -q 'OPEN' \
+            && echo "  ok   queue reports the open work-list" \
+            || { echo "  FAIL queue printed no open section"; fail=1; }
+          # and it must tell the reader NOT to hand-edit the generated ledger, since the
+          # skill's old intake step did exactly that and would now trip the drift gate
+          "$EP" queue --repo "$GITHUB_WORKSPACE" 2>&1 | grep -q 'NEVER hand-edit PROPOSALS.md' \
+            && echo "  ok   queue names the derived-ledger rule at the point of use" \
+            || { echo "  FAIL drain instructions omit the derived-ledger rule"; fail=1; }
+
           exit "$fail"
 
       - name: A project summary must name identity, not state
