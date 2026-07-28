@@ -156,6 +156,14 @@ page_field() {  # page_field <file> <key>
 
 days_since() {  # days_since <YYYY-MM-DD> -> integer days, or empty if unparseable
   [ -n "$1" ] || return 0
+  # Validate the SHAPE before handing it to date(1). BSD `date -j -f` parses a leading
+  # date and ignores trailing garbage, while GNU `date -d` rejects the same string — so a
+  # malformed value was silently accepted on macOS and reported unassessable on Linux.
+  # A check whose answer depends on which date(1) is installed is not a check.
+  case "$1" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+    *) return 0 ;;
+  esac
   local t
   t="$(date -j -f %Y-%m-%d "$1" +%s 2>/dev/null)" || t="$(date -d "$1" +%s 2>/dev/null)" || return 0
   [ -n "$t" ] || return 0

@@ -1237,7 +1237,11 @@ jobs:
           git config --global init.defaultBranch main
           fail=0
           V="$RUNNER_TEMP/stalevault"; rm -rf "$V"; mkdir -p "$V/projects"
-          mk() { printf -- '---\ntype: project\nstatus: %s\nupdated: %s\n%ssummary: "x"\nboundary: personal\n---\n\n# %s\n' "$2" "$3" "$4" "$1" > "$V/projects/$1.md"; }
+          # %b for the optional extra field, not %s: it may carry an escape, and printf's
+          # %s emits it literally — which put `reviewed: <date>\nsummary: "x"` on ONE line
+          # and made the value a malformed date. macOS date(1) parsed it leniently and the
+          # runner's did not, so this passed locally and failed in CI.
+          mk() { printf -- '---\ntype: project\nstatus: %s\nupdated: %s\n%bsummary: "x"\nboundary: personal\n---\n\n# %s\n' "$2" "$3" "$4" "$1" > "$V/projects/$1.md"; }
           mk old-active      active 2026-01-01 ""
           mk fresh-active    active "$(date +%Y-%m-%d)" ""
           mk old-done        done   2026-01-01 ""
