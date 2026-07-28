@@ -38,3 +38,4 @@ An implementing commit carries `Proposal: <slug>` **in its final paragraph**, al
 | `proposal-slug-roundtrip` | shipped | derived |
 | `gate-inert-relative-hookspath` | shipped | derived |
 | `skills-hardcode-boundary-value` | shipped | derived |
+| `adopt-reconcile-gitignore` | shipped | derived |

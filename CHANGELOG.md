@@ -4,6 +4,28 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.37.0] — 2026-07-27
+
+Minor — adoption never reconciled an existing vault's `.gitignore`, and the template omitted three artifacts the engine itself creates. A vault got **dirtier the more of the engine it adopted**, and one missing entry carried a safety property outright. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **`scaffold/gitignore.tmpl` was scaffold-only — nothing ever revisited it.** It is applied once, by `new-wiki.sh`; `adopt.d/` had steps for the boot hook, the skill links and the git hooks, but none for `.gitignore`. So every entry added to the template after a vault was scaffolded never reached that vault, and the artifact the entry exists to hide stayed untracked forever.
+- **The template omitted three paths the engine creates**, so a **freshly scaffolded and adopted vault started dirty** — reproduced: `?? .engine-adopted` and `?? .githooks/` on a brand-new vault.
+  - **`.engine-adopted`** — `apply-adopt.sh`'s own header has always described this file as "per-machine, **gitignored**". The engine asserted a property that nothing provided: the belief was written down, only the mechanism was missing. Committing it publishes one machine's adoption state to every other machine, where the fast path would then read a marker describing a different checkout.
+  - **`.githooks/`** — now ignored, **and the template states why**, because this is a genuine decision rather than an oversight and leaving it unstated meant each vault resolved it by accident. Installation stays per-machine and add-only; a vault that tracked its hook would keep whatever template it first adopted, forever, with no upgrade path. Gate *correctness* does not depend on it either way — that is exactly what v1.35.0's absolute `core.hooksPath` bought.
+  - **`.worktrees/`** — was hidden only via `.git/info/exclude`, which is per-checkout and **never cloned**, and only written on first use of a worktree verb. So a second machine's clone showed it untracked until that machine happened to run one. The exclude write is kept as a belt for vaults that have not yet reconciled.
+
+### Added
+- **`adopt.d/40-vault-gitignore.sh` — add-only `.gitignore` reconciliation.** Appends the entries a vault is missing, **carrying each entry's explanatory comment across** (the reason an entry exists is the part a reader needs — `.wiki-gates.local`'s comment *is* its safety rationale). Never reorders, never removes, never rewrites an entry the vault added itself: a `.gitignore` is the vault's file and adoption may only append. Matching is on **normalized** entry text, so a vault already ignoring `.upkeep` is not handed a `.upkeep/` next to it.
+- **`adopt.sh` now says that node folders must be committed.** They are the one thing adoption creates that is *vault content* — everything else it writes is per-machine and ignored — so their `.gitkeep` files otherwise sit untracked indefinitely. It also names the specific trap, because `git commit -am` does not stage them.
+
+### Notes
+- **Why this is not cosmetic, in the engine's own terms.** A check that is always red is one that gets bypassed — stated here when fixing the always-dirty `integrate` and the always-passing adoption guard. A `git status` that permanently lists engine artifacts is that same failure at the human layer: it trains the operator to skim untracked paths. **That is not hypothetical, and it happened while this was being built** — standing noise from adopt-created `.gitkeep` files hid three uncommitted pages that `git commit -am` had silently not staged, in a vault whose index already referenced them.
+- **One entry is a safety property, not tidiness.** `.wiki-gates.local` names the *other* boundary's identifiers; a vault that adopts the foreign-boundary gate without receiving that ignore line is one `git add -A` away from committing precisely what the gate exists to keep out. That property was carried entirely by a file the vault never received.
+- **The `.githooks/` question was the shared hinge with v1.35.0, and it was settled there**: tracking it is not a repair the engine can perform, since adoption never commits into a consumer vault, so it would have fixed newly scaffolded vaults while leaving every existing one broken. Both releases fall out of that one decision rather than resolving it twice.
+- The end-to-end assertion is the one that would have caught the whole class: **a freshly scaffolded and adopted vault must have a clean `git status`.**
+- Reported upstream from a consumer vault through `engine-proposal` as a defect report.
+
 ## [1.36.0] — 2026-07-27
 
 Minor — the engine named a **specific boundary value** in four places, including a copy-me frontmatter template and one line of executable code, contradicting `SCHEMA.md`'s own boundary-agnosticism rule. A page mis-stamped as a result passed every gate and then vanished from semantic recall with no message. Adds the gate that was missing and a check so the class cannot return. Adopt with `bin/adopt.sh` or `update.sh`.

@@ -862,3 +862,83 @@ jobs:
             || { echo "  FAIL lint-docs red on a clean tree"; fail=1; }
 
           exit "$fail"
+
+      - name: Adoption reconciles .gitignore, add-only
+        run: |
+          # scaffold/gitignore.tmpl was applied once, by new-wiki.sh, and nothing ever
+          # revisited it — so every entry added to the template after a vault was
+          # scaffolded never reached that vault, while adoption itself kept creating new
+          # untracked paths (.engine-adopted, .githooks/). A vault got dirtier the more of
+          # the engine it adopted. One entry carries a safety property outright:
+          # .wiki-gates.local names the OTHER boundary's identifiers, so a vault adopting
+          # the foreign-boundary gate without it is one `git add -A` from committing
+          # exactly what the gate exists to keep out.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-gi"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-gi.json"
+          fail=0
+          run() { WIKI="$1" ENGINE="$PWD" ADOPT_LIB="$PWD/bin/adopt-lib.sh" ADOPT_CHECK="${2:-}" \
+                    bash adopt.d/40-vault-gitignore.sh; }
+
+          # A vault that predates the newer entries, carrying its OWN entry and a
+          # different spelling of a template one.
+          V="$RUNNER_TEMP/gi"; mkdir -p "$V"; git -C "$V" init -q .
+          printf '# mine — must survive\nscratch/\n\n# obsidian\n.obsidian/\n\n# no trailing slash\n.upkeep\n' > "$V/.gitignore"
+          cp "$V/.gitignore" "$RUNNER_TEMP/gi-before"
+
+          run "$V" >/dev/null
+          for e in .rag/ .engine-proposal/ .wiki-gates.local .engine-adopted .githooks/ .worktrees/; do
+            grep -qxF "$e" "$V/.gitignore" \
+              || { echo "  FAIL missing entry not appended: $e"; fail=1; }
+          done
+          echo "  ok   missing template entries reach an existing vault"
+
+          # The safety-critical one, called out separately because it is the reason this
+          # is not cosmetic.
+          grep -qxF '.wiki-gates.local' "$V/.gitignore" \
+            && echo "  ok   a vault predating the foreign-boundary gate now ignores its denylist" \
+            || { echo "  FAIL .wiki-gates.local not reconciled"; fail=1; }
+
+          # ADD-ONLY: the vault's own lines survive byte-identically, as a PREFIX — so
+          # nothing was reordered or rewritten either.
+          head -c "$(wc -c < "$RUNNER_TEMP/gi-before")" "$V/.gitignore" \
+            | diff -q - "$RUNNER_TEMP/gi-before" >/dev/null \
+            && echo "  ok   the vault's own entries are untouched and unreordered" \
+            || { echo "  FAIL the vault's .gitignore was rewritten"; fail=1; }
+
+          # A different spelling must not earn a near-duplicate.
+          [ "$(grep -c '^\.upkeep' "$V/.gitignore")" = "1" ] \
+            && echo "  ok   a differently-spelled entry is not duplicated" \
+            || { echo "  FAIL duplicate .upkeep entry"; fail=1; }
+
+          # Idempotent: a re-run appends nothing at all.
+          cp "$V/.gitignore" "$RUNNER_TEMP/gi-once"
+          run "$V" >/dev/null
+          diff -q "$V/.gitignore" "$RUNNER_TEMP/gi-once" >/dev/null \
+            && echo "  ok   re-running appends nothing" \
+            || { echo "  FAIL not idempotent"; fail=1; }
+
+          # --check must report without writing.
+          W="$RUNNER_TEMP/gi2"; mkdir -p "$W"; git -C "$W" init -q .
+          printf '.obsidian/\n' > "$W/.gitignore"
+          out="$(run "$W" 1)"
+          printf '%s' "$out" | grep -q 'would add' || { echo "  FAIL --check said nothing"; fail=1; }
+          [ "$(cat "$W/.gitignore")" = ".obsidian/" ] \
+            && echo "  ok   --check reports without writing" \
+            || { echo "  FAIL --check wrote to the file"; fail=1; }
+
+          # END TO END: a freshly scaffolded + adopted vault must be CLEAN. This is the
+          # assertion that would have caught the whole class — .engine-adopted and
+          # .githooks/ showed as untracked on every brand-new vault.
+          F="$RUNNER_TEMP/gifresh"
+          ./bin/new-wiki.sh --path "$F" --boundary personal --email ci@example.com \
+            --git-name CI --engine-url "$PWD" --no-link-skills --no-rag >/dev/null 2>&1
+          ./bin/adopt.sh --wiki "$F" >/dev/null 2>&1
+          st="$(git -C "$F" status --porcelain)"
+          [ -z "$st" ] \
+            && echo "  ok   a freshly scaffolded + adopted vault has a clean git status" \
+            || { echo "  FAIL fresh vault is dirty:"; printf '%s\n' "$st"; fail=1; }
+
+          exit "$fail"
