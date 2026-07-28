@@ -1074,6 +1074,91 @@ jobs:
 
           exit "$fail"
 
+      - name: A project summary must name identity, not state
+        run: |
+          # The gate is a PROXY for a SCHEMA rule, enforced through a content-hashed
+          # ratchet. Every assertion below pins a decision from the intake review, because
+          # each one is a place the obvious implementation is wrong:
+          #   - `done` is frozen (a terminal claim is true forever) but unknown status is
+          #     NOT, or a typo'd `status: activo` buys a silent exemption;
+          #   - bare `live` is not a marker — every status-gated hit it produced on a real
+          #     vault was adjectival ("a live artifact", "first live candidate");
+          #   - the baseline keys on sha256(summary), so rewriting a summary DROPS its
+          #     exemption; a slug-keyed allowlist would outlive the text it excused.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-sumvol"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          G="$GITHUB_WORKSPACE/bin/lint-summary-volatility.sh"
+          fail=0
+          V="$RUNNER_TEMP/sumvol"; rm -rf "$V"; mkdir -p "$V/projects"
+          mk() { printf -- '---\ntype: project\nstatus: %s\nsummary: "%s"\nboundary: personal\n---\n\n# x\n' "$2" "$3" > "$V/projects/$1.md"; }
+
+          mk decaying active  "built but not deployed; still on v1.2.0"
+          mk frozen   done    "the flag rename (complete)"
+          mk adjectiv active  "a live artifact IS the work queue"
+          mk typo     activo  "blocked on inputs"
+          mk identity active  "a durable index of household records"
+
+          out="$("$G" --wiki "$V" 2>&1)" || true
+          chk() { printf '%s' "$out" | grep -q "$2" && { [ "$1" = y ] && echo "  ok   $3" || { echo "  FAIL $3"; fail=1; }; } \
+                                                   || { [ "$1" = n ] && echo "  ok   $3" || { echo "  FAIL $3"; fail=1; }; }; }
+          chk y 'projects/decaying.md'  "a decaying summary on an active project is flagged"
+          chk n 'projects/frozen.md'    "a done project's frozen claim is skipped"
+          chk n 'projects/adjectiv.md'  "adjectival 'live' is not treated as a state claim"
+          chk y 'projects/typo.md'      "an unknown status flags rather than exempting"
+          chk n 'projects/identity.md'  "an identity summary is clean"
+          "$G" --wiki "$V" >/dev/null 2>&1 \
+            && { echo "  FAIL gate exited 0 with findings"; fail=1; } || echo "  ok   findings exit non-zero"
+
+          # the ratchet: seed, go green, then prove it is not a blanket exemption
+          "$G" --wiki "$V" --seed-baseline >/dev/null 2>&1 || { echo "  FAIL seeding failed"; fail=1; }
+          "$G" --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   a seeded vault is green and silent" \
+            || { echo "  FAIL still red after seeding:"; "$G" --wiki "$V"; fail=1; }
+          # rewriting a baselined summary into a DIFFERENT decaying claim must re-flag.
+          # This is the whole argument for hashing content instead of keying on the slug.
+          mk decaying active "shipped 2026-01-01, rolled out to prod"
+          "$G" --wiki "$V" >/dev/null 2>&1 \
+            && { echo "  FAIL a rewritten summary kept its exemption"; fail=1; } \
+            || echo "  ok   rewriting a baselined summary drops its exemption"
+          # ...and an untouched baselined page stays exempt (the ratchet must not reset)
+          mk decaying active "built but not deployed; still on v1.2.0"
+          "$G" --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   an unchanged baselined summary stays exempt" \
+            || { echo "  FAIL the baseline stopped suppressing an unchanged summary"; fail=1; }
+          # done -> active un-freezes a previously-safe terminal claim
+          mk frozen active "the flag rename (complete)"
+          "$G" --wiki "$V" 2>&1 | grep -q 'projects/frozen.md' \
+            && echo "  ok   reopening a done project newly flags its frozen claim" \
+            || { echo "  FAIL done -> active did not re-evaluate"; fail=1; }
+
+          # a gate that cannot load its rules must FAIL, not pass everything
+          mk frozen done "the flag rename (complete)"
+          printf 'summary_volatility_markers = missing-markers.txt\n' > "$V/.wiki-gates.conf"
+          # (a missing override falls back to the engine default — that is intended)
+          "$G" --wiki "$V" >/dev/null 2>&1 && echo "  ok   a missing override falls back to the engine list" \
+            || { echo "  FAIL fallback broke"; fail=1; }
+          rm -f "$V/.wiki-gates.conf"
+          EMPTY="$RUNNER_TEMP/empty-markers.txt"; : > "$EMPTY"
+          printf 'summary_volatility_markers = empty-markers.txt\n' > "$V/.wiki-gates.conf"
+          : > "$V/empty-markers.txt"
+          "$G" --wiki "$V" >/dev/null 2>&1 \
+            && { echo "  FAIL an EMPTY marker list passed every page"; fail=1; } \
+            || echo "  ok   an empty marker list fails closed"
+          rm -f "$V/.wiki-gates.conf" "$V/empty-markers.txt"
+
+          # offline + model-free, asserted the way the other offline gates are
+          printf '%s\n' '#!/bin/sh' 'echo "network denied" >&2; exit 1' > "$RUNNER_TEMP/curl"
+          chmod +x "$RUNNER_TEMP/curl"
+          PATH="$RUNNER_TEMP:$PATH" "$G" --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   runs with network tools disabled" \
+            || { echo "  FAIL gate needs the network"; fail=1; }
+          grep -qE '\b(claude|curl|wget)\b' "$GITHUB_WORKSPACE/bin/lint-summary-volatility.sh" \
+            && { echo "  FAIL gate references a model or network verb"; fail=1; } \
+            || echo "  ok   gate invokes no model and no network verb"
+
+          exit "$fail"
+
       - name: The capture hook cannot deadlock a later session's integrate
         run: |
           # REGRESSION: rag-capture.sh runs at SessionEnd and appends to

@@ -1,0 +1,40 @@
+# summary-volatility-markers.txt — default marker set for lint-summary-volatility.sh
+#
+# One extended-regex per line, matched case-insensitively against a project page's
+# `summary:`. Blank lines and #-comments ignored. A vault overrides this wholesale by
+# pointing `summary_volatility_markers` at its own file in .wiki-gates.conf — tuning the
+# list must not require an engine release, because which words are volatile is a property
+# of how a given vault writes, not of the engine.
+#
+# These are a PROXY for the SCHEMA rule ("summary: is identity, not state"), not a
+# decision procedure. Recall is unbounded: "awaiting the lender's callback" decays exactly
+# as hard and matches nothing here. A clean run means "no listed marker", never "this
+# summary is stable".
+
+# --- version and date strings: the classic decaying fact ---
+v?[0-9]+\.[0-9]+\.[0-9]+
+20[0-9]{2}-[0-9]{2}-[0-9]{2}
+
+# --- progress fractions (3/7 done, 2 of 5) ---
+[0-9]+ */ *[0-9]+
+[0-9]+ +of +[0-9]+
+
+# --- deployment / completion state verbs ---
+not +deployed
+deployed
+still +on
+shipped
+rolled +out
+in +progress
+remains
+pending
+blocked
+
+# `complete` only as a state claim, not inside "completely" / "completeness"
+complete\b
+
+# `live` is DELIBERATELY not a bare marker. Measured against a real vault, every
+# status-gated hit it produced was adjectival — "a live artifact IS the work queue",
+# "first live candidate toured" — meaning *current instance*, not *deployed*. It only
+# counts as volatile in an explicit state phrase.
+(is|went|now|goes|going) +live
