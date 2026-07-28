@@ -125,7 +125,7 @@ $WIKI_PATH/engine/bin/engine-proposal.sh scan --vault "$WIKI_PATH" --file <draft
 
 Any finding → revise the block (return to §2) and re-scan. Do not hand off until it prints `scan clean`. The scan is a **backstop, not a substitute** for the §2 scrub: it only catches identifiers it can derive from the vault, so a leak of some *other* private detail still rides on your genericization. Read the block once more yourself.
 
-## 5. Hand off — submit to the queue (`stash` remains for the legacy channel)
+## 5. Hand off — submit to the queue
 
 **Proposals are files in the engine's `proposals/` queue, submitted by pull request.** The copy-paste channel lost blocks and could not tell you: a stashed block lived in a git-ignored, per-machine outbox that nothing observed, so *sent* and *never arrived* were indistinguishable from the consumer's chair.
 
@@ -146,7 +146,7 @@ $WIKI_PATH/engine/bin/engine-proposal.sh push   --vault "$WIKI_PATH" --slug <slu
 ## 5a. Hand off the legacy way — create NO consumer node
 
 - Present the clean block for the user to paste into the engine-dev vault's session.
-- **Stash it — only if you are using the legacy copy-paste path.** `engine-proposal.sh stash --vault "$WIKI_PATH" --slug <slug>` writes the block to `.engine-proposal/<slug>.outbox` (git-ignored scratch). It was *required* when copy-paste was the only channel, because a forward-only handoff that was not kept could not be re-sent — which happened. **`submit` supersedes it:** the block becomes a committed file, so the durability the stash existed to provide is now the transport's own property. Keep `stash` for a vault that cannot reach the engine repo at all; otherwise prefer `submit`.
+- **`stash` is retired.** It existed because a forward-only copy-paste handoff that was not kept could not be re-sent — which happened. `submit` makes the block a committed file, so that durability is now the transport's own property. The verb still runs and warns; nothing should use it. A stashed block is **invisible to the engine**, which is the whole defect the queue removed: nothing observes a git-ignored, per-machine outbox, so *sent* and *never arrived* look identical from the consumer's chair.
 - Do **not** run checkpoint and do **not** create a project/memory/lesson node here. The engine-dev vault owns the resulting project, notes, lessons, and skill.
 
 ## 5b. Ask what happened to it — `status`, not a grep
@@ -156,15 +156,15 @@ $WIKI_PATH/engine/bin/engine-proposal.sh status --vault "$WIKI_PATH"
 $WIKI_PATH/engine/bin/engine-proposal.sh status --vault "$WIKI_PATH" --slug <slug>
 ```
 
-Reports every stashed block as **shipped** (with the release, and whether your pin already has it), **merged** (landed, not yet released), **rejected** (with the reason), **partially accepted**, **open** (received, in progress — do not re-send), or **unknown** (the engine has no record of it — re-sending is the right move). It reads the engine repo's `PROPOSALS.md` plus the `Proposal:` commit trailers; no network.
+Reports every proposal as **shipped** (with the release, and whether your pin already has it), **merged** (landed, not yet released), **rejected** (with the reason), **partially accepted**, **open** (received, in progress — do not re-send), or **unknown** (the engine has no record of it — re-sending is the right move). It reads the engine repo's `PROPOSALS.md` plus the `Proposal:` commit trailers; no network.
 
 Three things to know before trusting an answer:
 
 - **`unknown` and `open` are different answers.** The engine writes a row when a proposal *arrives*, so `unknown` means it never got there — a paste that was never intaken, or a session that dropped it. That is the case where re-sending is correct; `open` is the case where re-sending is noise.
-- **The outbox is git-ignored and per-machine**, so a bare `status` only sees blocks stashed on *this* machine. An empty result is not evidence that nothing is outstanding, and it says so. Use `--slug` to ask about a proposal drafted elsewhere.
+- **A bare `status` sees only what this machine knows** — legacy outbox blocks, and the prepared/submitted markers `submit`/`push` leave behind. An empty result is not evidence that nothing is outstanding, and it says so. Use `--slug` to ask about any proposal, from any machine.
 - **It resolves against `origin/main` when the submodule has it**, not the pinned tag — otherwise anything that shipped after your pin reads as still open. It prints the horizon it used. If it says it resolved against `HEAD` only, run `update` first.
 
-**Never hand-maintain a `status:` line on a stashed block.** Derived status cannot go stale; a hand-kept one drifts, which is the failure that produced this subcommand.
+**Never hand-maintain a `status:` line on a proposal.** Derived status cannot go stale; a hand-kept one drifts, which is the failure that produced this subcommand.
 
 ## 5c. Nothing to grep — do NOT reach for the git log
 
