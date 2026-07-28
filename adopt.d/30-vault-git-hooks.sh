@@ -58,17 +58,56 @@ else
   fi
 fi
 
-# Point git at the hooks dir. Only set it when unset or already ours — never steal a
-# hooksPath a vault deliberately aimed somewhere else.
+# Point git at the hooks dir, by ABSOLUTE path. A relative `.githooks` — which is what
+# this step used to write — is resolved by git against the working tree of the checkout
+# making the commit, so inside a linked worktree it means `<worktree>/.githooks`. That
+# directory does not exist: `.githooks/` is created by this step and never committed
+# (adoption does not commit into a consumer's vault), so it lives only in the canonical
+# checkout. Git reports a missing hooks directory as "no hooks" and commits silently.
+#
+# The effect was the gate present exactly where commits are FORBIDDEN and absent exactly
+# where they are REQUIRED: the canonical checkout refused the commit via the concurrency
+# guard, while every worktree commit — the only kind the workflow permits — ran no guard
+# and no lint. Third instance of "the gate is inert and nothing says so" (v1.28.1 resolved
+# engine/ from the worktree root; v1.32.0 never installed the hook at all).
+#
+# Absolute is right rather than merely expedient: `core.hooksPath` is per-checkout LOCAL
+# config that adoption re-derives on every machine anyway, so machine-specificity costs
+# nothing here. Tracking `.githooks/` instead would fix new vaults only — the engine
+# cannot commit into a consumer vault, so it could never repair an existing one.
+ABS="$WIKI/.githooks"
 cur="$(git -C "$WIKI" config --local core.hooksPath 2>/dev/null || true)"
-if [ -z "$cur" ]; then
+set_hookspath() {
   if [ -n "$CHECK" ]; then
-    echo "adopt: would set core.hooksPath=.githooks in $WIKI"
+    echo "adopt: would set core.hooksPath=$ABS in $WIKI ($1)"
   else
-    git -C "$WIKI" config core.hooksPath .githooks \
-      && echo "adopt: set core.hooksPath=.githooks"
+    git -C "$WIKI" config core.hooksPath "$ABS" && echo "adopt: set core.hooksPath=$ABS ($1)"
   fi
-elif [ "$cur" != ".githooks" ]; then
-  echo "adopt: NOTE — core.hooksPath is '$cur', not .githooks; leaving it alone"
+}
+if [ -z "$cur" ]; then
+  set_hookspath "absolute, so it resolves from linked worktrees too"
+elif [ "$cur" = ".githooks" ]; then
+  # The exact value THIS step used to write, so it is provably ours to correct. This is
+  # the upgrade path: a vault adopted before this fix is repaired with no manual step.
+  set_hookspath "was relative '.githooks', which is inert in every worktree"
+elif [ "$cur" != "$ABS" ] && [ "${cur##*/}" = ".githooks" ] && [ ! -d "$cur" ]; then
+  # Ours, but stale — the vault was moved or cloned to a different path, which silently
+  # disarms an absolute hooksPath the same way. Only rewritten when it resolves nowhere.
+  set_hookspath "stale absolute path '$cur' no longer exists"
+elif [ "$cur" != "$ABS" ]; then
+  echo "adopt: NOTE — core.hooksPath is '$cur', not this vault's .githooks; leaving it alone"
+fi
+
+# VERIFY EXECUTION, NOT INSTALLATION. Installing a hook and pointing config at it are two
+# claims; whether a commit is actually gated is a third, and it is the only one that
+# matters. All three previous instances passed the first two while failing the third, and
+# every reporting surface said "adopted".
+if [ -z "$CHECK" ]; then
+  if ! out="$(gate_wiring_status "$WIKI")"; then
+    echo "adopt: WARNING — a checkout of this vault would commit UNGATED:"
+    printf '%s\n' "$out"
+    echo "adopt:   A worktree created before this fix keeps its own stale config; re-run"
+    echo "adopt:   adoption, or remove and re-take the worktree."
+  fi
 fi
 exit 0

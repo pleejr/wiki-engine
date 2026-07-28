@@ -63,3 +63,43 @@ require_engine_asset() {
   echo "adopt:   supposed to ship this. Not skipping: a skipped step reports as adopted." >&2
   exit 3
 }
+
+# gate_wiring_status <vault>
+#
+# Answer the question every reporting surface got wrong three times running: not "did we
+# install a hook?" but "will a hook actually RUN on the commits this workflow tells you
+# to make?" Those differ, and the gap is silent — git treats a `core.hooksPath` that
+# resolves to a missing directory as "no hooks configured" and commits without a word.
+#
+# Resolves the way GIT does, per checkout: a RELATIVE core.hooksPath is taken against the
+# working tree the commit is made in, so it lands in `<worktree>/.githooks` — which does
+# not exist, because an untracked `.githooks/` lives only in the canonical checkout. That
+# is the v1.34.0 defect, and it is why this asks each worktree separately rather than
+# asking the canonical checkout once.
+#
+# Prints one line per checkout; returns 1 if ANY checkout would commit ungated.
+gate_wiring_status() {
+  local vault="${1:?gate_wiring_status: vault}" bad=0 wt hp resolved
+  git -C "$vault" rev-parse --git-dir >/dev/null 2>&1 || { echo "  not a git repo — no gate to wire"; return 0; }
+
+  # Full precedence, not --local: a vault using extensions.worktreeConfig can override
+  # this per worktree, and what matters is the value git will actually obey there.
+  while IFS= read -r wt; do
+    [ -n "$wt" ] || continue
+    hp="$(git -C "$wt" config core.hooksPath 2>/dev/null || true)"
+    if [ -z "$hp" ]; then
+      resolved="$(git -C "$wt" rev-parse --git-path hooks 2>/dev/null)"
+      case "$resolved" in /*) ;; *) resolved="$wt/$resolved" ;; esac
+    else
+      case "$hp" in /*) resolved="$hp" ;; *) resolved="$wt/$hp" ;; esac
+    fi
+    if [ -x "$resolved/pre-commit" ]; then
+      echo "  gate ARMED   $wt -> $resolved/pre-commit"
+    else
+      echo "  gate INERT   $wt -> $resolved/pre-commit (missing or not executable)"
+      bad=1
+    fi
+  done < <(git -C "$vault" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print substr($0,10)}')
+
+  return "$bad"
+}

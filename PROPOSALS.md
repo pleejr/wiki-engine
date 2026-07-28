@@ -36,3 +36,4 @@ An implementing commit carries `Proposal: <slug>` **in its final paragraph**, al
 | `rag-model-cache-durable-path` | shipped | v1.26.0 |
 | `adopt-step-asset-resolution` | shipped | v1.32.0 |
 | `proposal-slug-roundtrip` | shipped | derived |
+| `gate-inert-relative-hookspath` | shipped | derived |
