@@ -1,7 +1,8 @@
 ---
 slug: submit-branches-from-head-not-main
-outcome: open
+outcome: accepted
 received: 2026-07-28
+reason: "accepted as reported; submit now branches from origin/main (falling back to main) and prints the base it used, so a wrong base is visible rather than inferred from the discard hint"
 ---
 
 HANDOFF — engine defect report

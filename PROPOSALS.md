@@ -43,12 +43,15 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `engine-proposal-file-queue` | partially-accepted | transport diagnosis kept whole; submit split from push because the repo is public and the scan cannot see semantic leakage, the submitted-vs-local criterion re-specified on local evidence since status is offline, the banner return path replaced by pin-bump delivery, and PROPOSALS.md generated rather than retired to avoid rewriting the trailer gate |
 | `gate-inert-relative-hookspath` | shipped | derived |
 | `gc-containment-squash-merge` | shipped | derived |
+| `project-page-staleness-queue` | open | received 2026-07-28 |
 | `project-summary-volatility-gate` | partially-accepted | shape kept; warn-by-default inverted to an enforced content-hashed ratchet, slug allowlist replaced by summary hashing, and the `live` marker dropped as unreproduced |
 | `proposal-slug-roundtrip` | shipped | derived |
+| `push-verb-omits-git-push` | shipped | derived |
 | `rag-capture-dirties-canonical-blocks-integrate` | shipped | derived |
 | `rag-model-cache-durable-path` | shipped | v1.26.0 |
 | `session-banner-pending-proposal-nudge` | alias | engine-proposal-file-queue |
 | `skills-hardcode-boundary-value` | shipped | derived |
+| `submit-branches-from-head-not-main` | shipped | derived |
 | `upkeep-sync-clones` | shipped | derived |
 | `upkeep-tolerate-describe-refs` | shipped | derived |
 <!-- proposals:end -->

@@ -1,7 +1,8 @@
 ---
 slug: push-verb-omits-git-push
-outcome: open
+outcome: accepted
 received: 2026-07-28
+reason: "accepted as reported; do_push now pushes the branch before opening the pull request, and a failure after the push says so rather than implying nothing was published"
 ---
 
 HANDOFF — engine defect report
