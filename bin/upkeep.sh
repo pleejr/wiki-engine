@@ -45,6 +45,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKI="${WIKI_PATH:-}"
 REPOS_ROOT="${UPKEEP_REPOS_ROOT:-}"
+# How long an untouched project page may go before it is queued. Vault knobs, because
+# "how often should an active project move?" is a property of the consumer's cadence, not
+# of the engine. Conservative defaults: a fortnight for active work, a quarter before
+# asking whether a paused project should still be paused.
+STALE_ACTIVE_DAYS="${UPKEEP_STALE_ACTIVE_DAYS:-14}"
+STALE_PAUSED_DAYS="${UPKEEP_STALE_PAUSED_DAYS:-90}"
 
 # re-entry sentinel — insurance for any future spawning driver; harmless here.
 : "${UPKEEP_DEPTH:=0}"
@@ -115,6 +121,99 @@ page_ref() {
   ' "$1"
 }
 
+
+# --- project-page staleness -----------------------------------------------------
+# Project pages had NO decay signal. A repo page carries ref/sha provenance and a
+# verified: stamp, and both feed this queue; a project page nobody has touched in weeks
+# rendered identically to one confirmed accurate yesterday, and every gate passed on both.
+#
+# THE AGE IS DERIVED, NOT READ FROM A HAND-MAINTAINED FIELD. The proposal keyed on
+# frontmatter `updated:`; measured against a real vault, two of three active project pages
+# disagreed with git by three days — drifting toward LOOKING STALE, so a queue built on it
+# fires on pages that were in fact touched. Same rule that keeps `shipped` derived:
+# hand-maintained status drifts and a derived answer cannot.
+#
+# We take the NEWEST of three signals, and report which one answered:
+#   reviewed:        an explicit "I read this and it is still right" (see below)
+#   git last-commit  derived, cannot be forgotten
+#   updated:         last resort, for a page git does not track yet
+#
+# WHY `reviewed:` EXISTS AT ALL. Without it an item can never be cleared: confirming a page
+# is still accurate changes nothing, so the item re-fires on every scan and the queue is
+# permanently non-empty — the always-red failure this engine keeps re-learning. Bumping
+# `reviewed:` IS the drain, and it is a real commit recording a real act.
+#
+# HONEST LIMIT, stated because a fresh clock is not evidence of review: a bulk reflow or an
+# index regeneration bumps the git date with nobody having read the page. `reviewed:` is the
+# only signal that cannot be satisfied mechanically.
+page_field() {  # page_field <file> <key>
+  awk -v key="$2" '
+    NR==1 && $0=="---" { f=1; next }
+    f && $0=="---" { exit }
+    f { if (index($0, key ":") == 1) { sub(/^[^:]*:[ \t]*/,""); gsub(/^"|"$/,""); print; exit } }
+  ' "$1" 2>/dev/null
+}
+
+days_since() {  # days_since <YYYY-MM-DD> -> integer days, or empty if unparseable
+  [ -n "$1" ] || return 0
+  local t
+  t="$(date -j -f %Y-%m-%d "$1" +%s 2>/dev/null)" || t="$(date -d "$1" +%s 2>/dev/null)" || return 0
+  [ -n "$t" ] || return 0
+  echo $(( ( $(date +%s) - t ) / 86400 ))
+}
+
+project_rows() {
+  [ -d "$WIKI/projects" ] || return 0
+  local f slug status rev upd gitd best src age limit
+  for f in "$WIKI/projects"/*.md; do
+    [ -f "$f" ] || continue
+    slug="$(basename "$f" .md)"
+    status="$(page_field "$f" status)"
+
+    # Status decides WHICH QUESTION is being asked, and for one status there is no question.
+    case "$status" in
+      done)    continue ;;                                   # closed: expected never to move
+      active)  limit="$STALE_ACTIVE_DAYS" ;;
+      paused|planned)
+               # Not "is this current?" — a paused project is SUPPOSED to sit untouched.
+               # The longer horizon asks "should this still be paused?", a different and
+               # less urgent question, so it gets its own threshold.
+               limit="$STALE_PAUSED_DAYS" ;;
+      *)       # An unknown or missing status is not silently skipped: it is exactly the
+               # page most likely to be wrong, and skipping it would recreate the invisible
+               # failure this whole queue exists to remove.
+               printf 'stale:%s	stale	projects/%s.md	unassessable — status %s is not one of planned|active|paused|done	pending
+' \
+                 "$slug" "$slug" "${status:-<missing>}"
+               continue ;;
+    esac
+
+    rev="$(page_field "$f" reviewed)"
+    upd="$(page_field "$f" updated)"
+    gitd="$(git -C "$WIKI" log -1 --format=%ad --date=short -- "projects/$slug.md" 2>/dev/null || true)"
+
+    best=""; src=""
+    for cand in "reviewed:$rev" "git:$gitd" "updated:$upd"; do
+      d="${cand#*:}"; [ -n "$d" ] || continue
+      if [ -z "$best" ] || [ "$d" \> "$best" ]; then best="$d"; src="${cand%%:*}"; fi
+    done
+
+    if [ -z "$best" ]; then
+      printf 'stale:%s	stale	projects/%s.md	unassessable — no reviewed:, no git history, no updated:	pending
+' "$slug" "$slug"
+      continue
+    fi
+    age="$(days_since "$best")"
+    [ -n "$age" ] || { printf 'stale:%s	stale	projects/%s.md	unassessable — could not parse date %s	pending
+' "$slug" "$slug" "$best"; continue; }
+    if [ "$age" -gt "$limit" ]; then
+      printf 'stale:%s	stale	projects/%s.md	%s project untouched %sd (limit %sd, by %s %s) — reconcile or bump reviewed:	pending
+' \
+        "$slug" "$slug" "$status" "$age" "$limit" "$src" "$best"
+    fi
+  done
+}
+
 build_rows() {
   # refresh: stale repo pages. TAG-AWARE — a repo page records ref (primary signal)
   # + sha. If it's TAGGED (ref != sha), compare the recorded ref against the clone's
@@ -177,6 +276,8 @@ build_rows() {
       printf 'verify:%s\tverify\trepos/%s.md\tneeds a verification pass\tpending\n' "$slug" "$slug"
     done < <("$SCRIPT_DIR/verify-status.sh" --wiki "$WIKI" --todo 2>/dev/null || true)
   fi
+  # stale: project pages whose age exceeds the status-appropriate threshold
+  project_rows
 }
 
 case "$CMD" in

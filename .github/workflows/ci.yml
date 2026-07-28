@@ -1221,6 +1221,74 @@ jobs:
 
           exit "$fail"
 
+      - name: Project pages get a derived, drainable staleness signal
+        run: |
+          # The age is DERIVED, not read from frontmatter. The proposal keyed on `updated:`;
+          # measured against a real vault, two of three active project pages disagreed with
+          # git by three days, drifting toward LOOKING STALE — so a queue built on it fires
+          # on pages that were in fact touched. Both directions are asserted below, because
+          # a signal that only ever fires is as useless as one that never does.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-stale"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          fail=0
+          V="$RUNNER_TEMP/stalevault"; rm -rf "$V"; mkdir -p "$V/projects"
+          mk() { printf -- '---\ntype: project\nstatus: %s\nupdated: %s\n%ssummary: "x"\nboundary: personal\n---\n\n# %s\n' "$2" "$3" "$4" "$1" > "$V/projects/$1.md"; }
+          mk old-active      active 2026-01-01 ""
+          mk fresh-active    active "$(date +%Y-%m-%d)" ""
+          mk old-done        done   2026-01-01 ""
+          mk ancient-paused  paused 2020-01-01 ""
+          mk recent-paused   paused "$(date +%Y-%m-%d)" ""
+          mk bad-status      activo 2026-01-01 ""
+          mk reviewed-recent active 2026-01-01 "reviewed: $(date +%Y-%m-%d)\n"
+
+          q() { ./bin/upkeep.sh scan --wiki "$V" >/dev/null 2>&1; awk -F'\t' 'NR>1{print $3}' "$V/.upkeep/queue.tsv"; }
+          has() { q | grep -q "projects/$1.md"; }
+
+          has old-active      && echo "  ok   a long-untouched active project is queued" || { echo "  FAIL stale active not queued"; fail=1; }
+          has fresh-active    && { echo "  FAIL a fresh page was queued"; fail=1; } || echo "  ok   a fresh active project is not queued"
+          has old-done        && { echo "  FAIL a done project was queued"; fail=1; } || echo "  ok   done is exempt outright"
+          has ancient-paused  && echo "  ok   paused fires on its own longer horizon" || { echo "  FAIL paused never fires"; fail=1; }
+          has recent-paused   && { echo "  FAIL a recently-touched paused page fired"; fail=1; } || echo "  ok   paused is not judged on the active threshold"
+          has bad-status      && echo "  ok   an unknown status is reported unassessable, not skipped" || { echo "  FAIL unknown status silently skipped"; fail=1; }
+          # THE CLOCK RESET: an old `updated:` with a recent `reviewed:` must NOT fire, or an
+          # item can never be cleared without fabricating a content edit and the queue is
+          # permanently non-empty.
+          has reviewed-recent && { echo "  FAIL reviewed: did not reset the clock"; fail=1; } || echo "  ok   reviewed: clears an item without a content edit"
+
+          # drains through the EXISTING verbs; no new subcommands. Asserted HERE, while
+          # old-active is genuinely queued — after the commit below every page is age 0 and
+          # nothing is stale, so the same call there would fail for the wrong reason.
+          ./bin/upkeep.sh done stale:old-active --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   items drain through the existing done verb" \
+            || { echo "  FAIL done rejected a stale item"; fail=1; }
+
+          # THE DERIVED SIGNAL: committing the pages today must silence the stale ones even
+          # though their `updated:` still says January.
+          git -C "$V" init -q .
+          git -C "$V" -c core.hooksPath=/dev/null add -A
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm "all pages committed today"
+          has old-active && { echo "  FAIL git date did not override a stale updated:"; fail=1; } \
+                         || echo "  ok   git's last-commit date overrides a stale updated:"
+
+          # thresholds are vault knobs, not constants
+          # -1, not 0: every page was committed moments ago, so age is 0 and `0 > 0` is
+          # false. A threshold of 0 failing here would say nothing about the knob.
+          UPKEEP_STALE_ACTIVE_DAYS=-1 ./bin/upkeep.sh scan --wiki "$V" >/dev/null 2>&1
+          awk -F'\t' 'NR>1{print $3}' "$V/.upkeep/queue.tsv" | grep -q 'projects/fresh-active.md' \
+            && echo "  ok   the active threshold is configurable" \
+            || { echo "  FAIL threshold knob had no effect"; fail=1; }
+
+          # offline, asserted the way the other offline behaviour is
+          FAKE="$RUNNER_TEMP/nonet"; mkdir -p "$FAKE"
+          for c in curl wget; do printf '#!/bin/sh\necho denied >&2; exit 1\n' > "$FAKE/$c"; chmod +x "$FAKE/$c"; done
+          PATH="$FAKE:$PATH" ./bin/upkeep.sh scan --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   scan runs with network tools disabled" \
+            || { echo "  FAIL scan needs the network"; fail=1; }
+
+          exit "$fail"
+
       - name: A project summary must name identity, not state
         run: |
           # The gate is a PROXY for a SCHEMA rule, enforced through a content-hashed

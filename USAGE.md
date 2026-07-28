@@ -135,6 +135,7 @@ Optional, `key = value`, **parsed and never sourced** — a config file that can
 ## Config knobs (environment)
 
 - `WIKI_PATH` — the vault root the skills/tools resolve from.
+- `UPKEEP_STALE_ACTIVE_DAYS` / `UPKEEP_STALE_PAUSED_DAYS` — how long an untouched project page may go before `upkeep scan` queues it (defaults 14 and 90). Knobs rather than constants because "how often should an active project move?" is a property of the consumer's cadence, not of the engine. `paused` gets its own longer horizon because it asks a different question — *should this still be paused?* — not *is this current?*
 - Embedding: `RAG_LOCAL_MODEL`, `RAG_PIP_PKG`, `RAG_REQUIREMENTS`, `RAG_MODEL_CACHE` (where weights live; default `${XDG_CACHE_HOME:-~/.cache}/wiki-engine/models`, machine-global — set it to `$WIKI/.rag/models` for vault-local); or an endpoint via `RAG_EMBED_API` (`ollama`|`openai`) + `RAG_EMBED_URL` / `RAG_API_KEY`.
 - Recall: `RAG_RAW_WEIGHT` (curated-over-raw penalty, default `0.80`).
 - Capture: `RAG_CAPTURE_TRANSCRIPT_PATH`, `RAG_CAPTURE_FILES`, `RAG_CAPTURE_COMMITS`, `RAG_CAPTURE_SINCE`.

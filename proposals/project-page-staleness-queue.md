@@ -1,7 +1,8 @@
 ---
 slug: project-page-staleness-queue
-outcome: open
+outcome: partially-accepted
 received: 2026-07-28
+reason: "shape and status-gating kept; the signal is derived from git rather than the hand-maintained updated: field, which was measured drifting three days on two of three active pages, and a reviewed: marker was added — the alternative the proposal rejected — because without a clock reset the queue can never be drained to zero"
 ---
 
 HANDOFF — engine improvement proposal slug: project-page-staleness-queue boundary: generic (engine-domain; contains no consumer-private context)
