@@ -232,12 +232,25 @@ jobs:
           printf 'C work\n' > "$A/notes/c.md"; git -C "$A" add -A; git -C "$A" commit -qm "A c"
           (cd "$A" && WIKI_WT_SESSION=sess-A "$GITHUB_WORKSPACE/bin/vault-worktree.sh" integrate >/dev/null 2>&1) \
             || { echo "integrate wrongly refused over untracked files in canonical"; exit 1; }
-          # ...but a TRACKED modification in canonical must still block it
+          # ...and a TRACKED modification blocks it only when the fast-forward would
+          # actually CHANGE that path. This assertion used to be categorical — any tracked
+          # dirt refused — which is broader than the danger and was guaranteed to fire,
+          # because rag-capture.sh writes to canonical at SessionEnd. Same "always red"
+          # failure as the untracked case just above, one notch deeper.
+          # (a) NON-overlapping: must proceed, and must not disturb the edit.
           printf 'edited\n' >> "$V/notes/seed.md"
           printf 'D work\n' > "$A/notes/d.md"; git -C "$A" add -A; git -C "$A" commit -qm "A d"
+          (cd "$A" && WIKI_WT_SESSION=sess-A "$GITHUB_WORKSPACE/bin/vault-worktree.sh" integrate >/dev/null 2>&1) \
+            || { echo "integrate refused over tracked dirt on a path it does not touch"; exit 1; }
+          grep -q 'edited' "$V/notes/seed.md" \
+            || { echo "integrate clobbered an uncommitted canonical edit"; exit 1; }
+          # (b) OVERLAPPING: must still refuse — narrowing the check must not disarm it.
+          printf 'E work\n' >> "$A/notes/seed.md"; git -C "$A" add -A; git -C "$A" commit -qm "A seed"
           rc=0
           (cd "$A" && WIKI_WT_SESSION=sess-A "$GITHUB_WORKSPACE/bin/vault-worktree.sh" integrate >/dev/null 2>&1) || rc=$?
-          [ "$rc" -eq 1 ] || { echo "integrate ignored a tracked modification in canonical (rc=$rc)"; exit 1; }
+          [ "$rc" -eq 1 ] || { echo "integrate ignored an OVERLAPPING tracked modification (rc=$rc)"; exit 1; }
+          grep -q 'edited' "$V/notes/seed.md" \
+            || { echo "a refused integrate still clobbered the canonical edit"; exit 1; }
           git -C "$V" checkout -- notes/seed.md
 
       - name: ensure never silently hands back the canonical checkout
@@ -1101,7 +1114,7 @@ jobs:
           printf 'work\n' > "$W/memory/work.md"
           git -C "$W" -c core.hooksPath=/dev/null add memory/work.md
           git -C "$W" -c core.hooksPath=/dev/null commit -qm work
-          out="$( cd "$W" && WIKI_PATH="$V" WIKI_WT_SESSION=s1 "$WT" integrate 2>&1 )"
+          out="$( cd "$W" && WIKI_PATH="$V" WIKI_WT_SESSION=s1 "$WT" integrate 2>&1 )" || true
           if git -C "$V" show main:memory/work.md >/dev/null 2>&1; then
             echo "  ok   integrate lands work despite a live capture buffer"
           else
@@ -1120,7 +1133,12 @@ jobs:
           printf 'worktree edit\n' >> "$W2/memory/seed.md"       # ...that the ff also changes
           git -C "$W2" -c core.hooksPath=/dev/null add memory/seed.md
           git -C "$W2" -c core.hooksPath=/dev/null commit -qm collide
-          out="$( cd "$W2" && WIKI_PATH="$V" WIKI_WT_SESSION=s2 "$WT" integrate 2>&1 )"; rc=$?
+          # `|| rc=$?`, never a bare assignment then `$?` — this step runs under `bash -e`,
+          # which aborts on the expected non-zero before the status can be read. Verifying
+          # locally under a plain `bash` hides it: the harness is more permissive than
+          # production, so the check silently never runs.
+          rc=0
+          out="$( cd "$W2" && WIKI_PATH="$V" WIKI_WT_SESSION=s2 "$WT" integrate 2>&1 )" || rc=$?
           if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'memory/seed.md'; then
             echo "  ok   a genuine overlap is still refused, naming the file"
           else
@@ -1140,7 +1158,7 @@ jobs:
           printf 'more\n' > "$W3/memory/other.md"
           git -C "$W3" -c core.hooksPath=/dev/null add memory/other.md
           git -C "$W3" -c core.hooksPath=/dev/null commit -qm other
-          out="$( cd "$W3" && WIKI_PATH="$V" WIKI_WT_SESSION=s3 "$WT" integrate 2>&1 )"
+          out="$( cd "$W3" && WIKI_PATH="$V" WIKI_WT_SESSION=s3 "$WT" integrate 2>&1 )" || true
           if git -C "$V" show main:memory/other.md >/dev/null 2>&1; then
             echo "  ok   dirt on an unrelated tracked path does not block integrate"
           else
