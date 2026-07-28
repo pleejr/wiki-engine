@@ -33,7 +33,7 @@ Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's c
        ref: <tag>
        sha: <sha>
        ingested: <today>
-   boundary: personal
+   boundary: <the value this vault declares in its CLAUDE.md — do not copy a literal>
    ```
    Body sections: **Purpose · Stack · Structure/entry points · Interfaces · How to extend/integrate · Gotchas**.
    Add **≥2 `[[wikilinks]]`** (to related repos/concepts). Keep it a *map*, not a transcript.
@@ -41,5 +41,5 @@ Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's c
 6. Report what changed and the new `ref`/`sha`.
 
 ## Rules
-- `boundary: personal`; **no secrets** copied into the page (no `.env` values, keys, tokens).
+- `boundary:` **must match what the vault declares in its own `CLAUDE.md`** — read it, never assume; the engine is boundary-agnostic and names no value. **No secrets** copied into the page (no `.env` values, keys, tokens).
 - In-session by default; never from a hook that fires on an event its own child can re-trigger. A bounded, deliberately-initiated run — a scheduled staleness refresh, say — is legitimate when it carries a re-entry sentinel, is concurrency-bounded, and terminates. See the **Hard safety rule** in the engine's `CLAUDE.md`.

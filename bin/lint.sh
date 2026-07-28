@@ -144,6 +144,38 @@ for d in "${NODE_DIRS[@]}"; do
 done
 [ "$bp" -eq 0 ] && echo "ok: every content-node page declares a boundary"
 
+# 6b. boundary MATCHES the vault's own declaration ------------------------------
+# Gate 6 asks whether the field exists; it never asked whether it is right. The gap was
+# silent end to end: a page stamped with some other vault's boundary passes gate 6, is
+# committed and indexed, and is then dropped from semantic recall by rag-build's
+# cross-boundary skip — correct behaviour there, but the page simply stops answering
+# and nothing says why. A write-time error turns that into an obvious failure, and it
+# covers mis-stamps from ANY source, not just the skill templates that used to name a
+# literal value.
+section "boundary matches the vault"
+vb="$("$SCRIPT_DIR/vault-boundary.sh" --wiki "$WIKI" 2>/dev/null || true)"
+if [ -z "$vb" ]; then
+  # Consistent with the foreign-boundary gate and with rag-build's filter: with nothing
+  # to compare against, say so rather than pass silently — an unarmed gate and a clean
+  # one are otherwise indistinguishable.
+  echo "not armed: no parseable 'boundary:' declaration in $WIKI/CLAUDE.md"
+else
+  bm=0
+  for d in "${NODE_DIRS[@]}"; do
+    for f in "$WIKI/$d"/*.md; do
+      [ -f "$f" ] || continue
+      pb="$(awk 'NR==1&&$0!~/^---/{exit} NR>1&&/^---/{exit} /^boundary:/{sub(/^boundary:[[:space:]]*/,""); gsub(/[[:space:]"'"'"'`]/,""); print; exit}' "$f")"
+      [ -n "$pb" ] || continue          # absent is gate 6's error, not this one's
+      if [ "$pb" != "$vb" ]; then
+        printf '  ✗ %s — boundary: %s, but this vault declares %s\n' "${f#$WIKI/}" "$pb" "$vb"
+        printf '      A mis-stamped page is dropped from semantic recall with no message.\n'
+        bm=1; rc=1
+      fi
+    done
+  done
+  [ "$bm" -eq 0 ] && echo "ok: every content-node page matches the vault's boundary ($vb)"
+fi
+
 # 7. provenance present on every repo page --------------------------------------
 # A repos/ page is version-keyed: it must record a sources: block with ref: + sha:
 # so freshness (recorded ref/sha vs live HEAD) is checkable.

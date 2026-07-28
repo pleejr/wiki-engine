@@ -51,5 +51,5 @@ Before editing any vault file, take an isolated working copy so a second concurr
 
 ## Rules
 - **In-session, on demand. Never wire this to a session-lifecycle hook** — a SessionEnd hook running `checkpoint` re-fires SessionEnd on exit, which was the `.ai-os` fork-bomb: the trigger and the spawn were the same event. The ban is on *that structure*, not on headless `claude` — a deliberately-initiated run carrying a re-entry sentinel, concurrency-bounded, and terminating is legitimate. See the **Hard safety rule** in the engine's `CLAUDE.md`.
-- `boundary: personal`; no secrets; personal git identity.
+- `boundary:` **must match what the vault declares in its own `CLAUDE.md`** — the engine names no value and knows no identity. No secrets; commit under the vault's declared git identity. A page stamped with some other vault's boundary is dropped from semantic recall, so `lint.sh` now errors on the mismatch rather than letting it through.
 - Prefer few high-signal notes over many; this is curation, not logging.

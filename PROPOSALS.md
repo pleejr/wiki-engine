@@ -37,3 +37,4 @@ An implementing commit carries `Proposal: <slug>` **in its final paragraph**, al
 | `adopt-step-asset-resolution` | shipped | v1.32.0 |
 | `proposal-slug-roundtrip` | shipped | derived |
 | `gate-inert-relative-hookspath` | shipped | derived |
+| `skills-hardcode-boundary-value` | shipped | derived |
