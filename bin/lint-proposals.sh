@@ -145,18 +145,38 @@ else
     parsed="${rest%%"$US"*}"
     body="${rest#*"$US"}"
 
-    # How many lines LOOK like the trailer vs how many git actually parsed. A commit whose
-    # body QUOTES the convention at column 0 (a code block, a pasted example) trips this —
-    # deliberately. It is loud and fixable by indenting the quote, whereas the alternative
-    # is a real misplaced trailer reading as "no trailer", which nothing surfaces.
-    literal="$(printf '%s\n' "$body" | grep -cE '^Proposal:[[:space:]]*[^[:space:]]' || true)"
-    if [ -n "$parsed" ]; then
-      IFS=',' read -r -a vals <<<"$parsed"
-    else
-      vals=()
-    fi
-    if [ "$literal" -gt "${#vals[@]}" ]; then
-      err "${sha:0:9}: a 'Proposal:' line is not in the final paragraph, so git's trailer parser ignores it — CI would read this commit as untagged. Move it beside Co-authored-by."
+    # LITERAL lines are authoritative, not git's trailer parser. Placement used to be
+    # required — `Proposal:` had to sit in the final paragraph, or `%(trailers)` ignored it
+    # and lint hard-failed. But the documented workflow PRODUCES the rejected state: the
+    # slug goes in the PR description's last paragraph (merges here are squashed), and
+    # GitHub then appends its own `---------` + `Co-authored-by:` footer, which becomes the
+    # last block. So following the instructions guaranteed the failure, and it was only
+    # detectable AFTER the merge, when the sole remedy is rewriting published history.
+    #
+    # Placement was never what the slug is FOR. It is a correlation key; git-parseability
+    # bought nothing except compatibility with %(trailers), an implementation detail of
+    # this script and `engine-proposal.sh status` — both of which this repo owns. Reading
+    # the line wherever it appears makes GitHub's footer irrelevant, and with that the
+    # placement error has nothing left to protect: an unparsed line is no longer read as
+    # untagged. `parsed` is still collected, but only to report the divergence as a note.
+    #
+    # FENCED AND INDENTED LINES ARE SKIPPED. Under the old scheme a commit that quoted the
+    # convention at column 0 tripped the count mismatch — loud, and fixable by indenting.
+    # Reading literally would instead have silently registered the quote as a real trailer,
+    # so the quote-handling has to move from "error out" to "don't look there".
+    lits="$(printf '%s\n' "$body" | awk '
+      /^[[:space:]]*```/ { fence = !fence; next }
+      fence { next }
+      /^Proposal:[[:space:]]*[^[:space:]]/ { sub(/^Proposal:[[:space:]]*/, ""); print }
+    ')"
+    vals=()
+    while IFS= read -r line; do [ -n "$line" ] && vals+=("$line"); done <<<"$lits"
+
+    # Divergence is informational now, not a failure: it only means `git log --format=
+    # '%(trailers:key=Proposal)'` will not show what this script correctly found.
+    if [ -n "$parsed" ]; then pcount="$(printf '%s' "$parsed" | tr ',' '\n' | grep -c . || true)"; else pcount=0; fi
+    if [ "${#vals[@]}" -gt "$pcount" ]; then
+      note "${sha:0:9}: 'Proposal:' is outside the final paragraph — read literally, but git's own trailer parser will not see it"
     fi
 
     for v in "${vals[@]:-}"; do

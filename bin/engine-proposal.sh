@@ -271,8 +271,23 @@ do_status() {
           rel="${l_det[$idx]}"
         else
           local sha
-          sha="$(git -C "$engine" log "$ref" --format='%H %(trailers:key=Proposal,valueonly,separator=%x2c)' 2>/dev/null \
-                 | awk -v s="$canon" '{for(i=2;i<=NF;i++){gsub(/,/,"",$i); if($i==s){print $1; exit}}}')"
+          # Match the LITERAL `Proposal:` line anywhere in the message, not git's trailer
+          # parser. GitHub appends a `---------` + `Co-authored-by:` footer to a squash
+          # body, which displaces the slug out of the final paragraph and makes
+          # %(trailers) return nothing — so a shipped proposal read as never-shipped.
+          # Fenced/indented lines are skipped so a quoted example is not mistaken for a
+          # citation. Kept in step with bin/lint-proposals.sh, which decides the same thing.
+          sha="$(git -C "$engine" log "$ref" --format='%H%x1f%B%x1e' 2>/dev/null \
+                 | awk -v RS=$'\x1e' -v FS=$'\x1f' -v s="$canon" '
+                     {
+                       h = $1; sub(/^\n+/, "", h)
+                       n = split($2, L, "\n"); fence = 0
+                       for (i = 1; i <= n; i++) {
+                         if (L[i] ~ /^[[:space:]]*```/) { fence = !fence; continue }
+                         if (fence) continue
+                         if (L[i] ~ ("^Proposal:[[:space:]]*" s "[[:space:]]*$")) { print h; exit }
+                       }
+                     }')"
           if [[ -n "$sha" ]]; then
             rel="$(git -C "$engine" tag --contains "$sha" 2>/dev/null | grep -E '^v[0-9]' | sort -V | head -1)"
             if [[ -z "$rel" ]]; then

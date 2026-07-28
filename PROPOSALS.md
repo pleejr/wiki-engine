@@ -26,7 +26,11 @@ The slug is the only correlation key the reporter has. Renaming it to fit engine
 
 ## The trailer
 
-An implementing commit carries `Proposal: <slug>` **in its final paragraph**, alongside `Co-authored-by:`. Git's trailer parser only looks at the last block of the message, so a `Proposal:` line written anywhere else is silently invisible — `bin/lint-proposals.sh` fails on that case rather than letting it pass as "no trailer". Merges here are squashed, so the surface that actually matters is the **pull request description's** final paragraph.
+An implementing commit carries `Proposal: <slug>` on its own line. **Placement does not matter** — `bin/lint-proposals.sh` and `engine-proposal.sh status` read the literal line wherever it appears in the message.
+
+It used to have to sit in the final paragraph, so git's own trailer parser would see it. That requirement was removed because the documented workflow *produced* the state it rejected: merges here are squashed, and GitHub appends its own `---------` + `Co-authored-by:` footer after the PR body, displacing whatever the author put last. Following the instructions guaranteed the failure, and it surfaced only after the merge — when the only fix is rewriting published history.
+
+Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git log --format='%(trailers:key=Proposal)'` working), and lint says so as a note rather than an error. A `Proposal:` line inside a ``` fence or indented as a quoted example is deliberately ignored.
 
 ## Ledger
 

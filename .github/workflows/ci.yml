@@ -783,14 +783,44 @@ jobs:
             echo "  FAIL stash accepted a slug that disagrees with the block"; fail=1
           else echo "  ok   stash rejects filename/slug divergence"; fi
 
-          # Both lint failures are confirmed load-bearing by INTRODUCING them. Capture the
-          # output before grepping: under pipefail, `lint | grep -q` takes the failing
-          # lint's status, so a matching grep would still read as a miss.
-          git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: oops\n\nProposal: shipped-old\n\ntrailing prose\n')"
-          L="$(./bin/lint-proposals.sh --repo "$SRC" 2>&1 || true)"   # -e would abort on the expected failure
-          printf '%s' "$L" | grep -q "not in the final paragraph" \
-            && echo "  ok   lint catches a trailer git cannot parse" \
-            || { echo "  FAIL lint missed a mid-body Proposal: line"; fail=1; }
+          # A slug displaced out of the final paragraph must still be RECOGNIZED. This is
+          # the shape GitHub produces on every squash merge: it appends its own separator
+          # and Co-authored-by footer AFTER the PR body, so the slug the author put last
+          # is no longer last and %(trailers) returns nothing. The documented workflow
+          # therefore produced a state lint rejected, detectable only after the merge —
+          # when the sole remedy is rewriting published history. Placement is no longer
+          # required; the literal line is authoritative. (#60)
+          git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: squashed (#9)\n\nbody\n\nProposal: shipped-old\nCo-Authored-By: X <x@y>\n\n---------\n\nCo-authored-by: Y <y@z>\n')"
+          git -C "$SRC" log -1 --format='%(trailers:key=Proposal,valueonly)' | grep -q . \
+            && { echo "  FAIL fixture: git DID parse the trailer, so this proves nothing"; fail=1; } || true
+          ./bin/lint-proposals.sh --repo "$SRC" >/dev/null 2>&1 \
+            && echo "  ok   a slug displaced by GitHub's squash footer is still read" \
+            || { echo "  FAIL lint rejects the shape its own workflow produces"; ./bin/lint-proposals.sh --repo "$SRC"; fail=1; }
+          # ...and `status` must agree with lint, or a shipped proposal reads as unknown
+          SO="$(./bin/engine-proposal.sh status --vault "$V" --slug shipped-old 2>&1)"
+          printf '%s' "$SO" | grep -q "SHIPPED" \
+            && echo "  ok   status resolves a displaced slug too" \
+            || { echo "  FAIL status could not see the displaced slug:"; printf '%s\n' "$SO"; fail=1; }
+          git -C "$SRC" reset -q --hard HEAD~1
+
+          # A QUOTED example must NOT register as a citation. Under the old count-mismatch
+          # scheme this errored loudly; reading literally would instead have silently
+          # credited the quote, so quote-handling moved from "error out" to "don't look
+          # inside fences". The slug is deliberately one with NO ledger row: if the fence
+          # were read, lint would fail with "has no row in PROPOSALS.md", so a PASS here
+          # can only mean the fenced line was skipped. An already-ledgered slug could not
+          # discriminate — its real citation commit satisfies the check either way.
+          git -C "$SRC" commit -q --allow-empty -m "$(printf 'docs: explain the convention\n\nCite it like this:\n\n```\nProposal: quoted-not-real\n```\n\nThat is all.\n')"
+          ./bin/lint-proposals.sh --repo "$SRC" >/dev/null 2>&1 \
+            && echo "  ok   a fenced example is not mistaken for a citation" \
+            || { echo "  FAIL a quoted slug was credited as a real citation:"; ./bin/lint-proposals.sh --repo "$SRC"; fail=1; }
+          # and the same line UNFENCED must still be caught, or the skip is too broad
+          git -C "$SRC" reset -q --hard HEAD~1
+          git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: ghost2\n\nProposal: quoted-not-real\n')"
+          L="$(./bin/lint-proposals.sh --repo "$SRC" 2>&1 || true)"
+          printf '%s' "$L" | grep -q "has no row in PROPOSALS.md" \
+            && echo "  ok   the same slug unfenced is still caught" \
+            || { echo "  FAIL fence-skipping swallowed a real citation"; fail=1; }
           git -C "$SRC" reset -q --hard HEAD~1
 
           git -C "$SRC" commit -q --allow-empty -m "$(printf 'feat: ghost\n\nProposal: not-in-ledger\n')"
