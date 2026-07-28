@@ -4,6 +4,36 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.42.0] — 2026-07-28
+
+Minor — the SessionEnd capture hook and the concurrency guard were each correct and jointly deadlocked the vault's most-travelled path: every session ended by dirtying canonical, and the next session's `integrate` refused. Fixed at both the cause and the over-breadth. Adopt with `bin/adopt.sh` or `update.sh`; existing vaults need the one-line migration under **Migration**.
+
+### Fixed
+- **`rag-capture.sh`'s buffer no longer dirties canonical, because it is no longer tracked.** The hook runs at SessionEnd and appends to `raw/sessions/YYYY-MM.md` in the **canonical** checkout — necessarily, since by SessionEnd the session's worktree has already been `gc`'d, so there is nowhere else to write. That file was tracked, so **every session that ended left canonical dirty**, and the next session's `integrate` hit the categorical `status --porcelain -uno` check and refused — while `guard` refused the commit that would clear it. Two correct guards, jointly a deadlock.
+  - **Untracking is right on content grounds, independent of the deadlock**, which is why it was preferred over having the hook commit itself. The blocks hold this machine's **absolute transcript paths** and local repo HEADs — meaningless on another machine, and a mild boundary smell in a synced repo. `SCHEMA.md` already called the buffer disposable per-machine scratch; tracking it contradicted that.
+  - Both consumers already read it from `$WIKI_PATH` (canonical), not from a worktree — `checkpoint` §2/§3 and `wiki-context`'s review-and-promote step — so nothing needed it in git. `raw/sessions/.gitkeep` stays tracked, so the node folder still ships.
+  - Propagates to existing vaults through the add-only `adopt.d/40-vault-gitignore.sh` reconciler; no new adoption step.
+- **`integrate`'s canonical dirty-check is now path-precise instead of categorical.** It refused on *any* tracked modification anywhere in canonical, which is strictly broader than the danger: a fast-forward can only clobber an uncommitted edit to a path it actually **changes**. The check now runs after the rebase — the first point where `main..branch` is exact — and refuses only on the intersection, **naming the offending files** instead of git's generic message.
+  - **Narrower is not less safe here**: `git merge --ff-only` refuses to overwrite a locally-modified file on its own, and still runs immediately after. Git keeps the veto; this check exists to fail earlier and more legibly.
+  - **This is the half that rescues already-tracked buffers.** Gitignore does not untrack an existing file, so every vault that adopts this still has a tracked buffer until it runs the migration — and path-precision is what keeps those vaults working in the meantime.
+  - Same failure the `-uno` flag was introduced to fix for **untracked** files, one notch deeper: a check that is always red is a check that gets bypassed. The engine's own hook was what guaranteed the tracked half would be red too.
+
+### Migration
+Existing vaults carry the buffer as a tracked file. One line, from the vault root, retires it without deleting anything on disk:
+
+```sh
+git rm --cached --quiet raw/sessions/*.md && git commit -m "untrack the per-machine capture buffer"
+```
+
+Deliberately **not** automated: `adopt.d/` steps are add-only and must never remove or rewrite what a vault tracks. Skipping it is safe — path-precise `integrate` handles a tracked buffer — it just leaves canonical permanently dirty in `git status`.
+
+### Notes
+- **Found by running `checkpoint`, not by inspection** — the second consecutive release whose defect surfaced that way (see v1.41.0). The ritual is the only thing that exercises `ensure` → `integrate` → `gc` against a vault that has actually had sessions end on it.
+- **The first regression fixture was wrong in the way the engine keeps rediscovering.** It let the hook create the monthly file fresh — which is **untracked**, invisible to `-uno` — so the deadlock could not reproduce and the test passed against the bug. Split into two fixtures: a fresh vault (buffer must be untracked *and* ignored) and a legacy vault with the buffer pre-committed (the reported case). Another instance for the consumer-side `tests-inherit-the-design-blind-spot` note.
+- **One claim in the incoming report was rejected on reproduction.** It flagged that the refusal "leaves the index staged" as a secondary defect of `guard`. It is not: the caller's own `git add` staged the file, and every failed pre-commit hook leaves the index as the caller left it. `guard` mutates nothing.
+- The report also said there was **no sanctioned exit**. Overstated — `git stash` was always available and the refusal message named it. The real defect was the over-breadth, not the absence of an escape.
+- Reported through `engine-proposal` from the consumer side of this machine's own vault.
+
 ## [1.41.0] — 2026-07-27
 
 Patch-shaped — `gc` could never reap a `wt/*` branch whose worktree was already gone, because a branch was only ever evaluated as a *side effect* of retiring its worktree. Third route to the same unbounded accumulation. Adopt with `bin/adopt.sh` or `update.sh`.

@@ -1031,6 +1031,127 @@ jobs:
 
           exit "$fail"
 
+      - name: The capture hook cannot deadlock a later session's integrate
+        run: |
+          # REGRESSION: rag-capture.sh runs at SessionEnd and appends to
+          # $WIKI/raw/sessions/YYYY-MM.md in the CANONICAL checkout — necessarily, since
+          # by SessionEnd the session's worktree has already been gc'd. That file was
+          # TRACKED, so the next session's `integrate` hit the categorical
+          # `status --porcelain -uno` check and refused; and `guard` refuses the commit
+          # that would clear it. Two correct guards, jointly a deadlock with no
+          # sanctioned exit, on the most-travelled path in the vault.
+          #
+          # Same "a check that is always red is a check that gets bypassed" failure the
+          # -uno flag was introduced to fix for UNTRACKED files, one notch deeper: the
+          # engine's own hook made the TRACKED half always red too.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-capint"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          WT="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+          CAP="$GITHUB_WORKSPACE/bin/rag-capture.sh"
+          fail=0
+          MON="raw/sessions/$(date +%Y-%m).md"
+
+          # ── FIXTURE A: a vault scaffolded with the current template ────────────────
+          # The cause fix: the buffer must never become tracked in the first place.
+          A="$RUNNER_TEMP/capint-fresh"; mkdir -p "$A/memory" "$A/raw/sessions"
+          git -C "$A" init -q .
+          printf -- '---\nboundary: personal\n---\n# v\n' > "$A/CLAUDE.md"
+          printf 'seed\n' > "$A/memory/seed.md"
+          cp "$GITHUB_WORKSPACE/scaffold/gitignore.tmpl" "$A/.gitignore"
+          git -C "$A" -c core.hooksPath=/dev/null add -A
+          git -C "$A" -c core.hooksPath=/dev/null commit -qm seed
+          ( cd "$A" && WIKI_PATH="$A" "$CAP" >/dev/null 2>&1 )
+          [ -f "$A/$MON" ] || { echo "  FAIL fixture: capture wrote nothing"; fail=1; }
+          if git -C "$A" ls-files --error-unmatch "$MON" >/dev/null 2>&1; then
+            echo "  FAIL capture buffer is TRACKED — it will dirty canonical every session"; fail=1
+          else
+            echo "  ok   capture buffer is untracked in a fresh vault"
+          fi
+          # IGNORED, not merely untracked — otherwise the first `git add -A` in any
+          # consumer script sweeps it straight back into the repo and the fix undoes itself.
+          git -C "$A" check-ignore -q "$MON" \
+            && echo "  ok   capture buffer is gitignored" \
+            || { echo "  FAIL capture buffer is not ignored"; fail=1; }
+
+          # ── FIXTURE B: a LEGACY vault, buffer already committed ────────────────────
+          # This is the reported case and the one the fixture must not erase: gitignore
+          # does not untrack an already-tracked file, so every existing vault still has a
+          # TRACKED buffer after adopting the fix. If this fixture let the hook create the
+          # monthly file fresh, it would be UNTRACKED — invisible to `-uno` — and the
+          # deadlock could never reproduce, so the test would pass against the bug.
+          V="$RUNNER_TEMP/capint"; mkdir -p "$V/memory" "$V/raw/sessions"
+          git -C "$V" init -q .
+          printf -- '---\nboundary: personal\n---\n# v\n' > "$V/CLAUDE.md"
+          printf 'seed\n' > "$V/memory/seed.md"
+          cp "$GITHUB_WORKSPACE/scaffold/gitignore.tmpl" "$V/.gitignore"
+          printf -- '---\ntype: raw\nboundary: personal\n---\n\n# Session capture\n' > "$V/$MON"
+          git -C "$V" -c core.hooksPath=/dev/null add -A
+          git -C "$V" -c core.hooksPath=/dev/null add -f "$MON"     # as a pre-fix vault has it
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm seed
+          git -C "$V" ls-files --error-unmatch "$MON" >/dev/null 2>&1 \
+            || { echo "  FAIL fixture: legacy buffer is not tracked, so this proves nothing"; fail=1; }
+          ( cd "$V" && WIKI_PATH="$V" "$CAP" >/dev/null 2>&1 )
+          [ -n "$(git -C "$V" status --porcelain -uno)" ] \
+            || { echo "  FAIL fixture: capture left canonical clean, so this proves nothing"; fail=1; }
+
+          # integrate must survive it — the reported deadlock.
+          W="$(WIKI_PATH="$V" WIKI_WT_SESSION=s1 "$WT" ensure 2>/dev/null)"
+          printf 'work\n' > "$W/memory/work.md"
+          git -C "$W" -c core.hooksPath=/dev/null add memory/work.md
+          git -C "$W" -c core.hooksPath=/dev/null commit -qm work
+          out="$( cd "$W" && WIKI_PATH="$V" WIKI_WT_SESSION=s1 "$WT" integrate 2>&1 )"
+          if git -C "$V" show main:memory/work.md >/dev/null 2>&1; then
+            echo "  ok   integrate lands work despite a live capture buffer"
+          else
+            echo "  FAIL integrate deadlocked:"; printf '%s\n' "$out" | sed 's/^/    /'; fail=1
+          fi
+          # the capture buffer must survive integrate untouched — never discard scratch
+          grep -q . "$V/$MON" \
+            && echo "  ok   capture buffer preserved across integrate" \
+            || { echo "  FAIL integrate destroyed the capture buffer"; fail=1; }
+
+          # (3) the precise check must STILL refuse a REAL overlap. A fix that merely
+          # mutes the check is worse than the deadlock: it would let a fast-forward
+          # run at a tree with conflicting local edits.
+          printf 'canonical edit\n' >> "$V/memory/seed.md"       # dirty a TRACKED path...
+          W2="$(WIKI_PATH="$V" WIKI_WT_SESSION=s2 "$WT" ensure 2>/dev/null)"
+          printf 'worktree edit\n' >> "$W2/memory/seed.md"       # ...that the ff also changes
+          git -C "$W2" -c core.hooksPath=/dev/null add memory/seed.md
+          git -C "$W2" -c core.hooksPath=/dev/null commit -qm collide
+          out="$( cd "$W2" && WIKI_PATH="$V" WIKI_WT_SESSION=s2 "$WT" integrate 2>&1 )"; rc=$?
+          if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'memory/seed.md'; then
+            echo "  ok   a genuine overlap is still refused, naming the file"
+          else
+            echo "  FAIL overlapping dirt was not refused (rc=$rc):"; printf '%s\n' "$out" | sed 's/^/    /'; fail=1
+          fi
+          grep -q 'canonical edit' "$V/memory/seed.md" \
+            && echo "  ok   the canonical edit was not clobbered" \
+            || { echo "  FAIL clobbered an uncommitted canonical edit"; fail=1; }
+
+          # (4) non-overlapping dirt must NOT block — the over-breadth half.
+          git -C "$V" checkout -- memory/seed.md 2>/dev/null || true
+          printf 'unrelated\n' > "$V/memory/unrelated.md"
+          git -C "$V" -c core.hooksPath=/dev/null add memory/unrelated.md
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm unrelated
+          printf 'dirty\n' >> "$V/memory/unrelated.md"           # tracked + dirty, untouched by the ff
+          W3="$(WIKI_PATH="$V" WIKI_WT_SESSION=s3 "$WT" ensure 2>/dev/null)"
+          printf 'more\n' > "$W3/memory/other.md"
+          git -C "$W3" -c core.hooksPath=/dev/null add memory/other.md
+          git -C "$W3" -c core.hooksPath=/dev/null commit -qm other
+          out="$( cd "$W3" && WIKI_PATH="$V" WIKI_WT_SESSION=s3 "$WT" integrate 2>&1 )"
+          if git -C "$V" show main:memory/other.md >/dev/null 2>&1; then
+            echo "  ok   dirt on an unrelated tracked path does not block integrate"
+          else
+            echo "  FAIL over-broad refusal persists:"; printf '%s\n' "$out" | sed 's/^/    /'; fail=1
+          fi
+          grep -q 'dirty' "$V/memory/unrelated.md" \
+            && echo "  ok   the unrelated edit survived" \
+            || { echo "  FAIL lost an unrelated uncommitted edit"; fail=1; }
+
+          exit "$fail"
+
       - name: A git-describe ref is tolerated, migrated, and then rejected
         run: |
           # The convention is `ref: <latest release tag>` (SCHEMA) and nothing enforced
