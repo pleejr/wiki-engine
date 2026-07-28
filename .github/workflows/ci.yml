@@ -1108,3 +1108,112 @@ jobs:
             || { echo "  FAIL real drift lost"; fail=1; }
 
           exit "$fail"
+
+      - name: sync-clones fast-forwards only, and scan stays offline
+        run: |
+          # upkeep/verify measure freshness against the LOCAL clone's HEAD, offline by
+          # design. A lagging clone therefore produces a FALSE NEGATIVE: the page
+          # refreshes and `verified:` is stamped against a sha behind the real release,
+          # so the vault reports a clean fully-verified state that is quietly wrong —
+          # invisible in exactly the output meant to surface staleness. sync-clones is
+          # the opt-in network step; the detector must stay offline.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-sync"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/sync"; mkdir -p "$T"; fail=0
+          mkr() {
+            git init -q --bare "$T/up/$1"
+            git clone -q "$T/up/$1" "$T/repos/$1" 2>/dev/null
+            ( cd "$T/repos/$1" && echo v1 > f && git add -A && git commit -qm c1 && git push -q -u origin main )
+          }
+          for r in cleanff dirty detached noupstream diverged uptodate; do mkr "$r"; done
+          for r in cleanff dirty detached diverged; do
+            git clone -q "$T/up/$r" "$T/tmp-$r"
+            ( cd "$T/tmp-$r" && echo v2 > f && git commit -qam c2 && git push -q )
+          done
+          ( cd "$T/repos/dirty" && echo local-edit > f )
+          ( cd "$T/repos/detached" && git checkout -q --detach HEAD )
+          ( cd "$T/repos/noupstream" && git checkout -qb orphan )
+          ( cd "$T/repos/diverged" && echo mine > g && git add -A && git commit -qm local-only )
+          V="$T/v"; mkdir -p "$V/repos"
+          for r in cleanff dirty detached noupstream diverged uptodate; do
+            printf -- '---\ntitle: %s\ntype: repo\nboundary: personal\nsources:\n  repo: %s\n  ref: v1\n  sha: x\n---\n\n# %s\n\n[[a]] [[b]]\n' "$r" "$r" "$r" > "$V/repos/$r.md"
+          done
+          run() { UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" sync-clones "$@"; }
+
+          # --check must not fetch or modify anything.
+          b_clean="$(git -C "$T/repos/cleanff" rev-parse HEAD)"
+          run --check | grep -q 'would' || { echo "  FAIL --check reported nothing"; fail=1; }
+          [ "$(git -C "$T/repos/cleanff" rev-parse HEAD)" = "$b_clean" ] \
+            && echo "  ok   --check modifies nothing" \
+            || { echo "  FAIL --check moved a clone"; fail=1; }
+
+          out="$(run)"
+          printf '%s\n' "$out"
+          # Each refusal must be SKIPPED AND NAMED — silence would recreate the original
+          # bug one level up, with the operator again believing everything is current.
+          for pat in "skip   dirty.*uncommitted" "skip   detached.*detached HEAD" \
+                     "skip   noupstream.*tracks no upstream" "skip   diverged.*diverged from"; do
+            printf '%s' "$out" | grep -qE "$pat" \
+              && echo "  ok   reported: $pat" \
+              || { echo "  FAIL not reported: $pat"; fail=1; }
+          done
+          printf '%s' "$out" | grep -q 'synced cleanff' \
+            && echo "  ok   a clean tracking clone fast-forwards" \
+            || { echo "  FAIL cleanff did not sync"; fail=1; }
+
+          # ...and none of the refused clones was touched IN ANY WAY.
+          [ "$(cat "$T/repos/dirty/f")" = "local-edit" ] \
+            && echo "  ok   the dirty clone's local edit survived" \
+            || { echo "  FAIL a dirty clone was modified"; fail=1; }
+          git -C "$T/repos/detached" symbolic-ref -q HEAD >/dev/null \
+            && { echo "  FAIL a detached clone was re-attached"; fail=1; } \
+            || echo "  ok   the detached clone is still detached"
+          git -C "$T/repos/diverged" log --oneline -1 | grep -q local-only \
+            && echo "  ok   the diverged clone kept its local commit" \
+            || { echo "  FAIL a diverged clone lost work"; fail=1; }
+
+          # Idempotent.
+          run | grep -q '0 synced' \
+            && echo "  ok   a second run is a no-op" \
+            || { echo "  FAIL not idempotent"; fail=1; }
+
+          # THE VAULT'S OWN CHECKOUT IS NEVER PULLED. A vault that documents itself has a
+          # page whose clone IS the tree a session is working in.
+          S="$T/selfv"; mkdir -p "$S/repos"; git init -q "$S"
+          printf -- '---\ntitle: self\ntype: repo\nboundary: personal\nsources:\n  repo: selfv\n  ref: v1\n  sha: x\n---\n\n# self\n\n[[a]] [[b]]\n' > "$S/repos/selfv.md"
+          UPKEEP_REPOS_ROOT="$T" ./bin/upkeep.sh --wiki "$S" sync-clones 2>&1 \
+            | grep -q "own checkout" \
+            && echo "  ok   the vault's own checkout is skipped by name" \
+            || { echo "  FAIL the vault's own checkout was not skipped"; fail=1; }
+
+          # ASSERTED AT THE COMMAND LEVEL, not merely by outcome: the verb must never
+          # issue a force, a stash, a rebase, or a plain pull. `pull` is excluded because
+          # it consults pull.rebase — what it does would depend on operator config rather
+          # than on this code — and `merge` appears only as `merge --ff-only`, which
+          # cannot create a commit and runs only after is-ancestor has proven the case.
+          body="$(awk '/^  sync-clones\)/{f=1} f{print} f&&/^    ;;/{exit}' bin/upkeep.sh \
+                  | grep -vE '^\s*#')"
+          for bad in 'git .*--force' 'git .*stash' 'git .*rebase' 'git .*[^-]pull'; do
+            printf '%s' "$body" | grep -qE "$bad" \
+              && { echo "  FAIL sync-clones issues a forbidden command: $bad"; fail=1; } \
+              || echo "  ok   never issues: $bad"
+          done
+          printf '%s' "$body" | grep -q 'merge --ff-only' \
+            || { echo "  FAIL the ff-only merge went missing"; fail=1; }
+
+          # scan and verify-status MUST stay offline. Proven with a git that dies on any
+          # network verb — if either reached the network, this goes red.
+          FAKE="$RUNNER_TEMP/nonet"; mkdir -p "$FAKE"
+          REALGIT="$(command -v git)"
+          printf '#!/bin/sh\nfor a in "$@"; do case "$a" in fetch|ls-remote|pull|push) echo "NETWORK BLOCKED" >&2; exit 99;; esac; done\nexec %s "$@"\n' "$REALGIT" > "$FAKE/git"
+          chmod +x "$FAKE/git"
+          PATH="$FAKE:$PATH" UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" scan >/dev/null 2>&1 \
+            && echo "  ok   scan still works with the network blocked" \
+            || { echo "  FAIL scan reached the network"; fail=1; }
+          PATH="$FAKE:$PATH" ./bin/verify-status.sh --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   verify-status still works with the network blocked" \
+            || { echo "  FAIL verify-status reached the network"; fail=1; }
+
+          exit "$fail"
