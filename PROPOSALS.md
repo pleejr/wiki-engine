@@ -42,3 +42,4 @@ An implementing commit carries `Proposal: <slug>` **in its final paragraph**, al
 | `gc-containment-squash-merge` | shipped | derived |
 | `upkeep-tolerate-describe-refs` | shipped | derived |
 | `upkeep-sync-clones` | shipped | derived |
+| `rag-capture-dirties-canonical-blocks-integrate` | shipped | derived |

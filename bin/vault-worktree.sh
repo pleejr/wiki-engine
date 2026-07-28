@@ -416,16 +416,22 @@ case "$CMD" in
     if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
       log "vault-worktree: $wt has uncommitted changes — commit them before integrating"; exit 1
     fi
-    # TRACKED modifications only (-uno). A fast-forward can clobber someone's uncommitted
-    # edits to tracked files; it cannot touch untracked ones. Counting untracked files as
-    # "dirty" made integrate refuse essentially always, because adoption leaves empty node
-    # folders (queries/, raw/assets/, ...) and the RAG index untracked in canonical by
-    # design — a check that is always red is a check that gets bypassed.
-    if [ -n "$(git -C "$WIKI" status --porcelain -uno 2>/dev/null)" ]; then
-      log "vault-worktree: canonical $WIKI has uncommitted changes to TRACKED files —"
-      log "  refusing to move its HEAD under whoever owns those edits. Commit or stash them first."
-      exit 1
-    fi
+    # The canonical dirty-check is PATH-PRECISE and lives further down, immediately
+    # before the fast-forward — the only point where the set of paths the ff will touch
+    # is known exactly (it is decided by the REBASED branch, which does not exist yet).
+    #
+    # It used to be here, and categorical: any tracked modification anywhere in canonical
+    # refused the integrate. That is strictly broader than the danger, because a
+    # fast-forward can only clobber an uncommitted edit to a path it actually changes.
+    # And the engine itself guaranteed the check would be red: rag-capture.sh appends to
+    # raw/sessions/ in the CANONICAL checkout at SessionEnd (by then the session's
+    # worktree is gc'd, so there is nowhere else to write), so every session left dirt
+    # behind and the next session's integrate refused — while `guard` refused the commit
+    # that would clear it. Two correct guards, jointly a deadlock.
+    #
+    # Same failure the -uno flag was added to fix for UNTRACKED files, one notch deeper:
+    # a check that is always red is a check that gets bypassed. The buffer is now
+    # gitignored (cause), and this check is precise (over-breadth).
     mkdir -p "$WT_ROOT" 2>/dev/null || true
     waited=0; wait_max="${WIKI_LOCK_WAIT_SEC:-120}"
     until mkdir "$LOCK" 2>/dev/null; do
@@ -449,6 +455,27 @@ case "$CMD" in
       git -C "$wt" rebase --abort 2>/dev/null || true
       log "vault-worktree: $branch does not rebase cleanly onto $main — resolve in $wt, then re-run integrate"
       exit 3
+    fi
+    # PATH-PRECISE canonical dirty-check. Now that the rebase has run, the paths the
+    # fast-forward will change are known exactly: main..branch. Refuse only if one of
+    # them is also modified in canonical — that is the whole of what a ff can clobber.
+    #
+    # `merge --ff-only` below is the real backstop; git refuses to overwrite a locally
+    # modified file on its own. This check exists to fail with an ACTIONABLE message
+    # naming the files, rather than git's generic one, and to fail before HEAD moves.
+    # Being narrower than git is therefore not a safety loss — git still has the veto.
+    dirty="$(git -C "$WIKI" diff --name-only HEAD 2>/dev/null)"
+    if [ -n "$dirty" ]; then
+      changed="$(git -C "$WIKI" diff --name-only "$main..$branch" 2>/dev/null)"
+      # intersection, exact whole-line matches only
+      overlap="$(printf '%s\n' "$dirty" | grep -Fxf <(printf '%s\n' "$changed") 2>/dev/null)"
+      if [ -n "$overlap" ]; then
+        log "vault-worktree: canonical $WIKI has uncommitted edits to path(s) this integrate would change:"
+        printf '%s\n' "$overlap" | sed 's/^/    /' >&2
+        log "  refusing to move its HEAD under whoever owns those edits."
+        log "  Commit them from a worktree, or 'git -C $WIKI stash' them, then re-run integrate."
+        exit 1
+      fi
     fi
     # Fast-forward only: after the rebase this always applies, and it guarantees we never
     # author a merge commit in a tree someone else may be sitting in.
