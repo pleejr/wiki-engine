@@ -47,19 +47,26 @@ set -uo pipefail
 die() { printf 'engine-proposal: %s\n' "$*" >&2; exit 1; }
 
 CMD="${1:-}"; shift || true
-VAULT=""; FILE=""; SLUG=""
+VAULT=""; FILE=""; SLUG=""; REPO_ARG=""; QUEUE_ALL=0
 while (( $# )); do
   case "$1" in
     --vault) VAULT="${2:-}"; shift 2 ;;
+    --repo)  REPO_ARG="${2:-}"; shift 2 ;;
+    --all)   QUEUE_ALL=1; shift ;;
     --file)  FILE="${2:-}"; shift 2 ;;
     --slug)  SLUG="${2:-}"; shift 2 ;;
     -*) die "unknown flag: $1" ;;
     *)  die "unexpected argument: $1" ;;
   esac
 done
-[[ -n "$VAULT" ]] || die "--vault is required"
-[[ -d "$VAULT" ]] || die "vault not found: $VAULT"
-VAULT="$(cd "$VAULT" && pwd)"
+# `queue` is the ENGINE-DEV verb and runs in the engine repo, not a consumer vault, so it
+# is the one subcommand that must not demand --vault. Requiring it would have made the
+# work-list unusable from the only place it is meant to be used.
+if [[ "${CMD:-}" != "queue" ]]; then
+  [[ -n "$VAULT" ]] || die "--vault is required"
+  [[ -d "$VAULT" ]] || die "vault not found: $VAULT"
+  VAULT="$(cd "$VAULT" && pwd)"
+fi
 
 read_input() {
   if [[ -n "$FILE" ]]; then
@@ -251,8 +258,27 @@ do_status() {
       canon="${l_det[$idx]}"
     fi
     if ! idx="$(ledger_find "$canon")"; then
-      printf '    unknown — no row in the engine ledger at %s.\n' "$horizon"
-      printf '    The engine has no record of receiving this. Re-sending is the right move.\n'
+      # NOT in the engine's ledger. Three different situations used to collapse into one
+      # "unknown", which told the reporter to re-send even when a submission was already
+      # open. They are distinguishable from LOCAL evidence alone — no network, which
+      # matters because `status` is offline by design and resolves against origin/main
+      # only when something already fetched it.
+      local pmark="$VAULT/.engine-proposal/$canon.prepared"
+      local smark="$VAULT/.engine-proposal/$canon.submitted"
+      if [[ -f "$smark" ]]; then
+        printf '    SUBMITTED, not yet merged — branch %s was pushed from this machine.\n' "$(cat "$smark")"
+        printf '    Do NOT re-send; the pull request is the record. It becomes "open" here once merged.\n'
+      elif [[ -f "$pmark" ]]; then
+        printf '    WRITTEN LOCALLY, never submitted — prepared on branch %s, still unpushed.\n' "$(cat "$pmark")"
+        printf '    Nothing has reached the engine and nothing is public yet. Run `push` to submit.\n'
+      else
+        printf '    unknown — no row in the engine ledger at %s, and nothing prepared here.\n' "$horizon"
+        printf '    The engine has no record of receiving this. Re-sending is the right move.\n'
+      fi
+      # The markers are per-machine: a proposal submitted from ANOTHER machine has no
+      # marker here and reads as unknown. Say so rather than let the silence imply
+      # "nothing outstanding" — the same trap the empty-outbox message already warns about.
+      [[ -f "$smark" || -f "$pmark" ]] || printf '    (local markers are per-machine; a submission from another machine leaves none here)\n'
       [[ "$ref" == "HEAD" ]] && printf '    (resolved against the pin only — no origin/main fetched; run update.sh first)\n'
       continue
     fi
@@ -319,9 +345,176 @@ do_status() {
   return 0
 }
 
+
+# --- submit / push -------------------------------------------------------------
+# The proposal channel becomes files in the engine's `proposals/` queue, submitted by PR.
+# SPLIT DELIBERATELY INTO TWO VERBS, and this is the safety-critical decision in the whole
+# design: `submit` prepares locally and stops; `push` performs the irreversible act.
+#
+# WHY NOT ONE VERB. The engine repository is PUBLIC, so a committed proposal and its pull
+# request are permanently public — a leak is a git object that force-push cannot reliably
+# retract once forks, clones and cached views exist. The boundary scan is fail-closed and
+# runs first, but it only matches identifiers it can DERIVE from the vault (slug, git
+# identity, home paths). It cannot see SEMANTIC leakage: a private workflow described in
+# generic-sounding prose passes every pattern and still discloses. Under the old
+# copy-paste channel a human necessarily read the text at the moment of publication — the
+# only review of *meaning* anywhere in the chain. Collapsing prepare and push into one
+# unattended verb would delete that review while claiming to improve safety.
+#
+# There is NO --force on the scan. Whatever it would mean, the failure it enables is
+# unrecoverable; an override worth having would require the scan to have run and PASSED on
+# a prior revision, not to be skipped.
+ENGINE_REPO="${ENGINE_REPO:-}"
+
+engine_repo_path() {
+  [[ -n "$ENGINE_REPO" ]] && { printf '%s' "$ENGINE_REPO"; return; }
+  # the vault's pinned submodule is the engine checkout every consumer already has
+  printf '%s' "$VAULT/engine"
+}
+
+submit_marker_dir() { printf '%s' "$VAULT/.engine-proposal"; }
+
+do_submit() {
+  local block; block="$(read_input)"
+  [[ -n "$block" ]] || die "empty input — nothing to submit"
+  [[ -n "${SLUG:-}" ]] || die "--slug is required: it is the correlation key and the filename"
+
+  # FAIL-CLOSED, FIRST. Nothing is branched, committed or written on this path if the
+  # scan finds anything.
+  if ! printf '%s\n' "$block" | do_scan; then
+    die "boundary scan FAILED — nothing prepared. Fix the block and re-run; there is no bypass."
+  fi
+
+  local eng; eng="$(engine_repo_path)"
+  [[ -d "$eng/.git" ]] || die "no engine checkout at $eng (set ENGINE_REPO to a clone you can branch in)"
+
+  local br="proposal/$SLUG"
+  git -C "$eng" rev-parse --verify "$br" >/dev/null 2>&1 \
+    && die "branch $br already exists in $eng — a proposal is already prepared; push it or delete the branch"
+
+  local base; base="$(git -C "$eng" symbolic-ref --short HEAD 2>/dev/null || echo main)"
+  git -C "$eng" checkout -q -b "$br" || die "could not create $br"
+  mkdir -p "$eng/proposals"
+  local f="$eng/proposals/$SLUG.md"
+  {
+    printf -- '---\nslug: %s\noutcome: open\nreceived: %s\n---\n\n' "$SLUG" "$(date +%Y-%m-%d)"
+    printf '%s\n' "$block"
+  } > "$f"
+  git -C "$eng" add "proposals/$SLUG.md"
+  git -C "$eng" -c core.hooksPath=/dev/null commit -q -m "proposal: $SLUG" \
+    || { git -C "$eng" checkout -q "$base"; die "commit failed"; }
+
+  mkdir -p "$(submit_marker_dir)"
+  printf '%s\n' "$br" > "$(submit_marker_dir)/$SLUG.prepared"
+
+  cat <<EOF
+
+engine-proposal: PREPARED on branch $br in $eng
+  scan: clean (fail-closed; it ran before anything was written)
+
+  ┌─ THIS TEXT BECOMES PERMANENTLY PUBLIC WHEN YOU PUSH ────────────────────────
+$(sed 's/^/  │ /' "$f")
+  └─────────────────────────────────────────────────────────────────────────────
+
+  The scan matches identifiers it can derive from this vault. It CANNOT judge whether
+  the prose itself discloses something private. Read the block above as the reviewer,
+  because after the push there is no retraction that works.
+
+  To publish:  engine-proposal.sh push --vault "$VAULT" --slug $SLUG
+  To discard:  git -C "$eng" checkout $base && git -C "$eng" branch -D $br
+EOF
+}
+
+do_push() {
+  [[ -n "${SLUG:-}" ]] || die "--slug is required"
+  local eng; eng="$(engine_repo_path)"
+  local marker="$(submit_marker_dir)/$SLUG.prepared"
+  [[ -f "$marker" ]] || die "nothing prepared for '$SLUG' — run submit first (it scans; push does not)"
+  local br; br="$(cat "$marker")"
+  git -C "$eng" rev-parse --verify "$br" >/dev/null 2>&1 || die "branch $br is gone — re-run submit"
+
+  command -v gh >/dev/null 2>&1 || die "gh CLI not found — needed to open the pull request"
+
+  # No write access is assumed: gh forks on demand. The fork is PUBLIC too, which the
+  # consumer is told rather than left to discover.
+  echo "engine-proposal: pushing $br and opening a pull request (forking if you lack write access)."
+  echo "  Note: if a fork is created it is public, like the upstream repository."
+  if ! gh pr create --repo "$(git -C "$eng" remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/.]+)(\.git)?$#\1#')" \
+        --head "$br" --title "proposal: $SLUG" --body-file "$eng/proposals/$SLUG.md" 2>&1; then
+    die "pull request failed — the branch is still local at $br, nothing was published"
+  fi
+  printf '%s\n' "$br" > "$(submit_marker_dir)/$SLUG.submitted"
+  rm -f "$marker"
+  echo "engine-proposal: submitted. status will now report it as submitted-pending until merged."
+}
+
+# --- queue (ENGINE-DEV side) ---------------------------------------------------
+# The consumer verbs all need --vault. This one does not: it runs in the engine repo and
+# answers "what is waiting for me?" — the work-list half of the queue design, without
+# which the directory is only a storage format and draining it means `ls` plus grep.
+do_queue() {
+  local repo="${REPO_ARG:-}"
+  if [[ -z "$repo" ]]; then
+    repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  fi
+  local q="$repo/proposals"
+  [[ -d "$q" ]] || die "no proposals/ queue at $q (pass --repo for a different engine checkout)"
+
+  local fm_get; fm_get() {
+    awk -v key="$2" '
+      NR==1 && $0=="---" { f=1; next }
+      f && $0=="---" { exit }
+      f { if (index($0, key ":") == 1) { sub(/^[^:]*:[ \t]*/,""); gsub(/^"|"$/,""); print; exit } }
+    ' "$1" 2>/dev/null
+  }
+
+  local n_open=0 n_other=0 out_open="" out_other=""
+  local f slug outcome received reason
+  for f in "$q"/*.md; do
+    [[ -e "$f" ]] || continue
+    slug="$(basename "$f" .md)"
+    outcome="$(fm_get "$f" outcome)"
+    received="$(fm_get "$f" received)"
+    reason="$(fm_get "$f" reason)"
+    if [[ "$outcome" == "open" ]]; then
+      out_open+="$(printf '  %-52s received %s\n' "$slug" "${received:-?}")"$'\n'
+      n_open=$((n_open+1))
+    else
+      out_other+="$(printf '  %-52s %-20s %s\n' "$slug" "${outcome:-<none>}" "${reason:0:44}")"$'\n'
+      n_other=$((n_other+1))
+    fi
+  done
+
+  printf 'engine-proposal: queue at %s\n\n' "${q#$PWD/}"
+  if [[ "$n_open" -gt 0 ]]; then
+    printf 'OPEN — awaiting intake (%d):\n%s\n' "$n_open" "$out_open"
+  else
+    printf 'OPEN — awaiting intake: none. The queue is drained.\n\n'
+  fi
+  if [[ "${QUEUE_ALL:-0}" == "1" && "$n_other" -gt 0 ]]; then
+    printf 'RESOLVED (%d):\n%s\n' "$n_other" "$out_other"
+  elif [[ "$n_other" -gt 0 ]]; then
+    printf '(%d resolved; --all to list them)\n\n' "$n_other"
+  fi
+  # The drain instruction lives with the list, so it cannot drift away from it.
+  if [[ "$n_open" -gt 0 ]]; then
+    cat <<'EOF'
+To process one (see the skill's intake section):
+  1. Reproduce/verify its premises before choosing a shape.
+  2. Record the decision by editing proposals/<slug>.md frontmatter —
+     outcome: accepted | partially-accepted | rejected | alias  (+ reason: for a decline)
+  3. Regenerate the ledger:  bin/gen-proposals-ledger.sh
+     NEVER hand-edit PROPOSALS.md; it is derived, and lint-proposals.sh will catch it.
+EOF
+  fi
+}
+
 case "$CMD" in
   scan)   do_scan ;;
   stash)  do_stash ;;
+  submit) do_submit ;;
+  push)   do_push ;;
+  queue)  do_queue ;;
   status) do_status ;;
-  *) die "usage: engine-proposal.sh {scan|stash|status} --vault DIR [...]  (got '${CMD:-}')" ;;
+  *) die "usage: engine-proposal.sh {scan|stash|submit|push|status} --vault DIR | queue [--repo DIR] [--all] [...]  (got '${CMD:-}')" ;;
 esac

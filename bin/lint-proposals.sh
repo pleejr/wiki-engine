@@ -23,6 +23,7 @@
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -191,7 +192,18 @@ else
       fi
     done
   done <<<"$stream"
-  note "$seen_trailers trailer(s) seen in history"
+  # The ledger is GENERATED from proposals/. A stale table is the same class of failure as
+# skills/projects catalog drift: the file people read stops matching the source of truth,
+# and nothing says so. Checked here rather than only in CI so a pre-commit run catches it.
+if [ -d "$REPO/proposals" ] && [ -x "$SCRIPT_DIR/gen-proposals-ledger.sh" ]; then
+  if ! "$SCRIPT_DIR/gen-proposals-ledger.sh" --repo "$REPO" --check >/dev/null 2>&1; then
+    err "PROPOSALS.md is stale relative to proposals/ — run bin/gen-proposals-ledger.sh"
+  else
+    note "PROPOSALS.md is in sync with the proposals/ queue"
+  fi
+fi
+
+note "$seen_trailers trailer(s) seen in history"
 
   # `shipped | derived` asserts the release is READ FROM GIT — so a trailer has to exist,
   # or `status` resolves it to nothing and reports a shipped proposal as merged-not-released.

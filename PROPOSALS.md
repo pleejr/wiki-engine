@@ -34,17 +34,21 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 
 ## Ledger
 
+<!-- proposals:start -->
 | slug | outcome | detail |
 |---|---|---|
-| `crossover-export-split-default` | shipped | v1.24.0 |
-| `rag-model-cache-durable-path` | shipped | v1.26.0 |
-| `adopt-step-asset-resolution` | shipped | v1.32.0 |
-| `proposal-slug-roundtrip` | shipped | derived |
-| `gate-inert-relative-hookspath` | shipped | derived |
-| `skills-hardcode-boundary-value` | shipped | derived |
 | `adopt-reconcile-gitignore` | shipped | derived |
+| `adopt-step-asset-resolution` | shipped | v1.32.0 |
+| `crossover-export-split-default` | shipped | v1.24.0 |
+| `engine-proposal-file-queue` | open | received 2026-07-28 |
+| `gate-inert-relative-hookspath` | shipped | derived |
 | `gc-containment-squash-merge` | shipped | derived |
-| `upkeep-tolerate-describe-refs` | shipped | derived |
-| `upkeep-sync-clones` | shipped | derived |
-| `rag-capture-dirties-canonical-blocks-integrate` | shipped | derived |
 | `project-summary-volatility-gate` | partially-accepted | shape kept; warn-by-default inverted to an enforced content-hashed ratchet, slug allowlist replaced by summary hashing, and the `live` marker dropped as unreproduced |
+| `proposal-slug-roundtrip` | shipped | derived |
+| `rag-capture-dirties-canonical-blocks-integrate` | shipped | derived |
+| `rag-model-cache-durable-path` | shipped | v1.26.0 |
+| `session-banner-pending-proposal-nudge` | alias | engine-proposal-file-queue |
+| `skills-hardcode-boundary-value` | shipped | derived |
+| `upkeep-sync-clones` | shipped | derived |
+| `upkeep-tolerate-describe-refs` | shipped | derived |
+<!-- proposals:end -->
