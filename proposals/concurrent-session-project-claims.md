@@ -1,8 +1,8 @@
 ---
 slug: concurrent-session-project-claims
-outcome: open
+outcome: partially-accepted
 received: 2026-07-29
----
+reason: "the presence half is ACCEPTED and shipped as `vault-worktree.sh claim` — per-project, acquired by the context-loading skill, naming the holder and its activity age, stale-not-deleted — but recorded on the EXISTING lease rather than in a new store with a PreToolUse heartbeat: liveness, staleness and the provably-finished evidence are already decided in one place there, and a second presence mechanism can disagree with the first about who is live, which is worse than no answer. The mutation-deny tier is REJECTED for now, on three grounds: the hook surface is machine-global, so a deny gate fires in sessions that have nothing to do with the vault; the proposal's own open question 2 has no sound answer, because state-changing is not a property of a tool (the same Bash tool is also the read-only surface) and a command-shape deny-list is guessable and leaks, as the proposal says itself; and its recommended answer to open question 3 — allow-with-notice when the store is unreadable — means the hard edge disappears exactly when the mechanism breaks, which makes it a notice claiming to be a gate. Ship visibility first; a hard edge should be designed from evidence that visibility was insufficient. Cross-machine claims declined as the reporter suggested — the record is per-machine and says so"
 
 HANDOFF — engine improvement proposal
 slug: concurrent-session-project-claims
