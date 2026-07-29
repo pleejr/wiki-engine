@@ -57,4 +57,5 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `upkeep-sync-clones` | shipped | derived |
 | `upkeep-tolerate-describe-refs` | shipped | derived |
 | `upkeep-unresolvable-clone-skips-freshness-silently` | shipped | derived |
+| `worktree-reattach-returns-stale-base` | open | received 2026-07-28 |
 <!-- proposals:end -->
