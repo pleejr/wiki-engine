@@ -102,21 +102,20 @@ seg_model() { [ -n "$model" ] && printf '%s' "$model"; return 0; }
 # visible gauge the decision is made by surprise, mid-task, which is exactly when it is most
 # expensive. So the thresholds name the ACTION, not just the number.
 #
-# The healthy band is BOLD GREEN, not dim. Dim was close to unreadable on many themes, so
-# the gauge only became legible once it had already escalated to amber: "everything is fine"
-# and "this indicator is not working" looked alike, and the absent case (no field,
-# non-numeric input, a degraded render) looks like nothing too. An indicator meant to be
-# watched passively has to be readable in its calm state or it stops being consulted. The
-# counter-argument — that bolding the least actionable state makes it the loudest thing on
-# the row — is real but does not win here: escalation on this row is still carried by hue
-# and by the action text the calm band deliberately lacks, so the calm state being legible
-# costs the escalated states nothing. BOLD must be blanked in the NO_COLOR branch alongside
-# the others, or raw escapes leak into the row.
+# EVERY band is BOLD; escalation is carried entirely by hue and by the action text the calm
+# band deliberately lacks. The gauge started out DIM below 70%, which was close to unreadable
+# on many themes, so it only became legible once it had already escalated to amber:
+# "everything is fine" and "this indicator is not working" looked alike, and the absent case
+# (no field, non-numeric input, a degraded render) looks like nothing too. An indicator meant
+# to be watched passively has to be readable in its calm state or it stops being consulted.
+# Bolding the calm band alone then made it the only unbolded pair on the row, so the whole
+# gauge is bold and the contrast between bands is purely chromatic. BOLD must be blanked in
+# the NO_COLOR branch alongside the others, or raw escapes leak into the row.
 seg_ctx() {
   [ -n "$ctx" ] && [ "$ctx" -eq "$ctx" ] 2>/dev/null || return 0
-  if   [ "$ctx" -ge 85 ]; then printf '%sctx %s%% — checkpoint now%s'  "$RED"   "$ctx" "$RESET"
-  elif [ "$ctx" -ge 70 ]; then printf '%sctx %s%% — checkpoint soon%s' "$AMBER" "$ctx" "$RESET"
-  else                         printf '%sctx %s%%%s'            "$BOLD$GREEN" "$ctx" "$RESET"
+  if   [ "$ctx" -ge 85 ]; then printf '%sctx %s%% — checkpoint now%s'    "$BOLD$RED" "$ctx" "$RESET"
+  elif [ "$ctx" -ge 70 ]; then printf '%sctx %s%% — checkpoint soon%s' "$BOLD$AMBER" "$ctx" "$RESET"
+  else                         printf '%sctx %s%%%s'                   "$BOLD$GREEN" "$ctx" "$RESET"
   fi
 }
 
