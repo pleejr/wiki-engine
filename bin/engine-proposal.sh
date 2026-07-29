@@ -282,10 +282,10 @@ do_status() {
       local pmark="$VAULT/.engine-proposal/$canon.prepared"
       local smark="$VAULT/.engine-proposal/$canon.submitted"
       if [[ -f "$smark" ]]; then
-        printf '    SUBMITTED, not yet merged — branch %s was pushed from this machine.\n' "$(cat "$smark")"
+        printf '    SUBMITTED, not yet merged — branch %s was pushed from this machine.\n' "$(marker_branch "$smark")"
         printf '    Do NOT re-send; the pull request is the record. It becomes "open" here once merged.\n'
       elif [[ -f "$pmark" ]]; then
-        printf '    WRITTEN LOCALLY, never submitted — prepared on branch %s, still unpushed.\n' "$(cat "$pmark")"
+        printf '    WRITTEN LOCALLY, never submitted — prepared on branch %s, still unpushed.\n' "$(marker_branch "$pmark")"
         printf '    Nothing has reached the engine and nothing is public yet. Run `push` to submit.\n'
       else
         printf '    unknown — no row in the engine ledger at %s, and nothing prepared here.\n' "$horizon"
@@ -388,7 +388,22 @@ engine_repo_path() {
   printf '%s' "$VAULT/engine"
 }
 
+# The property `submit` actually needs is "a git work tree I can branch in" — NOT "`.git` is
+# a directory". In a submodule `.git` is a FILE holding a `gitdir:` pointer, so the directory
+# test was false for exactly the default path the resolver above chooses: the guard rejected
+# the one checkout every consumer has. Reported as fail-closed, but its printed remedy sent
+# consumers to a separate clone they do not have, and the natural next move — editing the
+# pinned submodule in place — is the time bomb the skill exists to warn against.
+engine_is_checkout() { git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
+
 submit_marker_dir() { printf '%s' "$VAULT/.engine-proposal"; }
+
+# line 1 = branch, line 2 = the engine checkout it lives in. `push` used to re-derive the
+# checkout from the environment, so a submission prepared with ENGINE_REPO set failed at push
+# time if the variable was not still exported — and the `To publish:` line submit printed
+# omitted it. Recording the path removes the dependency instead of documenting it.
+marker_branch() { head -1 "$1"; }
+marker_engine() { sed -n '2p' "$1"; }
 
 do_submit() {
   local block; block="$(read_input)"
@@ -402,7 +417,7 @@ do_submit() {
   fi
 
   local eng; eng="$(engine_repo_path)"
-  [[ -d "$eng/.git" ]] || die "no engine checkout at $eng (set ENGINE_REPO to a clone you can branch in)"
+  engine_is_checkout "$eng" || die "no engine checkout at $eng (set ENGINE_REPO to a clone you can branch in)"
 
   local br="proposal/$SLUG"
   git -C "$eng" rev-parse --verify "$br" >/dev/null 2>&1 \
@@ -420,7 +435,17 @@ do_submit() {
   git -C "$eng" rev-parse --verify -q main >/dev/null 2>&1 || base="$(git -C "$eng" symbolic-ref --short HEAD 2>/dev/null || echo main)"
   local start="$base"
   git -C "$eng" rev-parse --verify -q "origin/$base" >/dev/null 2>&1 && start="origin/$base"
-  git -C "$eng" checkout -q -b "$br" "$start" || die "could not create $br from $start"
+
+  # Where the checkout sat before we touched it — a branch name in a clone, a detached sha
+  # in a submodule. It is restored below, because in the submodule case the checkout IS the
+  # vault's PINNED engine: leaving it parked on a branch cut from origin/main would silently
+  # swap the version every skill, hook and lint in that vault runs at, and the vault would
+  # read as having an unexpected submodule pointer. The branch survives as a ref either way;
+  # nothing about push needs it checked out.
+  local orig; orig="$(git -C "$eng" symbolic-ref -q --short HEAD 2>/dev/null || git -C "$eng" rev-parse HEAD 2>/dev/null || true)"
+
+  git -C "$eng" checkout -q -b "$br" "$start" \
+    || die "could not create $br from $start in $eng — if that checkout has uncommitted changes, commit or discard them first; nothing was written"
   mkdir -p "$eng/proposals"
   local f="$eng/proposals/$SLUG.md"
   {
@@ -428,20 +453,58 @@ do_submit() {
     printf '%s\n' "$block"
   } > "$f"
   git -C "$eng" add "proposals/$SLUG.md"
+
+  # PROPOSALS.md is DERIVED from proposals/, so adding a queue file without regenerating it
+  # leaves the committed ledger stale — and the drift gate then fails the reporter's own pull
+  # request, for a step nothing had told them to run. Intake was doing this by hand on every
+  # arriving proposal. The generator is deterministic and adds only the new `open` row.
+  local gen="$eng/bin/gen-proposals-ledger.sh"
+  if [[ -x "$gen" ]]; then
+    if "$gen" --repo "$eng" >/dev/null 2>&1; then
+      git -C "$eng" add PROPOSALS.md 2>/dev/null || true
+    else
+      echo "engine-proposal: WARNING — could not regenerate PROPOSALS.md; the drift gate will fail this pull request until intake regenerates it." >&2
+    fi
+  else
+    echo "engine-proposal: WARNING — no gen-proposals-ledger.sh in $eng; the committed ledger will be stale for this proposal." >&2
+  fi
+
   git -C "$eng" -c core.hooksPath=/dev/null commit -q -m "proposal: $SLUG" \
     || { git -C "$eng" checkout -q "$base"; die "commit failed"; }
 
+  # Capture the block BEFORE restoring the checkout: the preview below is the only review of
+  # MEANING anywhere in the chain, and reading it from the working tree after the restore
+  # printed an empty box — a safety surface that fails silently is worse than none.
+  local shown; shown="$(git -C "$eng" show "$br:proposals/$SLUG.md")"
+
+  local restored=1
+  if [[ -n "$orig" ]]; then
+    if git -C "$eng" rev-parse --verify -q "refs/heads/$orig" >/dev/null 2>&1; then
+      git -C "$eng" checkout -q "$orig" 2>/dev/null && restored=0   # a branch restores as a branch
+    else
+      git -C "$eng" checkout -q --detach "$orig" 2>/dev/null && restored=0
+    fi
+  fi
+
   mkdir -p "$(submit_marker_dir)"
-  printf '%s\n' "$br" > "$(submit_marker_dir)/$SLUG.prepared"
+  printf '%s\n%s\n' "$br" "$eng" > "$(submit_marker_dir)/$SLUG.prepared"
+
+  local where
+  if [[ $restored -eq 0 ]]; then
+    where="  $eng is back on $orig — the branch is a ref there; push does not need it checked out."
+  else
+    where="  $eng is left on $br (its previous HEAD could not be restored)."
+  fi
 
   cat <<EOF
 
 engine-proposal: PREPARED on branch $br in $eng
   based on: $start   (one proposal per branch; not cut from whatever was checked out)
   scan: clean (fail-closed; it ran before anything was written)
+$where
 
   ┌─ THIS TEXT BECOMES PERMANENTLY PUBLIC WHEN YOU PUSH ────────────────────────
-$(sed 's/^/  │ /' "$f")
+$(printf '%s\n' "$shown" | sed 's/^/  │ /')
   └─────────────────────────────────────────────────────────────────────────────
 
   The scan matches identifiers it can derive from this vault. It CANNOT judge whether
@@ -449,16 +512,23 @@ $(sed 's/^/  │ /' "$f")
   because after the push there is no retraction that works.
 
   To publish:  engine-proposal.sh push --vault "$VAULT" --slug $SLUG
-  To discard:  git -C "$eng" checkout $base && git -C "$eng" branch -D $br
+  To discard:  git -C "$eng" branch -D $br
 EOF
 }
 
 do_push() {
   [[ -n "${SLUG:-}" ]] || die "--slug is required"
-  local eng; eng="$(engine_repo_path)"
   local marker="$(submit_marker_dir)/$SLUG.prepared"
   [[ -f "$marker" ]] || die "nothing prepared for '$SLUG' — run submit first (it scans; push does not)"
-  local br; br="$(cat "$marker")"
+  local br; br="$(marker_branch "$marker")"
+  # The checkout the branch actually lives in, as recorded by submit. An explicit
+  # ENGINE_REPO still wins, but push no longer depends on the environment being
+  # re-created: a submission prepared with ENGINE_REPO set used to die here if the
+  # variable was not still exported.
+  local eng
+  if [[ -n "$ENGINE_REPO" ]]; then eng="$ENGINE_REPO"; else eng="$(marker_engine "$marker")"; fi
+  [[ -n "$eng" ]] || eng="$(engine_repo_path)"
+  engine_is_checkout "$eng" || die "no engine checkout at $eng — the prepared branch lives there; set ENGINE_REPO if it moved"
   git -C "$eng" rev-parse --verify "$br" >/dev/null 2>&1 || die "branch $br is gone — re-run submit"
 
   command -v gh >/dev/null 2>&1 || die "gh CLI not found — needed to open the pull request"
@@ -478,11 +548,19 @@ do_push() {
   fi
   echo "engine-proposal: pushed $br"
 
+  # Read the body from the BRANCH, not the working tree. submit restores the checkout to
+  # where it found it (the pinned commit, in a submodule), so the queue file is not on disk
+  # at HEAD — only on the ref being pushed.
+  local body; body="$(mktemp)"
+  git -C "$eng" show "$br:proposals/$SLUG.md" > "$body" 2>/dev/null \
+    || die "branch $br IS pushed, but proposals/$SLUG.md is not on it — open the pull request by hand."
   if ! gh pr create --repo "$(git -C "$eng" remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/.]+)(\.git)?$#\1#')" \
-        --head "$br" --title "proposal: $SLUG" --body-file "$eng/proposals/$SLUG.md" 2>&1; then
+        --head "$br" --title "proposal: $SLUG" --body-file "$body" 2>&1; then
+    rm -f "$body"
     die "branch $br IS pushed, but opening the pull request failed — open it by hand from that branch rather than re-running push."
   fi
-  printf '%s\n' "$br" > "$(submit_marker_dir)/$SLUG.submitted"
+  rm -f "$body"
+  printf '%s\n%s\n' "$br" "$eng" > "$(submit_marker_dir)/$SLUG.submitted"
   rm -f "$marker"
   echo "engine-proposal: submitted. status will now report it as submitted-pending until merged."
 }

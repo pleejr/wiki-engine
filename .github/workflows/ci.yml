@@ -100,6 +100,82 @@ jobs:
           done
           echo "ok: bands correct, degrades cleanly"
 
+      - name: Status-line segments compose, and cannot drift from the full row
+        run: |
+          # The host allows exactly ONE status line, so a vault with its own row could not
+          # adopt any element of this one without abandoning theirs — every feature shipped
+          # to the status line was permanently unreachable for them, and nothing reported
+          # it. The property that matters is ONE implementation: a segment path duplicating
+          # the renderer's logic just relocates the drift it exists to prevent, so the
+          # composed row and the full row must be character-identical.
+          fail=0
+          CFG="$RUNNER_TEMP/slcfg"; rm -rf "$CFG"; mkdir -p "$CFG"
+          printf 'engine v1.0.0 -> v2.0.0 (MAJOR)\n' > "$CFG/.wiki-engine-status"
+          export CLAUDE_CONFIG_DIR="$CFG"
+          J='{"workspace":{"current_dir":"/w"},"model":{"display_name":"M"},"context_window":{"used_percentage":88},"rate_limits":{"five_hour":{"used_percentage":81}}}'
+          seg() { printf '%s' "$J" | ./bin/statusline.sh --segment "$1"; }
+
+          full="$(printf '%s' "$J" | ./bin/statusline.sh)"
+          DIM=$'\033[2m'; RESET=$'\033[0m'
+          comp="$(seg dir) ${DIM}·${RESET} $(seg model) ${DIM}·${RESET} $(seg ctx) ${DIM}·${RESET} $(seg rl)  $(seg stale)"
+          [ "$full" = "$comp" ] \
+            && echo "  ok   the full row IS the composition of its segments" \
+            || { echo "  FAIL segment path has drifted from the renderer"; printf '%s\n%s\n' "$full" "$comp" | cat -v; fail=1; }
+
+          # a segment prints only its own fragment (uncolored, so the assertion is about
+          # the text rather than about where the escape sequences sit)
+          plain="$(printf '%s' "$J" | NO_COLOR=1 ./bin/statusline.sh --segment ctx)"
+          case "$plain" in
+            'ctx 88'*) echo "  ok   a segment prints only its fragment" ;;
+            *) echo "  FAIL segment carried more than itself: $plain"; fail=1 ;;
+          esac
+          case "$plain" in
+            *M*|*/w*) echo "  FAIL segment leaked another element's text: $plain"; fail=1 ;;
+            *) echo "  ok   ...with no other element's text" ;;
+          esac
+
+          # nothing to say = NOTHING, exit 0. Never a placeholder like "ctx 0%".
+          for bad in '{"model":{"display_name":"M"}}' '{"context_window":{"used_percentage":null}}' \
+                     '{"context_window":{"used_percentage":"abc"}}' 'not json'; do
+            o="$(printf '%s' "$bad" | ./bin/statusline.sh --segment ctx)"; rc=$?
+            [ "$rc" = "0" ] && [ -z "$o" ] \
+              || { echo "  FAIL ctx segment misbehaved on: $bad (rc=$rc out=$o)"; fail=1; }
+          done
+          echo "  ok   an absent, null or non-numeric field yields silence and exit 0"
+
+          # an unknown name must not corrupt a consuming row, but must be visible by hand
+          o="$(printf '%s' "$J" | ./bin/statusline.sh --segment nope 2>/dev/null)"
+          [ -z "$o" ] && echo "  ok   an unknown segment prints nothing to stdout" \
+                      || { echo "  FAIL unknown segment wrote to a row"; fail=1; }
+          printf '%s' "$J" | ./bin/statusline.sh --segment nope 2>&1 >/dev/null | grep -q 'no such segment' \
+            && echo "  ok   ...and says so on stderr" \
+            || { echo "  FAIL unknown segment failed silently"; fail=1; }
+
+          # NO_COLOR, and exit 0 on every path
+          printf '%s' "$J" | NO_COLOR=1 ./bin/statusline.sh --segment ctx | grep -q $'\033' \
+            && { echo "  FAIL segment emitted color under NO_COLOR"; fail=1; } \
+            || echo "  ok   NO_COLOR is honored by the segment path"
+
+          ./bin/statusline.sh --segments | grep -qx 'stale' \
+            && echo "  ok   the available segments are discoverable" \
+            || { echo "  FAIL --segments does not list them"; fail=1; }
+
+          # the refusal to clobber a foreign row must name the alternative, or "we will not
+          # touch your row" keeps meaning "and therefore you get none of this"
+          if command -v jq >/dev/null 2>&1; then
+            S="$RUNNER_TEMP/foreign-settings.json"
+            printf '{"statusLine":{"type":"command","command":"/my/own/row.sh"}}\n' > "$S"
+            o="$(./bin/ensure-statusline.sh --command "/eng/bin/statusline.sh" --marker 'eng/bin/statusline.sh' --settings "$S")"
+            printf '%s' "$o" | grep -q -- '--segment' \
+              && echo "  ok   a foreign row is left alone AND told about segments" \
+              || { echo "  FAIL the refusal is still a dead end"; fail=1; }
+            grep -q '/my/own/row.sh' "$S" \
+              && echo "  ok   ...and the foreign row is untouched" \
+              || { echo "  FAIL the foreign statusLine was modified"; fail=1; }
+          fi
+
+          exit "$fail"
+
       - name: Engine docs are soft-wrapped
         run: |
           # proposals/ is EXCLUDED: those files are consumer-authored payloads, not engine
@@ -1243,6 +1319,77 @@ jobs:
 
           exit "$fail"
 
+      - name: submit works in the submodule checkout it defaults to
+        run: |
+          # The checkout `submit` picks by default IS the vault's pinned submodule, where
+          # `.git` is a FILE holding a gitdir pointer — so a `-d .git` guard rejected every
+          # consumer using the documented default and told them to go find a clone they do
+          # not have. Fail-closed, but what it closed was the only sanctioned upstream
+          # channel, and the workaround it invited (edit the pinned submodule in place) is
+          # the time bomb the skill exists to warn against.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-submod"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          git config --global protocol.file.allow always
+          EP="$GITHUB_WORKSPACE/bin/engine-proposal.sh"
+          T="$RUNNER_TEMP/submod"; rm -rf "$T"; mkdir -p "$T"; fail=0
+
+          git init -q --bare "$T/origin-engine.git"
+          git clone -q "$T/origin-engine.git" "$T/eng-src" 2>/dev/null
+          mkdir -p "$T/eng-src/bin" "$T/eng-src/proposals"
+          cp "$GITHUB_WORKSPACE/bin/engine-proposal.sh" "$GITHUB_WORKSPACE/bin/gen-proposals-ledger.sh" "$T/eng-src/bin/"
+          echo seed > "$T/eng-src/README.md"
+          printf '<!-- proposals:start -->\n<!-- proposals:end -->\n' > "$T/eng-src/PROPOSALS.md"
+          git -C "$T/eng-src" add -A; git -C "$T/eng-src" commit -qm seed; git -C "$T/eng-src" push -q origin main
+
+          V="$T/vault"; git init -q "$V"
+          printf -- '---\nboundary: personal\n---\n' > "$V/CLAUDE.md"; : > "$V/.gitignore"
+          git -C "$V" add -A; git -C "$V" commit -qm seed
+          git -C "$V" submodule add -q "$T/origin-engine.git" engine
+          git -C "$V" commit -qm "pin engine"
+          pin="$(git -C "$V/engine" rev-parse HEAD)"
+
+          [ -f "$V/engine/.git" ] \
+            && echo "  ok   fixture reproduces the shape that broke it (.git is a file)" \
+            || { echo "  FAIL fixture is not a submodule; the test is void"; fail=1; }
+
+          printf 'slug: submodq\nboundary: generic\n\nA generic problem statement.\n' > "$T/block.md"
+          out="$("$EP" submit --vault "$V" --slug submodq --file "$T/block.md" 2>&1)" \
+            && echo "  ok   submit accepts the pinned submodule as the engine checkout" \
+            || { echo "  FAIL submit rejected the checkout it defaults to"; fail=1; }
+
+          # the preview is the only review of MEANING in the chain; an empty box is a
+          # safety surface failing silently
+          printf '%s' "$out" | grep -q 'A generic problem statement' \
+            && echo "  ok   the pre-push preview shows the block that becomes public" \
+            || { echo "  FAIL preview box was empty"; fail=1; }
+
+          # the pin must be restored: parking a consumer's submodule on a branch cut from
+          # origin/main silently changes the version their whole vault runs at
+          [ "$(git -C "$V/engine" rev-parse HEAD)" = "$pin" ] \
+            && echo "  ok   the submodule is left on its pinned commit" \
+            || { echo "  FAIL submit left the pinned engine on another commit"; fail=1; }
+          git -C "$V/engine" rev-parse --verify -q proposal/submodq >/dev/null \
+            && echo "  ok   the prepared branch survives as a ref" \
+            || { echo "  FAIL prepared branch is gone"; fail=1; }
+
+          # the derived ledger travels WITH the proposal, or the drift gate fails the
+          # reporter's own pull request for a step nobody told them to run
+          git -C "$V/engine" show proposal/submodq --stat --oneline | grep -q 'PROPOSALS.md' \
+            && echo "  ok   the ledger is regenerated in the proposal commit" \
+            || { echo "  FAIL proposal commit leaves the committed ledger stale"; fail=1; }
+          git -C "$V/engine" show "proposal/submodq:PROPOSALS.md" | grep -q 'submodq' \
+            && echo "  ok   the regenerated ledger carries the new open row" \
+            || { echo "  FAIL no row for the arriving proposal"; fail=1; }
+
+          # push must not depend on the environment being re-created
+          [ "$(sed -n '2p' "$V/.engine-proposal/submodq.prepared")" = "$V/engine" ] \
+            && echo "  ok   the marker records which checkout holds the branch" \
+            || { echo "  FAIL marker does not record the engine checkout"; fail=1; }
+
+          exit "$fail"
+
       - name: The release title survives punctuation inside a code span
         run: |
           # This logic lived inline in release.yml, which runs only on a version-tag push —
@@ -1759,6 +1906,68 @@ jobs:
 
           exit "$fail"
 
+      - name: A repo page whose clone cannot be found is reported, not skipped
+        run: |
+          # The scan resolved a clone by joining the repos root to the page's declared
+          # sources.repo and swallowed a miss with a bare `continue` — so a page whose
+          # clone sits under a DIFFERENT directory name (a rename, a disambiguating
+          # prefix, a second checkout) was dropped from the freshness comparison with no
+          # row of any kind emitted about it. Fail-open, and disguised rather than merely
+          # quiet: the same page still appears via the verify: path, which needs no clone,
+          # so the operator drains it and concludes it was attended to.
+          #
+          # It also changed what a clean queue MEANS — from "every repo page matches its
+          # clone" to "every repo page whose clone I could find matches".
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-unres"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/unres"; rm -rf "$T"; mkdir -p "$T/repos"; fail=0
+
+          # a clone that exists, under a name that is NOT the page's sources.repo
+          git init -q "$T/repos/other-name"
+          ( cd "$T/repos/other-name" && echo v1 > f && git add -A && git commit -qm c1 )
+          # a clone that resolves and IS stale, so the working path is proven in the same run
+          git init -q "$T/repos/good"
+          ( cd "$T/repos/good" && echo v1 > f && git add -A && git commit -qm c1 )
+
+          V="$T/v"; mkdir -p "$V/repos"
+          printf -- '---\ntitle: mismatch\ntype: repo\nboundary: personal\nsources:\n  repo: canonical-name\n  ref: v1\n  sha: deadbee\n---\n\n# mismatch\n' > "$V/repos/mismatch.md"
+          printf -- '---\ntitle: good\ntype: repo\nboundary: personal\nsources:\n  repo: good\n  ref: v1\n  sha: deadbee\n---\n\n# good\n' > "$V/repos/good.md"
+
+          out="$(UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" scan 2>&1)"
+          printf '%s\n' "$out"
+          rows="$(UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" list 2>&1)"
+          printf '%s\n' "$rows"
+
+          printf '%s' "$rows" | grep -q '^unresolvable:mismatch' \
+            && echo "  ok   the unlocatable clone is reported as its own state" \
+            || { echo "  FAIL the page was silently dropped from the scan"; fail=1; }
+          printf '%s' "$rows" | grep -q 'refresh:good' \
+            && echo "  ok   a resolvable stale page still queues normally" \
+            || { echo "  FAIL the working path regressed"; fail=1; }
+          # the row must not read as ordinary drift, and must name both remedies
+          printf '%s' "$rows" | grep -q 'freshness unknown' \
+            && echo "  ok   the row says freshness is unknown, not up to date" \
+            || { echo "  FAIL the row does not distinguish unknown from current"; fail=1; }
+          printf '%s' "$out" | grep -q 'no locatable clone' \
+            && echo "  ok   the scan summary says a clean queue means less than it looks" \
+            || { echo "  FAIL scan summary hides the unassessed pages"; fail=1; }
+
+          # sync-clones holds the same doctrine — a skip is a reported outcome — and was
+          # silent about exactly this case while naming dirty trees and detached HEADs
+          sc="$(UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" sync-clones --check 2>&1)"
+          printf '%s' "$sc" | grep -q 'no clone at' \
+            && echo "  ok   sync-clones names the clone it could not find" \
+            || { echo "  FAIL sync-clones skipped it silently"; fail=1; }
+
+          # and the item is drainable like any other
+          UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" done unresolvable:mismatch >/dev/null \
+            && echo "  ok   the row drains through the normal verb" \
+            || { echo "  FAIL the row cannot be drained"; fail=1; }
+
+          exit "$fail"
+
       - name: gc sweeps orphan wt/* branches, and never a live one
         run: |
           # A wt/* branch was only ever evaluated as a SIDE EFFECT of retiring its
@@ -1826,5 +2035,136 @@ jobs:
           printf '%s' "$out2" | grep -q 'deleted' \
             && { echo "  FAIL second sweep deleted something"; fail=1; } \
             || echo "  ok   a second sweep is a no-op"
+
+          exit "$fail"
+
+      - name: ensure never reattaches to a stale base without saying so
+        run: |
+          # Reattaching to a surviving wt/<session> branch was reported as plain success:
+          # exit 0, a valid path, genuine isolation — only the BASE was wrong, and nothing
+          # surfaced that until merge time, when append-only pages conflict. Fail-open.
+          #
+          # And it is the NORMAL case for a squash-merging vault, not an edge case: the
+          # branch is retained because its work is not an ancestor of main, so it grows
+          # staler with every merge in the session — stale precisely BECAUSE its work
+          # already landed.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-reattach"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/reattach"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+
+          # a vault WITH an origin, since the base is origin/main
+          git init -q --bare "$T/origin.git"
+          git clone -q "$T/origin.git" "$T/vault" 2>/dev/null
+          V="$T/vault"; printf 'log\n' > "$V/log.md"
+          git -C "$V" add -A; git -C "$V" commit -qm seed; git -C "$V" push -q -u origin main
+          export WIKI_PATH="$V"
+
+          # (1) work lands by SQUASH merge, so the branch tip is not an ancestor of main
+          W="$(WIKI_WT_SESSION=s1 "$VW" ensure 2>/dev/null)"
+          printf 'session-entry\n' >> "$W/log.md"; git -C "$W" commit -qam "session work"
+          git -C "$V" merge -q --squash wt/s1; git -C "$V" commit -qm squashed
+          printf 'x\n' > "$V/other.md"; git -C "$V" add -A; git -C "$V" commit -qm "peer file"
+          git -C "$V" push -q origin main
+          git -C "$V" worktree remove --force "$W"
+
+          out="$(WIKI_WT_SESSION=s1 "$VW" ensure 2>&1 >/dev/null)"
+          W2="$(WIKI_WT_SESSION=s1 "$VW" ensure 2>/dev/null)"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'held nothing origin/main lacks' \
+            && echo "  ok   a branch whose content already landed is cut fresh, not reattached behind" \
+            || { echo "  FAIL reattached to a branch with nothing left to protect"; fail=1; }
+          [ "$(git -C "$W2" rev-parse HEAD)" = "$(git -C "$V" rev-parse origin/main)" ] \
+            && echo "  ok   the returned worktree is level with origin/main" \
+            || { echo "  FAIL the returned base is behind origin/main"; fail=1; }
+          WIKI_WT_SESSION=s1 "$VW" gc "$W2" >/dev/null 2>&1 || true
+
+          # (2) a branch that DOES hold work is never reset — it is kept, reattached, and
+          # the distance is REPORTED rather than swallowed
+          W="$(WIKI_WT_SESSION=s2 "$VW" ensure 2>/dev/null)"
+          printf 'unmerged\n' > "$W/stranded.md"; git -C "$W" add -A; git -C "$W" commit -qm stranded
+          printf 'peer\n' >> "$V/log.md"; git -C "$V" commit -qam "peer append"; git -C "$V" push -q origin main
+          git -C "$V" worktree remove --force "$W"
+          out2="$(WIKI_WT_SESSION=s2 "$VW" ensure 2>&1 >/dev/null)"
+          printf '%s\n' "$out2"
+          printf '%s' "$out2" | grep -q 'BEHIND origin/main' \
+            && echo "  ok   the reattach reports how far behind the base is" \
+            || { echo "  FAIL reattach reported plain success on a stale base"; fail=1; }
+          printf '%s' "$out2" | grep -q 'rebase' \
+            && echo "  ok   ...and says what to do about it" \
+            || { echo "  FAIL no remedy offered"; fail=1; }
+          git -C "$V" show-ref --verify --quiet refs/heads/wt/s2 \
+            && echo "  ok   the branch holding work survives" \
+            || { echo "  FAIL a branch holding unmerged work was destroyed"; fail=1; }
+          [ -f "$T/vault/.worktrees/s2/stranded.md" ] \
+            && echo "  ok   the unmerged work is still there" \
+            || { echo "  FAIL unmerged work was lost"; fail=1; }
+
+          exit "$fail"
+
+      - name: A project claim is visible presence, and never a lock
+        run: |
+          # Two collision classes are already covered — vault edits collide as merge
+          # conflicts, working trees are isolated per session. The uncovered class is the
+          # work performed OUTSIDE version control: investigation both sessions repeat, and
+          # commands issued against external systems, where they contend silently.
+          #
+          # The property under test is that this stays VISIBILITY. It rides the lease
+          # record rather than a store of its own, so liveness is decided in one place; and
+          # it must never block, because a gate that blocks at the wrong moment trains its
+          # user to force past it, which removes the gate entirely.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-claim"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/claim"; rm -rf "$T"; mkdir -p "$T/v"; fail=0
+          V="$T/v"; git -C "$V" init -q .; printf 'seed\n' > "$V/a.md"
+          git -C "$V" add -A; git -C "$V" commit -qm seed
+          export WIKI_PATH="$V"
+          WIKI_WT_SESSION=alpha ./bin/vault-worktree.sh ensure >/dev/null 2>&1
+          WIKI_WT_SESSION=beta  ./bin/vault-worktree.sh ensure >/dev/null 2>&1
+
+          WIKI_WT_SESSION=alpha ./bin/vault-worktree.sh claim proj-x >/dev/null 2>&1
+          out="$(WIKI_WT_SESSION=beta ./bin/vault-worktree.sh claim proj-x 2>&1)"; rc=$?
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q "session alpha is also on project 'proj-x'" \
+            && echo "  ok   a second session on one project is told who else is there" \
+            || { echo "  FAIL the overlap was not reported"; fail=1; }
+          printf '%s' "$out" | grep -qE 'active [0-9]+m ago' \
+            && echo "  ok   ...with the holder's activity age" \
+            || { echo "  FAIL no activity age reported"; fail=1; }
+          [ "$rc" = "0" ] \
+            && echo "  ok   and it does NOT block — advisory, not a lock" \
+            || { echo "  FAIL claim refused (rc=$rc); this is presence, not mutual exclusion"; fail=1; }
+
+          # different projects must not gate each other, or the signal becomes noise
+          out2="$(WIKI_WT_SESSION=beta ./bin/vault-worktree.sh claim proj-y 2>&1)"
+          printf '%s' "$out2" | grep -q 'also on project' \
+            && { echo "  FAIL warned about a different project"; fail=1; } \
+            || echo "  ok   two sessions on two projects never gate each other"
+
+          # a claim rides the LEASE — one record, one liveness rule
+          grep -q '^project=proj-y$' "$V/.worktrees/.leases/beta.lease" \
+            && echo "  ok   the claim is recorded on the session's existing lease" \
+            || { echo "  FAIL a parallel claim store appeared"; fail=1; }
+          WIKI_WT_SESSION=beta ./bin/vault-worktree.sh peers | grep -q 'proj-y' \
+            && echo "  ok   peers reports the project" \
+            || { echo "  FAIL peers does not show claims"; fail=1; }
+
+          # a session that provably ended is reported STALE, not silently reaped: a session
+          # that died mid-work is exactly what a human should be able to see
+          git -C "$V" worktree remove --force "$V/.worktrees/alpha"
+          git -C "$V" branch -D wt/alpha >/dev/null 2>&1
+          rep="$(WIKI_WT_SESSION=beta ./bin/vault-worktree.sh claim 2>&1)"
+          printf '%s\n' "$rep"
+          printf '%s' "$rep" | grep -q 'alpha .* STALE' \
+            && echo "  ok   a dead session's claim is shown as stale, not deleted" \
+            || { echo "  FAIL a dead claim vanished or still reads as live"; fail=1; }
+          out3="$(WIKI_WT_SESSION=beta ./bin/vault-worktree.sh claim proj-x 2>&1)"
+          printf '%s' "$out3" | grep -q 'also on project' \
+            && { echo "  FAIL warned about a session that has finished"; fail=1; } \
+            || echo "  ok   ...and no longer warns about it, so no manual cleanup is needed"
 
           exit "$fail"
