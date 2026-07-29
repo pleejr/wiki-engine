@@ -165,8 +165,16 @@ jobs:
             && echo "  ok   the healthy band is green, not dim" \
             || { echo "  FAIL healthy band is not green: $(band 42)"; fail=1; }
           band 42 | grep -q '\^\[\[1m' \
-            && { echo "  FAIL healthy band is bold — the calm state must not be the loudest thing on the row"; fail=1; } \
-            || echo "  ok   ...and plain, not bold"
+            && echo "  ok   ...and bold, so the calm state is legible without looking closely" \
+            || { echo "  FAIL healthy band is not bold: $(band 42)"; fail=1; }
+          # the escalated bands carry hue AND action text; bolding them too would remove the
+          # contrast that makes the escalation legible
+          band 72 | grep -q '\^\[\[1m' \
+            && { echo "  FAIL soon-band is bold — only the calm band is"; fail=1; } \
+            || echo "  ok   the escalated bands stay unbolded"
+          band 88 | grep -q '\^\[\[1m' \
+            && { echo "  FAIL now-band is bold — only the calm band is"; fail=1; } \
+            || echo "  ok   ...at 85%+ too"
           band 72 | grep -q '\^\[\[33m' \
             && echo "  ok   the soon-band is still amber" \
             || { echo "  FAIL soon-band colour changed"; fail=1; }

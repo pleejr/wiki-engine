@@ -12,6 +12,14 @@ Untagged — CI/release only. Consumers read workflows from `HEAD`, never throug
 - **`release.yml` can be run manually (`workflow_dispatch`), taking the tag as an input.** A push carrying **more than three tags runs no workflows at all** — GitHub's own limit, not an error. Five tags were pushed at once, this workflow never fired, every tag existed on the remote, nothing was red, and the Releases page silently stayed behind; with a push-only trigger there was then no way to run it for the tags it missed, so those releases had to be reconstructed by hand. Dispatch takes the tag explicitly because `github.ref_name` on a manual run is the *branch*, and checkout now pins to that tag so the notes and derived title come from the release's own tree exactly as they do on the push path. Pushing version tags **one at a time** remains the right habit; this is the backstop, and the existing idempotent skip makes re-running a partially-completed batch harmless.
 - The dispatch input is validated as a **tag**. Checkout already fails on a ref that does not exist, but it accepts a branch quite happily — and publishing `main` as though it were a version is a worse outcome than a failed run.
 
+## [1.48.2] — 2026-07-29
+
+Patch — the context gauge's healthy band is bold, as its proposal asked. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Closes `statusline-ctx-healthy-band-bold-green`, now **accepted in full**.
+
+### Changed
+- **The healthy band is bold green, not plain green.** v1.48.1 shipped plain, taking the middle the proposal itself offered, on the argument that bolding the *least* actionable state makes it the loudest thing on the row. That argument was the reporter's own — stated deliberately, weighed, and asked for bold anyway — so overriding it was a cosmetic second-guess of a cosmetic proposal with no technical objection behind it. Bold is what was requested and bold is what ships.
+- CI now asserts the calm band **is** bold and that the amber and red bands are **not**, so the contrast that carries escalation stays where the proposal put it. `BOLD` is blanked under `NO_COLOR` alongside the existing constants.
+
 ## [1.48.1] — 2026-07-29
 
 Patch — a bare `status` sees every local record, and the context gauge is readable in its calm state. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `bare-status-ignores-submitted-markers` and `statusline-ctx-healthy-band-bold-green`.
