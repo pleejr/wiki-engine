@@ -55,7 +55,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `session-banner-pending-proposal-nudge` | alias | engine-proposal-file-queue |
 | `skills-hardcode-boundary-value` | shipped | derived |
 | `statusline-composable-segments` | shipped | derived |
-| `statusline-ctx-healthy-band-bold-green` | partially-accepted | the legibility complaint is accepted and the healthy band is no longer dim — but PLAIN green, which is the middle the proposal itself named, not bold. The tension the report raised deliberately is real and resolves that way: this row carries escalation by hue and by the action text the calm band lacks, so bolding the least actionable state would make it the loudest thing on the row, against the same principle that keeps the rate limit threshold-gated. Green alone fixes what was actually broken — that 'everything is fine' and 'this indicator is not working' rendered alike. Not made configurable: a knob for one colour is a setting nobody would find, and the segment path already lets a foreign row style its own. Thresholds, wording and truncation untouched; the NO_COLOR trap the report flagged is covered by a test |
+| `statusline-ctx-healthy-band-bold-green` | shipped | derived |
 | `submit-branches-from-head-not-main` | shipped | derived |
 | `submit-rejects-submodule-engine-checkout` | shipped | derived |
 | `upkeep-sync-clones` | shipped | derived |
