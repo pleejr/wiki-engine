@@ -4,6 +4,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+Untagged — CI/release only. Consumers read workflows from `HEAD`, never through the pin, so this rides along into the next functional release.
+
+### Changed
+- **`release.yml` can be run manually (`workflow_dispatch`), taking the tag as an input.** A push carrying **more than three tags runs no workflows at all** — GitHub's own limit, not an error. Five tags were pushed at once, this workflow never fired, every tag existed on the remote, nothing was red, and the Releases page silently stayed behind; with a push-only trigger there was then no way to run it for the tags it missed, so those releases had to be reconstructed by hand. Dispatch takes the tag explicitly because `github.ref_name` on a manual run is the *branch*, and checkout now pins to that tag so the notes and derived title come from the release's own tree exactly as they do on the push path. Pushing version tags **one at a time** remains the right habit; this is the backstop, and the existing idempotent skip makes re-running a partially-completed batch harmless.
+- The dispatch input is validated as a **tag**. Checkout already fails on a ref that does not exist, but it accepts a branch quite happily — and publishing `main` as though it were a version is a worse outcome than a failed run.
+
 ## [1.48.1] — 2026-07-29
 
 Patch — a bare `status` sees every local record, and the context gauge is readable in its calm state. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `bare-status-ignores-submitted-markers` and `statusline-ctx-healthy-band-bold-green`.
