@@ -4,6 +4,22 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.47.0] — 2026-07-29
+
+Minor — status-line elements are individually consumable, so a vault with its own row can adopt them. Adopt with `bin/adopt.sh` or `update.sh`; no migration, and nothing about an existing status line changes. Reported through the queue as `statusline-composable-segments`.
+
+### Added
+- **`statusline.sh --segment <name>`** — `ctx`, `stale`, `rl`, `model`, `dir`, with `--segments` listing them. Each prints only its own fragment, with no separators; ordering and separators are the row owner's taste, not the engine's. A segment with nothing to say prints **nothing** and exits 0 — an absent, null or non-numeric field yields silence, never a placeholder like `ctx 0%`. `NO_COLOR` is honored and every path exits 0, as before.
+- **The composition contract is documented rather than inferred** — stdin is the session JSON the host sends (each invocation reads its own, so a row composing several feeds the payload to each), the empty-output convention, and the exit-0 guarantee.
+
+### Changed
+- **The full renderer is now composed from those same segment functions.** This is the property the proposal identified as load-bearing and it is why the feature is worth having at all: a segment path that duplicated the renderer's logic would merely relocate the drift problem. CI asserts the composed row and the full row are character-identical for one payload, so the two cannot diverge unnoticed.
+- **`ensure-statusline.sh` still refuses to clobber a foreign status line** — that refusal is correct and is *not* what this changed. What changed is that it now names the alternative. Silence made the refusal a dead end rather than a fork in the road: every element shipped to the status line was permanently unreachable for such a vault, and nothing reported it. The two workarounds available before were abandoning the local row, or hand-copying this implementation into it — a per-machine fork that receives no upstream fix and whose divergence is invisible from both ends.
+
+### Notes
+- The status line stays **opt-in** and no adoption step wires one. The proposal deliberately did not disturb that, and neither does this.
+- A future element requires no change to a consuming foreign row beyond opting into the new segment name.
+
 ## [1.46.3] — 2026-07-29
 
 Patch — `ensure` never hands back a base silently behind the branch it claims to derive from. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `worktree-reattach-returns-stale-base`.

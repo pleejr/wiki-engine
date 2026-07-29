@@ -59,7 +59,17 @@ fi
 # Decide: is there a foreign statusLine we must not clobber?
 existing_cmd="$(printf '%s' "$current" | jq -r '.statusLine.command // empty' 2>/dev/null)"
 if [ -n "$existing_cmd" ] && ! printf '%s' "$existing_cmd" | grep -qF "$MARKER"; then
-  exit 0   # someone else's statusLine — respect it, do nothing
+  # Someone else's statusLine — respect it, do nothing. But say what the alternative IS.
+  # Silence here made the refusal a dead end rather than a fork in the road: every element
+  # this engine ships to a status line was permanently unreachable for such a vault, and
+  # nothing reported that. "We will not touch your row" must stop also meaning "and
+  # therefore you get none of this".
+  printf 'statusLine: leaving your own in place (%s).\n' "$existing_cmd"
+  printf '  To adopt one element without giving up your row, interpolate a segment:\n'
+  printf '    %s --segment ctx     (also: stale, rl, model, dir; --segments lists them)\n' "${COMMAND%% *}"
+  printf '  Segments print only their fragment, nothing when they have nothing to say, and\n'
+  printf '  keep receiving threshold and format fixes with the pin — no copied code.\n'
+  exit 0
 fi
 
 updated="$(
