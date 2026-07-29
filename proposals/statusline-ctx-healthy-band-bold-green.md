@@ -1,8 +1,8 @@
 ---
 slug: statusline-ctx-healthy-band-bold-green
-outcome: open
+outcome: partially-accepted
 received: 2026-07-29
----
+reason: "the legibility complaint is accepted and the healthy band is no longer dim — but PLAIN green, which is the middle the proposal itself named, not bold. The tension the report raised deliberately is real and resolves that way: this row carries escalation by hue and by the action text the calm band lacks, so bolding the least actionable state would make it the loudest thing on the row, against the same principle that keeps the rate limit threshold-gated. Green alone fixes what was actually broken — that 'everything is fine' and 'this indicator is not working' rendered alike. Not made configurable: a knob for one colour is a setting nobody would find, and the segment path already lets a foreign row style its own. Thresholds, wording and truncation untouched; the NO_COLOR trap the report flagged is covered by a test"
 
 HANDOFF — engine improvement proposal
 slug: statusline-ctx-healthy-band-bold-green

@@ -241,23 +241,43 @@ do_status() {
   if [[ -n "$SLUG" ]]; then
     want+=("$SLUG"); src+=("--slug")
   else
-    local ob
-    for ob in "$VAULT"/.engine-proposal/*.outbox; do
+    # EVERY local record, not just the retired one. This globbed `*.outbox` alone — the
+    # LEGACY copy-paste artifact, which the supported path no longer produces — so the bare
+    # listing enumerated exactly the artifact class that had been retired and ignored the
+    # markers `submit`/`push` write. Fail-open: it returned a confident, well-formed "no
+    # proposals" while six submitted markers sat beside it, which is the duplicate-resend
+    # trap this subcommand exists to prevent. The printed caveat explained the outbox's
+    # per-machine limitation and so read as "the outbox is empty", pointing away from the
+    # cause. The documented contract already promised markers were included; the code and
+    # the doc disagreed, and the doc was right.
+    #
+    # Deduplicated by slug: a proposal normally leaves a marker at prepare and another at
+    # push, and reporting it twice would make the listing look like two proposals.
+    local ob base inb seen w
+    for ob in "$VAULT"/.engine-proposal/*.outbox "$VAULT"/.engine-proposal/*.submitted "$VAULT"/.engine-proposal/*.prepared; do
       [[ -e "$ob" ]] || continue
-      local base inb
-      base="$(basename "$ob" .outbox)"
-      inb="$(grep -m1 -E '^slug:[[:space:]]*' "$ob" 2>/dev/null | sed -E 's/^slug:[[:space:]]*//; s/[[:space:]]+$//')"
-      want+=("${inb:-$base}"); src+=("$base.outbox")
+      base="$(basename "$ob")"; base="${base%.*}"
+      inb=""
+      # only an outbox block carries the block itself, and thus a `slug:` line to prefer
+      case "$ob" in
+        *.outbox) inb="$(grep -m1 -E '^slug:[[:space:]]*' "$ob" 2>/dev/null | sed -E 's/^slug:[[:space:]]*//; s/[[:space:]]+$//')" ;;
+      esac
+      w="${inb:-$base}"
+      seen=0
+      for i in "${want[@]:-}"; do [[ "$i" == "$w" ]] && { seen=1; break; }; done
+      [[ $seen -eq 1 ]] && continue
+      want+=("$w"); src+=("$(basename "$ob")")
     done
   fi
 
   printf 'engine-proposal: resolving against %s (%s); this vault is pinned at %s\n' "$ref" "$horizon" "$pinned"
   if [[ ${#want[@]} -eq 0 ]]; then
-    # an empty outbox is NOT "nothing outstanding" — the outbox is git-ignored and
+    # an empty result is NOT "nothing outstanding" — these records are git-ignored and
     # per-machine, so say what was actually scanned rather than implying a clean slate.
-    printf '\n  no handoff blocks stashed on THIS machine (%s).\n' ".engine-proposal/"
-    printf '  The outbox is git-ignored and per-machine, so this is not evidence that nothing is\n'
-    printf '  outstanding. Query a specific proposal with: engine-proposal.sh status --vault DIR --slug ID\n'
+    printf '\n  no local record on THIS machine (%s) — no submitted or prepared markers, and no legacy outbox blocks.\n' ".engine-proposal/"
+    printf '  These records are git-ignored and per-machine, so this is not evidence that nothing is\n'
+    printf '  outstanding: a proposal submitted from another machine leaves none here.\n'
+    printf '  Query a specific proposal with: engine-proposal.sh status --vault DIR --slug ID\n'
     return 0
   fi
 

@@ -4,6 +4,21 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.48.1] — 2026-07-29
+
+Patch — a bare `status` sees every local record, and the context gauge is readable in its calm state. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `bare-status-ignores-submitted-markers` and `statusline-ctx-healthy-band-bold-green`.
+
+### Fixed
+- **A bare `status` reported nothing for proposals submitted through `submit`/`push`.** The slug-collection loop globbed `*.outbox` alone — the *legacy* copy-paste artifact the supported path no longer produces — so the listing enumerated exactly the artifact class that had been retired and ignored the markers the current channel writes. Fail-open: a confident, well-formed *"no proposals"* while submitted markers sat beside it, which is precisely the duplicate-resend trap this subcommand exists to prevent. `*.submitted` and `*.prepared` are included now, deduplicated by slug — prepare-then-push is the normal end state, and reporting it twice would read as two proposals.
+- **The empty case names what it actually scanned.** Its caveat explained the *outbox's* per-machine limitation, so it read as "the outbox is empty" and pointed away from the cause. The documented contract already promised markers were included: code and doc disagreed, and the doc was right.
+
+### Changed
+- **The context gauge's healthy band is green rather than dim.** Dim was close to unreadable on many themes, so the gauge only became legible once it had escalated to amber — *"everything is fine"* and *"this indicator is not working"* looked alike, and so does the absent case. An indicator meant to be watched passively has to be readable when calm.
+
+### Notes
+- **Plain green, not the bold the proposal asked for.** It raised the tension itself, deliberately, and it resolves that way: this row carries escalation by hue and by the action text the calm band lacks, so bolding the *least* actionable state would make it the loudest thing on the row — against the same principle that keeps the rate limit threshold-gated. Green alone fixes what was actually broken. Not made configurable either: a knob for one colour is a setting nobody would find, and the segment path already lets a foreign row style its own.
+- Thresholds, wording and truncation are untouched, and CI asserts each band's colour separately plus the `NO_COLOR` trap the reporter flagged — adding a colour constant and forgetting the disable path leaks raw escapes into the row.
+
 ## [1.48.0] — 2026-07-29
 
 Minor — concurrent sessions can see that they are on the same project. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `concurrent-session-project-claims`, **partially accepted** — the presence layer ships, the mutation-deny tier does not, and the reasons are recorded below and in the queue entry.

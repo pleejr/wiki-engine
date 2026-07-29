@@ -68,9 +68,9 @@ fi
 
 # ANSI (statusline supports color; keep it minimal). Disable if NO_COLOR is set.
 if [ -n "${NO_COLOR:-}" ]; then
-  DIM=""; AMBER=""; RED=""; RESET=""
+  DIM=""; AMBER=""; RED=""; GREEN=""; RESET=""
 else
-  DIM=$'\033[2m'; AMBER=$'\033[33m'; RED=$'\033[31m'; RESET=$'\033[0m'
+  DIM=$'\033[2m'; AMBER=$'\033[33m'; RED=$'\033[31m'; GREEN=$'\033[32m'; RESET=$'\033[0m'
 fi
 
 # --- session context from stdin JSON (dir + model + context usage), best-effort -------
@@ -101,11 +101,21 @@ seg_model() { [ -n "$model" ] && printf '%s' "$model"; return 0; }
 # the session costs nothing and a fresh one starts with the vault as its handoff. Without a
 # visible gauge the decision is made by surprise, mid-task, which is exactly when it is most
 # expensive. So the thresholds name the ACTION, not just the number.
+#
+# The healthy band is GREEN, not dim — and plain green rather than bold. Dim was close to
+# unreadable on many themes, so the gauge only became legible once it had already escalated
+# to amber: "everything is fine" and "this indicator is not working" looked alike, and the
+# absent case (no field, non-numeric input, a degraded render) looks like nothing too. An
+# indicator meant to be watched passively has to be readable in its calm state or it stops
+# being consulted. Plain rather than bold, because this row's escalation is carried by hue
+# and by the action text the calm band deliberately lacks — bolding the least actionable
+# state would make it the loudest thing on the row, against the same principle that keeps
+# the rate limit threshold-gated.
 seg_ctx() {
   [ -n "$ctx" ] && [ "$ctx" -eq "$ctx" ] 2>/dev/null || return 0
   if   [ "$ctx" -ge 85 ]; then printf '%sctx %s%% — checkpoint now%s'  "$RED"   "$ctx" "$RESET"
   elif [ "$ctx" -ge 70 ]; then printf '%sctx %s%% — checkpoint soon%s' "$AMBER" "$ctx" "$RESET"
-  else                         printf '%sctx %s%%%s'                   "$DIM"   "$ctx" "$RESET"
+  else                         printf '%sctx %s%%%s'                   "$GREEN" "$ctx" "$RESET"
   fi
 }
 
