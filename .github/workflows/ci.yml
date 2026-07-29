@@ -156,6 +156,27 @@ jobs:
             && { echo "  FAIL segment emitted color under NO_COLOR"; fail=1; } \
             || echo "  ok   NO_COLOR is honored by the segment path"
 
+          # the healthy band must be readable in its calm state — dim made "everything is
+          # fine" look like "this indicator is not working", which is also how the absent
+          # case renders. Colors asserted per band so a future edit cannot quietly collapse
+          # two of them into one.
+          band() { printf '{"context_window":{"used_percentage":%s}}' "$1" | ./bin/statusline.sh --segment ctx | cat -v; }
+          band 42 | grep -q '\^\[\[32m' \
+            && echo "  ok   the healthy band is green, not dim" \
+            || { echo "  FAIL healthy band is not green: $(band 42)"; fail=1; }
+          band 42 | grep -q '\^\[\[1m' \
+            && { echo "  FAIL healthy band is bold — the calm state must not be the loudest thing on the row"; fail=1; } \
+            || echo "  ok   ...and plain, not bold"
+          band 72 | grep -q '\^\[\[33m' \
+            && echo "  ok   the soon-band is still amber" \
+            || { echo "  FAIL soon-band colour changed"; fail=1; }
+          band 88 | grep -q '\^\[\[31m' \
+            && echo "  ok   the now-band is still red" \
+            || { echo "  FAIL now-band colour changed"; fail=1; }
+          printf '{"context_window":{"used_percentage":42}}' | NO_COLOR=1 ./bin/statusline.sh --segment ctx | grep -q $'\033' \
+            && { echo "  FAIL the new colour leaks escapes under NO_COLOR"; fail=1; } \
+            || echo "  ok   the new colour is blanked under NO_COLOR too"
+
           ./bin/statusline.sh --segments | grep -qx 'stale' \
             && echo "  ok   the available segments are discoverable" \
             || { echo "  FAIL --segments does not list them"; fail=1; }
@@ -2166,5 +2187,54 @@ jobs:
           printf '%s' "$out3" | grep -q 'also on project' \
             && { echo "  FAIL warned about a session that has finished"; fail=1; } \
             || echo "  ok   ...and no longer warns about it, so no manual cleanup is needed"
+
+          exit "$fail"
+
+      - name: A bare status sees every local record, not just the retired one
+        run: |
+          # The slug-collection loop globbed *.outbox — the LEGACY copy-paste artifact the
+          # supported path no longer produces — so the bare listing enumerated exactly the
+          # artifact class that had been retired and ignored the markers submit/push write.
+          # Fail-open: a confident, well-formed "no proposals" while submitted markers sat
+          # beside it, which is the duplicate-resend trap this subcommand exists to prevent.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-bare"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/bare"; rm -rf "$T"; mkdir -p "$T/vault/.engine-proposal"; fail=0
+          V="$T/vault"; git -C "$V" init -q .
+          printf -- '---\nboundary: personal\n---\n' > "$V/CLAUDE.md"
+          git -C "$V" add -A; git -C "$V" commit -qm seed
+          # status reads an engine checkout; this repo is one
+          ln -s "$GITHUB_WORKSPACE" "$V/engine"
+
+          printf 'proposal/alpha\n' > "$V/.engine-proposal/alpha.submitted"
+          printf 'proposal/beta\n'  > "$V/.engine-proposal/beta.prepared"
+          out="$(./bin/engine-proposal.sh status --vault "$V" 2>&1)"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'SUBMITTED, not yet merged' \
+            && echo "  ok   a submitted marker appears in the bare listing" \
+            || { echo "  FAIL a pushed proposal is invisible without --slug"; fail=1; }
+          printf '%s' "$out" | grep -q 'WRITTEN LOCALLY' \
+            && echo "  ok   a prepared marker appears too" \
+            || { echo "  FAIL a prepared proposal is invisible without --slug"; fail=1; }
+
+          # both markers for one slug is the normal end state — prepare then push — and
+          # must read as ONE proposal, not two
+          printf 'proposal/alpha\n' > "$V/.engine-proposal/alpha.prepared"
+          n="$(./bin/engine-proposal.sh status --vault "$V" 2>&1 | grep -cE '^  alpha ')"
+          [ "$n" = "1" ] \
+            && echo "  ok   a slug with both markers is reported once" \
+            || { echo "  FAIL slug reported $n times"; fail=1; }
+
+          # and the empty case must not imply a clean slate
+          rm -f "$V"/.engine-proposal/*
+          e="$(./bin/engine-proposal.sh status --vault "$V" 2>&1)"
+          printf '%s' "$e" | grep -q 'not evidence that nothing is' \
+            && echo "  ok   an empty result still says it is not proof of nothing outstanding" \
+            || { echo "  FAIL the empty case implies a clean slate"; fail=1; }
+          printf '%s' "$e" | grep -q 'submitted or prepared markers' \
+            && echo "  ok   ...and names what it actually scanned" \
+            || { echo "  FAIL the empty message still describes only the outbox"; fail=1; }
 
           exit "$fail"

@@ -1,8 +1,8 @@
 ---
 slug: bare-status-ignores-submitted-markers
-outcome: open
+outcome: accepted
 received: 2026-07-29
----
+reason: "accepted as reported, with the suggested fix — the listing globs *.submitted and *.prepared alongside the legacy *.outbox, deduplicated by slug, since prepare-then-push is the normal end state and reporting it twice would look like two proposals. The report's closing point is the one that mattered most: the documented contract already promised markers were included, so code and doc disagreed and the doc was right; the empty-case message now names what it actually scanned rather than describing only the outbox, which is what made an empty result read as expected. Confirmed independently while draining the queue — a bare status during that session reported nothing while markers sat beside it"
 
 HANDOFF — engine defect report
 slug: bare-status-ignores-submitted-markers
