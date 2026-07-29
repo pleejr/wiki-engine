@@ -39,6 +39,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 |---|---|---|
 | `adopt-reconcile-gitignore` | shipped | derived |
 | `adopt-step-asset-resolution` | shipped | v1.32.0 |
+| `concurrent-session-project-claims` | open | received 2026-07-29 |
 | `crossover-export-split-default` | shipped | v1.24.0 |
 | `engine-proposal-file-queue` | partially-accepted | transport diagnosis kept whole; submit split from push because the repo is public and the scan cannot see semantic leakage, the submitted-vs-local criterion re-specified on local evidence since status is offline, the banner return path replaced by pin-bump delivery, and PROPOSALS.md generated rather than retired to avoid rewriting the trailer gate |
 | `gate-inert-relative-hookspath` | shipped | derived |
