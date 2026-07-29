@@ -56,4 +56,5 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `submit-rejects-submodule-engine-checkout` | open | received 2026-07-29 |
 | `upkeep-sync-clones` | shipped | derived |
 | `upkeep-tolerate-describe-refs` | shipped | derived |
+| `upkeep-unresolvable-clone-skips-freshness-silently` | open | received 2026-07-29 |
 <!-- proposals:end -->
