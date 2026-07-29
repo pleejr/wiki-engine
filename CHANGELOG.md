@@ -12,6 +12,14 @@ Untagged — CI/release only. Consumers read workflows from `HEAD`, never throug
 - **`release.yml` can be run manually (`workflow_dispatch`), taking the tag as an input.** A push carrying **more than three tags runs no workflows at all** — GitHub's own limit, not an error. Five tags were pushed at once, this workflow never fired, every tag existed on the remote, nothing was red, and the Releases page silently stayed behind; with a push-only trigger there was then no way to run it for the tags it missed, so those releases had to be reconstructed by hand. Dispatch takes the tag explicitly because `github.ref_name` on a manual run is the *branch*, and checkout now pins to that tag so the notes and derived title come from the release's own tree exactly as they do on the push path. Pushing version tags **one at a time** remains the right habit; this is the backstop, and the existing idempotent skip makes re-running a partially-completed batch harmless.
 - The dispatch input is validated as a **tag**. Checkout already fails on a ref that does not exist, but it accepts a branch quite happily — and publishing `main` as though it were a version is a worse outcome than a failed run.
 
+## [1.48.5] — 2026-07-29
+
+Patch — the staleness verdict is bold, and the healthy band uses the bright green slot. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
+
+### Changed
+- **The staleness verdict is bold on both its paths** — red for a MAJOR delta, amber otherwise. Every coloured element on the row is now bold, so a plain one would read as the exception rather than the calm case. CI asserts both paths and that `NO_COLOR` blanks the fragment.
+- **The healthy context band is `92m` (bright green), not `32m`.** Standard green resolves to whatever a theme binds to its dark-green slot, which on several common themes is a muted olive — closer to the dim it replaced than to a signal, which is the whole complaint the original report opened with. `92m` is the palette's high-intensity slot, so a theme cannot mute it into the background. Amber and red stay standard: they already read as escalation, and brightening them would flatten the contrast that separates the two.
+
 ## [1.48.4] — 2026-07-29
 
 Patch — the rate-limit element is bold too. Adopt with `bin/adopt.sh` or `update.sh`; no migration.

@@ -161,9 +161,11 @@ jobs:
           # case renders. Colors asserted per band so a future edit cannot quietly collapse
           # two of them into one.
           band() { printf '{"context_window":{"used_percentage":%s}}' "$1" | ./bin/statusline.sh --segment ctx | cat -v; }
-          band 42 | grep -q '\^\[\[32m' \
-            && echo "  ok   the healthy band is green, not dim" \
-            || { echo "  FAIL healthy band is not green: $(band 42)"; fail=1; }
+          # 92m, the palette's BRIGHT green slot — not 32m, which several themes bind to a
+          # muted olive that reads closer to the dim it replaced than to a signal
+          band 42 | grep -q '\^\[\[92m' \
+            && echo "  ok   the healthy band is bright green, not dim or standard green" \
+            || { echo "  FAIL healthy band is not bright green: $(band 42)"; fail=1; }
           # every band is bold — escalation is carried by hue and by the action text the calm
           # band lacks, so a partially-bold gauge just makes one band the odd one out
           for pct in 42 72 88; do
@@ -190,9 +192,24 @@ jobs:
           [ -z "$(rl 79)" ] \
             && echo "  ok   ...and still silent below the threshold" \
             || { echo "  FAIL rate limit printed below its threshold: $(rl 79)"; fail=1; }
+          # the staleness verdict is bold on both its paths — MAJOR reads red, anything else
+          # amber — since every coloured element on this row is now bold and a plain one would
+          # read as the exception. $CFG is still exported from above.
+          stale_frag() { printf '%s\n' "$1" > "$CFG/.wiki-engine-status"; ./bin/statusline.sh --segment stale | cat -v; }
+          stale_frag 'engine v1.0.0 -> v2.0.0 (MAJOR)' | grep -q '\^\[\[1m\^\[\[31m' \
+            && echo "  ok   the MAJOR staleness verdict is bold red" \
+            || { echo "  FAIL MAJOR verdict is not bold red: $(stale_frag 'engine v1.0.0 -> v2.0.0 (MAJOR)')"; fail=1; }
+          stale_frag 'engine v1.0.0 -> v1.1.0' | grep -q '\^\[\[1m\^\[\[33m' \
+            && echo "  ok   ...and a non-MAJOR one is bold amber" \
+            || { echo "  FAIL non-MAJOR verdict is not bold amber: $(stale_frag 'engine v1.0.0 -> v1.1.0')"; fail=1; }
+          printf 'engine v1.0.0 -> v2.0.0 (MAJOR)\n' > "$CFG/.wiki-engine-status"
+
           printf '{"context_window":{"used_percentage":42}}' | NO_COLOR=1 ./bin/statusline.sh --segment ctx | grep -q $'\033' \
             && { echo "  FAIL the new colour leaks escapes under NO_COLOR"; fail=1; } \
             || echo "  ok   the new colour is blanked under NO_COLOR too"
+          NO_COLOR=1 ./bin/statusline.sh --segment stale | grep -q $'\033' \
+            && { echo "  FAIL the staleness verdict leaks escapes under NO_COLOR"; fail=1; } \
+            || echo "  ok   ...and so is the staleness verdict"
 
           ./bin/statusline.sh --segments | grep -qx 'stale' \
             && echo "  ok   the available segments are discoverable" \
