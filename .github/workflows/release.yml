@@ -4,11 +4,29 @@ name: release
 # version's CHANGELOG.md section as the notes — so git tags and GitHub Releases never
 # drift apart again (they had: tags ran to v1.12.1 while Releases stopped at v1.6.0).
 # Deterministic, no `claude`. Idempotent: skips if the release already exists.
+#
+# WHY workflow_dispatch. A push carrying MORE THAN THREE TAGS runs no workflows at all —
+# GitHub's own limit, not an error. Five tags were pushed at once and this workflow simply
+# never fired: every tag existed on the remote, nothing was red, and the Releases page
+# silently stayed behind. With a push-only trigger there was then no way to run it for the
+# tags it missed, so the releases had to be reconstructed by hand — which is exactly the
+# kind of hand-reproduction the workflow exists to make unnecessary. Dispatch takes the tag
+# as an input because `github.ref_name` on a manual run is the branch, not a tag.
+#
+# The safest recovery is still to push version tags ONE AT A TIME; this is the backstop for
+# when that was not done, and the idempotent skip makes re-running a partially-completed
+# batch harmless.
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to release (e.g. v1.48.1). It must already exist.'
+        required: true
+        type: string
 
 permissions:
   contents: write   # required to create a Release
@@ -18,12 +36,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Check out the TAG, not the branch the dispatch was started from — the notes and
+          # the derived title must come from that release's own tree, as they do on the push
+          # path. On a tag push this resolves to exactly what the default would have been.
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - name: Create GitHub Release from the CHANGELOG section
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          # A dispatch input is free text. Checkout already fails on a ref that does not
+          # exist, but it accepts a BRANCH quite happily — and releasing "main" as though it
+          # were a version is a worse outcome than a failed run. This is the check that the
+          # input is a tag, which nothing above enforces.
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null \
+            || { echo "no such tag: $TAG (it must already exist and be pushed)" >&2; exit 1; }
+
           ver="${TAG#v}"
           notes="$(awk -v ver="$ver" '$0 ~ "^## \\["ver"\\]"{f=1;next} /^## \[/{f=0} f' CHANGELOG.md)"
           [ -n "$notes" ] || notes="Release $TAG"
