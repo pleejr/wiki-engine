@@ -1,8 +1,8 @@
 ---
 slug: upkeep-unresolvable-clone-skips-freshness-silently
-outcome: open
+outcome: accepted
 received: 2026-07-29
----
+reason: "accepted as reported, with the suggested shape — an unresolvable: row rather than a silent continue, and both rejected alternatives (remote-matching search, hard error) rejected here for the reasons given. Extended in two ways the report did not ask for: scan counts the unassessed pages separately, since folded into the total they read as ordinary work; and sync-clones now names a clone it cannot find, which was the same silence one verb over"
 
 HANDOFF — engine defect report
 slug: upkeep-unresolvable-clone-skips-freshness-silently
