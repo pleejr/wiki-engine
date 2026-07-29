@@ -4,6 +4,22 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.46.1] — 2026-07-29
+
+Patch — `submit` works in the pinned `engine/` submodule, which is the checkout it defaults to. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `submit-rejects-submodule-engine-checkout`.
+
+### Fixed
+- **The guard rejected the default checkout.** `submit` tested whether `engine/.git` is a *directory*; in a submodule it is a **file** holding a `gitdir:` pointer, so the test was false for every consumer using the documented default — while the resolver's own comment states that the pinned submodule is the engine checkout every consumer already has. The test now asks the property actually required: is this a git work tree it can branch in. Fail-closed, but what it closed was the *only* sanctioned upstream channel, and the printed remedy pointed at a separate clone a consumer vault by definition does not have — so the natural next move was editing the pinned submodule in place, the time bomb the skill exists to warn against.
+- **`submit` left the consumer's pinned engine parked on another commit.** It cut the proposal branch from `origin/main` and never came back, so in the submodule case the version every skill, hook and lint in that vault runs at was silently swapped, and the vault read as having an unexpected submodule pointer. The checkout is restored to where it was found; the branch survives as a ref, which is all `push` needs.
+- **The proposal commit now carries the regenerated ledger.** `PROPOSALS.md` is derived from `proposals/`, so adding a queue file without regenerating left the committed ledger stale — and the drift gate then failed the **reporter's own pull request**, for a step nothing had told them to run. Intake was doing this by hand on every arrival.
+
+### Changed
+- **`push` no longer depends on the environment being re-created.** The prepared marker records the checkout the branch lives in alongside the branch name, so a submission prepared with `ENGINE_REPO` set no longer dies at push time if the variable is not still exported. This supersedes the reporter's smaller observation — that the printed `To publish:` line omitted `ENGINE_REPO` — by removing the dependency rather than documenting it. An explicit `ENGINE_REPO` still wins.
+
+### Notes
+- The pre-push preview is read from the branch, not the working tree. Reading it from disk after the restore printed an **empty box** — caught by reviewing the diff rather than by any acceptance criterion, since it lives outside the design's frame. That box is the only review of *meaning* anywhere in the chain, and a safety surface that fails silently is worse than none; CI now asserts it shows the block.
+- The new check builds a real submodule fixture, because a fixture whose `.git` is a directory cannot reproduce the bug at all — it asserts that shape first, so the test cannot pass vacuously.
+
 ## [1.46.0] — 2026-07-28
 
 Minor — the copy-paste proposal channel is retired. `submit`/`push` are the way proposals travel; `stash` still runs, warns, and is no longer taught anywhere. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Completes the sequencing `engine-proposal-file-queue` asked for.

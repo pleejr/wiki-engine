@@ -1,8 +1,8 @@
 ---
 slug: submit-rejects-submodule-engine-checkout
-outcome: open
+outcome: accepted
 received: 2026-07-29
----
+reason: "accepted as reported, with the reporter's own hypothesis — the guard tests the shape of .git instead of the property it needs, so it is now a work-tree test. The smaller observation was taken further than reported: rather than printing ENGINE_REPO back, submit records the checkout in the prepared marker, so push no longer depends on the environment at all. Two adjacent defects the fix exposed were fixed with it: submit left the consumer's PINNED submodule parked on a branch cut from origin/main, and it did not regenerate the derived ledger, so the drift gate failed the reporter's own pull request for a step nothing told them to run"
 
 HANDOFF — engine defect report
 slug: submit-rejects-submodule-engine-checkout

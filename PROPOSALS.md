@@ -53,7 +53,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `session-banner-pending-proposal-nudge` | alias | engine-proposal-file-queue |
 | `skills-hardcode-boundary-value` | shipped | derived |
 | `submit-branches-from-head-not-main` | shipped | derived |
-| `submit-rejects-submodule-engine-checkout` | open | received 2026-07-29 |
+| `submit-rejects-submodule-engine-checkout` | shipped | derived |
 | `upkeep-sync-clones` | shipped | derived |
 | `upkeep-tolerate-describe-refs` | shipped | derived |
 <!-- proposals:end -->

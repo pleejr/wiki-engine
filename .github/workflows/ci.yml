@@ -1243,6 +1243,77 @@ jobs:
 
           exit "$fail"
 
+      - name: submit works in the submodule checkout it defaults to
+        run: |
+          # The checkout `submit` picks by default IS the vault's pinned submodule, where
+          # `.git` is a FILE holding a gitdir pointer — so a `-d .git` guard rejected every
+          # consumer using the documented default and told them to go find a clone they do
+          # not have. Fail-closed, but what it closed was the only sanctioned upstream
+          # channel, and the workaround it invited (edit the pinned submodule in place) is
+          # the time bomb the skill exists to warn against.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-submod"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          git config --global protocol.file.allow always
+          EP="$GITHUB_WORKSPACE/bin/engine-proposal.sh"
+          T="$RUNNER_TEMP/submod"; rm -rf "$T"; mkdir -p "$T"; fail=0
+
+          git init -q --bare "$T/origin-engine.git"
+          git clone -q "$T/origin-engine.git" "$T/eng-src" 2>/dev/null
+          mkdir -p "$T/eng-src/bin" "$T/eng-src/proposals"
+          cp "$GITHUB_WORKSPACE/bin/engine-proposal.sh" "$GITHUB_WORKSPACE/bin/gen-proposals-ledger.sh" "$T/eng-src/bin/"
+          echo seed > "$T/eng-src/README.md"
+          printf '<!-- proposals:start -->\n<!-- proposals:end -->\n' > "$T/eng-src/PROPOSALS.md"
+          git -C "$T/eng-src" add -A; git -C "$T/eng-src" commit -qm seed; git -C "$T/eng-src" push -q origin main
+
+          V="$T/vault"; git init -q "$V"
+          printf -- '---\nboundary: personal\n---\n' > "$V/CLAUDE.md"; : > "$V/.gitignore"
+          git -C "$V" add -A; git -C "$V" commit -qm seed
+          git -C "$V" submodule add -q "$T/origin-engine.git" engine
+          git -C "$V" commit -qm "pin engine"
+          pin="$(git -C "$V/engine" rev-parse HEAD)"
+
+          [ -f "$V/engine/.git" ] \
+            && echo "  ok   fixture reproduces the shape that broke it (.git is a file)" \
+            || { echo "  FAIL fixture is not a submodule; the test is void"; fail=1; }
+
+          printf 'slug: submodq\nboundary: generic\n\nA generic problem statement.\n' > "$T/block.md"
+          out="$("$EP" submit --vault "$V" --slug submodq --file "$T/block.md" 2>&1)" \
+            && echo "  ok   submit accepts the pinned submodule as the engine checkout" \
+            || { echo "  FAIL submit rejected the checkout it defaults to"; fail=1; }
+
+          # the preview is the only review of MEANING in the chain; an empty box is a
+          # safety surface failing silently
+          printf '%s' "$out" | grep -q 'A generic problem statement' \
+            && echo "  ok   the pre-push preview shows the block that becomes public" \
+            || { echo "  FAIL preview box was empty"; fail=1; }
+
+          # the pin must be restored: parking a consumer's submodule on a branch cut from
+          # origin/main silently changes the version their whole vault runs at
+          [ "$(git -C "$V/engine" rev-parse HEAD)" = "$pin" ] \
+            && echo "  ok   the submodule is left on its pinned commit" \
+            || { echo "  FAIL submit left the pinned engine on another commit"; fail=1; }
+          git -C "$V/engine" rev-parse --verify -q proposal/submodq >/dev/null \
+            && echo "  ok   the prepared branch survives as a ref" \
+            || { echo "  FAIL prepared branch is gone"; fail=1; }
+
+          # the derived ledger travels WITH the proposal, or the drift gate fails the
+          # reporter's own pull request for a step nobody told them to run
+          git -C "$V/engine" show proposal/submodq --stat --oneline | grep -q 'PROPOSALS.md' \
+            && echo "  ok   the ledger is regenerated in the proposal commit" \
+            || { echo "  FAIL proposal commit leaves the committed ledger stale"; fail=1; }
+          git -C "$V/engine" show "proposal/submodq:PROPOSALS.md" | grep -q 'submodq' \
+            && echo "  ok   the regenerated ledger carries the new open row" \
+            || { echo "  FAIL no row for the arriving proposal"; fail=1; }
+
+          # push must not depend on the environment being re-created
+          [ "$(sed -n '2p' "$V/.engine-proposal/submodq.prepared")" = "$V/engine" ] \
+            && echo "  ok   the marker records which checkout holds the branch" \
+            || { echo "  FAIL marker does not record the engine checkout"; fail=1; }
+
+          exit "$fail"
+
       - name: The release title survives punctuation inside a code span
         run: |
           # This logic lived inline in release.yml, which runs only on a version-tag push —
