@@ -67,10 +67,17 @@ if [ "$LIST" -eq 1 ]; then
 fi
 
 # ANSI (statusline supports color; keep it minimal). Disable if NO_COLOR is set.
+#
+# GREEN is the BRIGHT green (SGR 92), not the standard one (32). The standard green resolves
+# to whatever a theme has bound to its dark-green slot, which on several common themes is a
+# muted olive that reads closer to the dim it replaced than to a signal. 92 is the palette's
+# high-intensity slot, so it stays a green a theme cannot mute into the background. Amber and
+# red stay standard: they are already read as escalation, and brightening them would flatten
+# the contrast that separates the two.
 if [ -n "${NO_COLOR:-}" ]; then
   DIM=""; BOLD=""; AMBER=""; RED=""; GREEN=""; RESET=""
 else
-  DIM=$'\033[2m'; BOLD=$'\033[1m'; AMBER=$'\033[33m'; RED=$'\033[31m'; GREEN=$'\033[32m'; RESET=$'\033[0m'
+  DIM=$'\033[2m'; BOLD=$'\033[1m'; AMBER=$'\033[33m'; RED=$'\033[31m'; GREEN=$'\033[92m'; RESET=$'\033[0m'
 fi
 
 # --- session context from stdin JSON (dir + model + context usage), best-effort -------
@@ -131,7 +138,9 @@ seg_rl() {
 
 # The staleness verdict, read from the preflight cache (may be empty/absent). A cache the
 # preflight has not refreshed in a week is IGNORED rather than shown: stale information
-# about staleness is worse than none.
+# about staleness is worse than none. Bold, like everything else that carries a colour —
+# every element on this row now earns emphasis by being present at all, so a plain one would
+# read as the exception rather than the calm case.
 seg_stale() {
   local frag="" col
   if [ -f "$CACHE" ]; then
@@ -143,8 +152,8 @@ seg_stale() {
   fi
   [ -n "$frag" ] || return 0
   case "$frag" in
-    *MAJOR*|*⚠*) col="$RED";;
-    *)           col="$AMBER";;
+    *MAJOR*|*⚠*) col="$BOLD$RED";;
+    *)           col="$BOLD$AMBER";;
   esac
   printf '%s⚠ %s%s' "$col" "$frag" "$RESET"
 }
