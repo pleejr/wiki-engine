@@ -12,6 +12,14 @@ Untagged — CI/release only. Consumers read workflows from `HEAD`, never throug
 - **`release.yml` can be run manually (`workflow_dispatch`), taking the tag as an input.** A push carrying **more than three tags runs no workflows at all** — GitHub's own limit, not an error. Five tags were pushed at once, this workflow never fired, every tag existed on the remote, nothing was red, and the Releases page silently stayed behind; with a push-only trigger there was then no way to run it for the tags it missed, so those releases had to be reconstructed by hand. Dispatch takes the tag explicitly because `github.ref_name` on a manual run is the *branch*, and checkout now pins to that tag so the notes and derived title come from the release's own tree exactly as they do on the push path. Pushing version tags **one at a time** remains the right habit; this is the backstop, and the existing idempotent skip makes re-running a partially-completed batch harmless.
 - The dispatch input is validated as a **tag**. Checkout already fails on a ref that does not exist, but it accepts a branch quite happily — and publishing `main` as though it were a version is a worse outcome than a failed run.
 
+## [1.48.3] — 2026-07-29
+
+Patch — the whole context gauge is bold, not just its calm band. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
+
+### Changed
+- **The amber and red bands are bold too.** `statusline-ctx-healthy-band-bold-green` listed this under *Alternatives considered* and rejected it, on the grounds that bolding everything removes the contrast that makes escalation legible. Overridden by the vault owner. The contrast is now purely chromatic — green / amber / red — plus the action text (`— checkpoint soon`, `— checkpoint now`) that the calm band deliberately lacks, which is the more legible of the two signals anyway. Bolding only the calm band had left it as the single unbolded pair on the row.
+- CI asserts all three bands are bold, and continues to assert each band's hue separately so an edit cannot quietly collapse two of them into one.
+
 ## [1.48.2] — 2026-07-29
 
 Patch — the context gauge's healthy band is bold, as its proposal asked. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Closes `statusline-ctx-healthy-band-bold-green`, now **accepted in full**.
