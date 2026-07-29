@@ -100,6 +100,82 @@ jobs:
           done
           echo "ok: bands correct, degrades cleanly"
 
+      - name: Status-line segments compose, and cannot drift from the full row
+        run: |
+          # The host allows exactly ONE status line, so a vault with its own row could not
+          # adopt any element of this one without abandoning theirs — every feature shipped
+          # to the status line was permanently unreachable for them, and nothing reported
+          # it. The property that matters is ONE implementation: a segment path duplicating
+          # the renderer's logic just relocates the drift it exists to prevent, so the
+          # composed row and the full row must be character-identical.
+          fail=0
+          CFG="$RUNNER_TEMP/slcfg"; rm -rf "$CFG"; mkdir -p "$CFG"
+          printf 'engine v1.0.0 -> v2.0.0 (MAJOR)\n' > "$CFG/.wiki-engine-status"
+          export CLAUDE_CONFIG_DIR="$CFG"
+          J='{"workspace":{"current_dir":"/w"},"model":{"display_name":"M"},"context_window":{"used_percentage":88},"rate_limits":{"five_hour":{"used_percentage":81}}}'
+          seg() { printf '%s' "$J" | ./bin/statusline.sh --segment "$1"; }
+
+          full="$(printf '%s' "$J" | ./bin/statusline.sh)"
+          DIM=$'\033[2m'; RESET=$'\033[0m'
+          comp="$(seg dir) ${DIM}·${RESET} $(seg model) ${DIM}·${RESET} $(seg ctx) ${DIM}·${RESET} $(seg rl)  $(seg stale)"
+          [ "$full" = "$comp" ] \
+            && echo "  ok   the full row IS the composition of its segments" \
+            || { echo "  FAIL segment path has drifted from the renderer"; printf '%s\n%s\n' "$full" "$comp" | cat -v; fail=1; }
+
+          # a segment prints only its own fragment (uncolored, so the assertion is about
+          # the text rather than about where the escape sequences sit)
+          plain="$(printf '%s' "$J" | NO_COLOR=1 ./bin/statusline.sh --segment ctx)"
+          case "$plain" in
+            'ctx 88'*) echo "  ok   a segment prints only its fragment" ;;
+            *) echo "  FAIL segment carried more than itself: $plain"; fail=1 ;;
+          esac
+          case "$plain" in
+            *M*|*/w*) echo "  FAIL segment leaked another element's text: $plain"; fail=1 ;;
+            *) echo "  ok   ...with no other element's text" ;;
+          esac
+
+          # nothing to say = NOTHING, exit 0. Never a placeholder like "ctx 0%".
+          for bad in '{"model":{"display_name":"M"}}' '{"context_window":{"used_percentage":null}}' \
+                     '{"context_window":{"used_percentage":"abc"}}' 'not json'; do
+            o="$(printf '%s' "$bad" | ./bin/statusline.sh --segment ctx)"; rc=$?
+            [ "$rc" = "0" ] && [ -z "$o" ] \
+              || { echo "  FAIL ctx segment misbehaved on: $bad (rc=$rc out=$o)"; fail=1; }
+          done
+          echo "  ok   an absent, null or non-numeric field yields silence and exit 0"
+
+          # an unknown name must not corrupt a consuming row, but must be visible by hand
+          o="$(printf '%s' "$J" | ./bin/statusline.sh --segment nope 2>/dev/null)"
+          [ -z "$o" ] && echo "  ok   an unknown segment prints nothing to stdout" \
+                      || { echo "  FAIL unknown segment wrote to a row"; fail=1; }
+          printf '%s' "$J" | ./bin/statusline.sh --segment nope 2>&1 >/dev/null | grep -q 'no such segment' \
+            && echo "  ok   ...and says so on stderr" \
+            || { echo "  FAIL unknown segment failed silently"; fail=1; }
+
+          # NO_COLOR, and exit 0 on every path
+          printf '%s' "$J" | NO_COLOR=1 ./bin/statusline.sh --segment ctx | grep -q $'\033' \
+            && { echo "  FAIL segment emitted color under NO_COLOR"; fail=1; } \
+            || echo "  ok   NO_COLOR is honored by the segment path"
+
+          ./bin/statusline.sh --segments | grep -qx 'stale' \
+            && echo "  ok   the available segments are discoverable" \
+            || { echo "  FAIL --segments does not list them"; fail=1; }
+
+          # the refusal to clobber a foreign row must name the alternative, or "we will not
+          # touch your row" keeps meaning "and therefore you get none of this"
+          if command -v jq >/dev/null 2>&1; then
+            S="$RUNNER_TEMP/foreign-settings.json"
+            printf '{"statusLine":{"type":"command","command":"/my/own/row.sh"}}\n' > "$S"
+            o="$(./bin/ensure-statusline.sh --command "/eng/bin/statusline.sh" --marker 'eng/bin/statusline.sh' --settings "$S")"
+            printf '%s' "$o" | grep -q -- '--segment' \
+              && echo "  ok   a foreign row is left alone AND told about segments" \
+              || { echo "  FAIL the refusal is still a dead end"; fail=1; }
+            grep -q '/my/own/row.sh' "$S" \
+              && echo "  ok   ...and the foreign row is untouched" \
+              || { echo "  FAIL the foreign statusLine was modified"; fail=1; }
+          fi
+
+          exit "$fail"
+
       - name: Engine docs are soft-wrapped
         run: |
           # proposals/ is EXCLUDED: those files are consumer-authored payloads, not engine

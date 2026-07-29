@@ -1,8 +1,8 @@
 ---
 slug: statusline-composable-segments
-outcome: open
+outcome: accepted
 received: 2026-07-29
----
+reason: "accepted as proposed, including the constraint that matters most — the full renderer composes the same segment functions, so there is one implementation and CI asserts the composed row and the full row are character-identical. The opt-in tool still refuses to clobber a foreign row, unchanged; what changed is that the refusal now names the segment path, since a dead end that reports nothing is how the unreachability stayed invisible from both ends"
 
 HANDOFF — engine improvement proposal
 slug: statusline-composable-segments
