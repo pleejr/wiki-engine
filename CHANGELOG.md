@@ -4,6 +4,20 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.46.2] — 2026-07-29
+
+Patch — `upkeep scan` reports a repo page whose clone it cannot locate instead of skipping it. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `upkeep-unresolvable-clone-skips-freshness-silently`.
+
+### Fixed
+- **A page whose clone directory differs from its `sources.repo` was dropped from the freshness comparison entirely** — no warning, no row, nothing in the summary. Fail-open, and *disguised* rather than merely quiet: the same page still reaches the queue through the `verify:` path, which needs no clone, so the operator drains it and reasonably concludes the page was attended to while the freshness question was never asked. Such a page can go stale indefinitely. It also changed what a clean queue means — from *"every repo page matches its clone"* to *"every repo page whose clone I could find matches"*.
+- **`sync-clones` names the clone it could not find.** Its own doctrine is that a skip is a reported outcome, applied to a dirty tree, a detached HEAD, no upstream and a diverged branch — but not to the one case where the clone is not there at all.
+
+### Added
+- **`unresolvable:` — a fifth queue kind.** It reports rather than guesses: searching the repos root for a directory whose remote matches would silently bind a page to an unrelated second checkout of the same upstream, and hard-erroring would punish a page legitimately not cloned on *this* machine, a normal state on a multi-machine vault. The row names both remedies — fix `sources.repo`, or clone it here — and drains through the same `done` verb. `scan` counts them separately, because folded into the total they read as ordinary work.
+
+### Notes
+- The scan already held exactly this principle a few dozen lines away, for a project page with an unrecognized status: *"it is exactly the page most likely to be wrong, and skipping it would recreate the invisible failure this whole queue exists to remove."* The defect was applying it to one page type and not the other — which is also why the fix reuses that vocabulary rather than inventing a parallel one.
+
 ## [1.46.1] — 2026-07-29
 
 Patch — `submit` works in the pinned `engine/` submodule, which is the checkout it defaults to. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `submit-rejects-submodule-engine-checkout`.

@@ -32,6 +32,13 @@
 #              queue forever. Only the sha branch is suppressed; a TAGGED self-page
 #              still compares tags, which do not move on every commit.
 #   verify   — a repos/ page that is un-verified or verified-stale (verify-status.sh --todo).
+#   unresolvable — a repos/ page whose clone cannot be found at $UPKEEP_REPOS_ROOT/<repo>,
+#              so its freshness could not be assessed AT ALL. Reported rather than
+#              skipped: the page the tool could not examine is the one most likely to be
+#              wrong, and a silent skip made a clean queue mean "every page whose clone I
+#              could find is current" while reading as "every page is current". Drainable
+#              either way — fix sources.repo if the clone lives under another directory
+#              name, or clone it on this machine.
 #
 # Usage:
 #   upkeep.sh sync-clones [--check]   ff-only pull the clones backing repo pages
@@ -236,7 +243,31 @@ build_rows() {
       rec_ref="$(page_ref "$f")"
       repo="$(page_repo "$f")"; [ -n "$repo" ] || repo="$slug"
       clone="$REPOS_ROOT/$repo"
-      [ -d "$clone/.git" ] || continue
+      # AN UNLOCATABLE CLONE IS ITS OWN ANSWER, NOT "up to date". This used to be a bare
+      # `continue`: a page whose clone sits under a directory name differing from its
+      # sources.repo (a rename, a disambiguating prefix, a second checkout) was dropped
+      # from the freshness comparison and NO row of any kind was emitted about it. The
+      # failure was disguised rather than merely quiet — such a page still appears via the
+      # verify: path, which needs no clone, so the operator drains it and reasonably
+      # concludes it was attended to while the freshness question was never asked. It also
+      # silently changed what a clean queue MEANS: "every repo page matches its clone"
+      # became "every repo page whose clone I could find matches".
+      #
+      # The scan already holds exactly this principle for project pages with an unknown
+      # status — "it is exactly the page most likely to be wrong, and skipping it would
+      # recreate the invisible failure this whole queue exists to remove". The defect was
+      # applying it to one page type and not the other.
+      #
+      # It reports rather than guesses. Searching the repos root for a directory whose
+      # remote matches would bind the page to an unrelated second checkout of the same
+      # upstream; hard-erroring would punish a page legitimately not cloned on THIS
+      # machine, which is a normal state on a multi-machine vault. Both possibilities are
+      # named in the detail, because the row is drainable by a real action in either case.
+      if [ ! -d "$clone/.git" ]; then
+        printf 'unresolvable:%s\tunresolvable\trepos/%s.md\tno clone at %s — freshness unknown, not up to date (fix sources.repo if it is cloned under another name, or clone it here)\tpending\n' \
+          "$slug" "$slug" "$clone"
+        continue
+      fi
 
       if [ -n "$rec_ref" ] && [ "$rec_ref" != "$rec_sha" ]; then
         # tagged page: compare recorded tag vs the clone's latest tag.
@@ -323,7 +354,12 @@ case "$CMD" in
       slug="$(basename "$f" .md)"
       repo="$(page_repo "$f")"; [ -n "$repo" ] || repo="$slug"
       clone="$REPOS_ROOT/$repo"
-      [ -d "$clone/.git" ] || continue
+      # Named, like every other skip here — this verb's own doctrine is that a skip is a
+      # reported outcome, and it already applied that to a dirty tree and a detached HEAD
+      # while staying silent about the one case where the clone cannot be found at all.
+      if [ ! -d "$clone/.git" ]; then
+        printf '  skip   %-28s no clone at %s\n' "$repo" "$clone"; skipped=$((skipped+1)); continue
+      fi
 
       # THE VAULT'S OWN CLONE IS NEVER TOUCHED. A vault that documents itself has one
       # page whose clone IS this vault — the tree a session is working in, possibly
@@ -384,13 +420,20 @@ case "$CMD" in
     { printf '%s\n' "$HEADER"; [ -n "$rows" ] && printf '%s\n' "$rows"; } > "$QUEUE"
     n="$(printf '%s' "$rows" | grep -c . || true)"
     echo "upkeep: scanned → $n pending item(s) in ${QUEUE#$WIKI/}"
+    # Called out separately because these are the pages the scan could NOT assess. Folded
+    # into the total they read as ordinary work; omitted entirely — which is what used to
+    # happen — a drained queue would keep meaning more than it can.
+    u="$(printf '%s' "$rows" | grep -c '^unresolvable:' || true)"
+    if [ "${u:-0}" -gt 0 ]; then
+      echo "upkeep: $u of those are repo pages with no locatable clone — their freshness is UNKNOWN, not current"
+    fi
     ;;
   list)
     [ -f "$QUEUE" ] || { echo "upkeep: no queue yet — run 'upkeep.sh scan'"; exit 0; }
     awk -F'\t' -v p="$PENDING_ONLY" '
       /^#/ { next }
       p==1 && $5!="pending" { next }
-      { printf "%-24s %-8s %-22s %s [%s]\n", $1, $2, $3, $4, $5 }
+      { printf "%-24s %-12s %-22s %s [%s]\n", $1, $2, $3, $4, $5 }
     ' "$QUEUE"
     ;;
   next)
