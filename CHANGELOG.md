@@ -12,6 +12,14 @@ Untagged — CI/release only. Consumers read workflows from `HEAD`, never throug
 - **`release.yml` can be run manually (`workflow_dispatch`), taking the tag as an input.** A push carrying **more than three tags runs no workflows at all** — GitHub's own limit, not an error. Five tags were pushed at once, this workflow never fired, every tag existed on the remote, nothing was red, and the Releases page silently stayed behind; with a push-only trigger there was then no way to run it for the tags it missed, so those releases had to be reconstructed by hand. Dispatch takes the tag explicitly because `github.ref_name` on a manual run is the *branch*, and checkout now pins to that tag so the notes and derived title come from the release's own tree exactly as they do on the push path. Pushing version tags **one at a time** remains the right habit; this is the backstop, and the existing idempotent skip makes re-running a partially-completed batch harmless.
 - The dispatch input is validated as a **tag**. Checkout already fails on a ref that does not exist, but it accepts a branch quite happily — and publishing `main` as though it were a version is a worse outcome than a failed run.
 
+## [1.48.4] — 2026-07-29
+
+Patch — the rate-limit element is bold too. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
+
+### Changed
+- **`5h limit 81%` renders bold amber.** It is **threshold-gated**, so it appears only when it is already actionable — an element that has earned its place on the row should not then be the quietest thing on it. Still amber, still silent below 80%, which is the property that earns it the space at all. With the context gauge now bold across all three bands, this was the last coloured element left plain.
+- CI asserts the fragment is bold **and** still amber **and** still absent below the threshold, so bolding it cannot quietly become "always on screen".
+
 ## [1.48.3] — 2026-07-29
 
 Patch — the whole context gauge is bold, not just its calm band. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
