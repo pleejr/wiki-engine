@@ -1,8 +1,8 @@
 ---
 slug: worktree-reattach-returns-stale-base
-outcome: open
+outcome: accepted
 received: 2026-07-28
----
+reason: "accepted, with both remedies rather than the either/or the report offered: (b) where it is provably safe — a branch contributing no content the base lacks is deleted and re-cut off base, never reset, since nothing is left to protect — and (a) everywhere else, naming the distance, why the branch was kept, and the rebase command. The squash-merge aggravator is confirmed as the report described it; the reporter's retraction of their own fetch hypothesis kept the investigation off the wrong path. Their second, separable item — that gc's retention test needs patch-equivalence — was already shipped as gc-containment-squash-merge (v1.44.0), and this reuses that one test rather than adding a second axis"
 
 HANDOFF — engine defect report
 slug: worktree-reattach-returns-stale-base

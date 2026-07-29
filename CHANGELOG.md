@@ -4,6 +4,24 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.46.3] — 2026-07-29
+
+Patch — `ensure` never hands back a base silently behind the branch it claims to derive from. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `worktree-reattach-returns-stale-base`.
+
+### Fixed
+- **Reattaching to a surviving `wt/<session>` branch was reported as plain success.** Exit 0, a valid path, and genuine isolation — only the *base* was wrong, and nothing surfaced that until merge time, when append-only pages (a chronological log, a generated index region) conflict deterministically. The reporter's framing of this as **fail-open rather than data-loss** is right, and their retraction of their own first hypothesis — that `ensure` does not fetch — saved the investigation from starting in the wrong place. `ensure` does fetch; `base` was simply not consulted on the reattach path.
+- **The squash-merge aggravator was the more valuable half of the report, and it holds.** A vault whose workflow is branch → PR → squash-merge lands the work as a new commit with a different sha, so the branch is retained as still-holding-work and grows staler with every merge in the session — stale precisely *because* the work it held already landed. It is the normal case for a whole class of consumer, not a rare race.
+
+### Changed
+- **The reattach path now asks the question `gc` already asks, using the same test.** If the branch contributes no content `origin/main` lacks — judged by content, so a squash merge counts — it is cut fresh off `origin/main` rather than reattached behind it. If it *does* hold work, or containment cannot be determined, it is kept and reattached exactly as before, and the report names the distance (`N commit(s) BEHIND origin/main`), why the branch was kept, and the rebase command. Nothing is ever reset: the reporter's own warning against a naive `reset --hard` is the reason the safe case *deletes and re-cuts* instead.
+- **`ensure` also reports drift when it reuses an existing worktree** — the same invariant one case earlier, for a long session whose peers keep landing work. Deliberately without fetching: that is the hot path, so the number can under-report (`origin/main` as last fetched) but never over-report.
+- **`branch_contained` is now one implementation, shared by `gc` and `ensure`.** Two copies of "is this branch's work already landed?" would drift, and the subtle half — that ancestry is the wrong test for a squash-merging vault — is exactly the half a second copy gets wrong.
+
+### Notes
+- The reporter flagged `gc`'s containment test as possibly needing the same treatment. It already had it (`gc-containment-squash-merge`, v1.44.0): containment is judged by merging into the target and comparing trees. This change reuses that rather than adding a second axis.
+- A "could not determine" answer keeps the branch and still reports the distance, so an old git (< 2.38, no `merge-tree --write-tree`) degrades to the reporter's option (a) — report only — rather than to the old silence.
+- The `merge-tree rc=` in the old "could not determine" message was always `0`; it captured the exit status of `head`, not of `merge-tree`. Dropped rather than fixed — it told the reader nothing.
+
 ## [1.46.2] — 2026-07-29
 
 Patch — `upkeep scan` reports a repo page whose clone it cannot locate instead of skipping it. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `upkeep-unresolvable-clone-skips-freshness-silently`.
