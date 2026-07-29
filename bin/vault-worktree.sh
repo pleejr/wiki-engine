@@ -33,6 +33,9 @@
 #   vault-worktree.sh ensure       # idempotent; print the worktree path to write in
 #   vault-worktree.sh guard        # exit 1 if run in the canonical checkout (pre-commit)
 #   vault-worktree.sh lease [P...] # declare intended paths; warn on overlap with peers
+#   vault-worktree.sh claim [SLUG] # declare the PROJECT this session is working; with no
+#                                  #   slug, report every claim and whether it is live or
+#                                  #   STALE. Advisory, never blocking — see the verb.
 #   vault-worktree.sh peers        # live sessions, their branches and declared paths
 #   vault-worktree.sh integrate    # locked: rebase this session's branch, ff main to it
 #   vault-worktree.sh gc [path...] # with paths: retire exactly those now (clean-only, no
@@ -134,6 +137,12 @@ write_lease() {
   local prev_paths=""
   [ -f "$f" ] && prev_paths="$(lease_get "$f" paths)"
   local paths="$*"; [ -n "$paths" ] || paths="$prev_paths"
+  # The project this session declared, if any. Carried on the SAME record as the paths,
+  # for the same reason `lease_live` is decided in one place: a second presence store with
+  # its own liveness rule can disagree with this one about who is working, and disagreement
+  # about that is worse than no answer at all.
+  local project="${CLAIM_PROJECT:-}"
+  [ -n "$project" ] || { [ -f "$f" ] && project="$(lease_get "$f" project)"; }
   mkdir -p "$LEASE_DIR" 2>/dev/null || return 0
   {
     printf 'session=%s\n' "$(session_id)"
@@ -142,6 +151,7 @@ write_lease() {
     printf 'started=%s\n' "$([ -f "$f" ] && lease_get "$f" started || date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'heartbeat=%s\n' "$(now_epoch)"
     printf 'paths=%s\n' "$paths"
+    printf 'project=%s\n' "$project"
   } > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f" 2>/dev/null || true
 }
 
@@ -183,6 +193,49 @@ same_repo_worktree() {
 # sweep (which looks only for stale worktrees) could never reach it. Such a branch was
 # unreapable by any invocation, accumulating exactly the way v1.28.2 and v1.38.0 were cut
 # to stop. Same fail-safe direction throughout: every uncertain path keeps.
+# branch_contained <branch> <target> — does <branch> contribute any CONTENT that <target>
+# lacks?  0 = contained (contributes nothing), 1 = holds content target lacks, 2 = unknown.
+#
+# Extracted from retire_branch so `ensure` can ask the same question before it reattaches
+# to an existing branch. Two implementations of "is this branch's work already landed?"
+# would drift, and the subtle half — that ancestry is the WRONG test for a squash-merging
+# vault, since the work lands as a new commit with a different sha — is exactly the half a
+# second implementation gets wrong.
+# It also reports HOW it concluded, because the callers' messages differ: BC_REASON is
+# `ancestry` (the fast-forward case) or `content` (squash-merged or equivalent), and
+# BC_DIFF_FILES counts the files the branch holds that the target lacks.
+BC_REASON=""; BC_DIFF_FILES=""
+branch_contained() {
+  local br="$1" target="$2" mtree res
+  BC_REASON=""; BC_DIFF_FILES=""
+  if git -C "$WIKI" merge-base --is-ancestor "$br" "$target" 2>/dev/null; then
+    BC_REASON="ancestry"; return 0
+  fi
+  # ANCESTRY IS THE WRONG QUESTION FOR A SQUASH-MERGING VAULT. It is equivalent to
+  # containment only when the branch reached the target by a fast-forward. A vault whose
+  # house workflow is branch -> PR -> squash-merge lands the work as a NEW commit with a
+  # different sha, so the branch tip is not an ancestor and this arm fired on every single
+  # session. So ask the question actually meant: does merging this branch into the target
+  # CHANGE it? If the merge result tree IS the target's tree, the branch contributes
+  # nothing and is contained however it got there.
+  #
+  # Conservative by construction: only an exact tree match counts as contained. A
+  # conflicting merge still writes a tree (with markers), which differs and so reports as
+  # holding content — correct, since a branch that conflicts does. An unsupported git
+  # (< 2.38) writes no tree at all and reports UNKNOWN, which is a different answer from
+  # "holds work" and must stay distinguishable: every uncertain path keeps.
+  mtree="$(git -C "$WIKI" rev-parse "$target^{tree}" 2>/dev/null)"
+  res="$(git -C "$WIKI" merge-tree --write-tree "$target" "$br" 2>/dev/null | head -1)"
+  [ -n "$res" ] && [ "$(git -C "$WIKI" cat-file -t "$res" 2>/dev/null)" = "tree" ] || return 2
+  if [ "$res" = "$mtree" ]; then BC_REASON="content"; return 0; fi
+  BC_DIFF_FILES="$(git -C "$WIKI" diff --name-only "$mtree" "$res" 2>/dev/null | wc -l | tr -d ' ')"
+  return 1
+}
+
+# How many commits <target> has that <branch> does not — the distance a reattached
+# worktree would be editing behind. Empty if it cannot be computed.
+behind_count() { git -C "$WIKI" rev-list --count "$1..$2" 2>/dev/null || true; }
+
 retire_branch() {
   local br="$1"
   case "$br" in wt/*) ;; *) return 0 ;; esac
@@ -192,52 +245,28 @@ retire_branch() {
     # merged" whenever main has not been pushed yet — leaving a wt/* branch behind
     # after every single session. `merge-base --is-ancestor` asks the question we
     # actually mean: are these commits already contained in main? Only then -D.
-    local mainref
+    local mainref rc=0
     mainref="$(git -C "$WIKI" symbolic-ref --short HEAD 2>/dev/null || echo main)"
-    if git -C "$WIKI" merge-base --is-ancestor "$br" "$mainref" 2>/dev/null; then
-      if git -C "$WIKI" branch -D "$br" >/dev/null 2>&1; then
-        log "vault-worktree: deleted $br (already contained in $mainref)"
-      fi
-    else
-      # ANCESTRY IS THE WRONG QUESTION FOR A SQUASH-MERGING VAULT. It is equivalent to
-      # containment only when the branch reached main by the fast-forward `integrate`
-      # performs. A vault whose house workflow is branch -> PR -> squash-merge lands
-      # the work as a NEW commit with a different sha, so the branch tip is not an
-      # ancestor of main and this arm fired on every single session — the same
-      # unbounded wt/* accumulation v1.28.2 was cut to stop, and a "delete by hand"
-      # line that always fires is one operators stop reading.
-      #
-      # So when ancestry says no, ask the question actually meant: does merging this
-      # branch into main CHANGE main? If the merge result tree IS main's tree, the
-      # branch contributes nothing and is contained however it got there. Conservative
-      # by construction: only an exact match with main's own tree deletes. A
-      # conflicting merge still writes a tree (with markers), which differs from
-      # main's and so reports as unintegrated — correct, since a branch that
-      # conflicts does hold content main lacks. An unsupported git writes no tree at
-      # all and reports "could not determine". Every uncertain path keeps,
-      # deliberately: deleting an unmerged branch costs work, keeping a merged one
-      # costs a stale ref.
-      local mtree res rc
-      mtree="$(git -C "$WIKI" rev-parse "$mainref^{tree}" 2>/dev/null)"
-      res="$(git -C "$WIKI" merge-tree --write-tree "$mainref" "$br" 2>/dev/null | head -1)"; rc=$?
-      if [ -n "$res" ] && [ "$(git -C "$WIKI" cat-file -t "$res" 2>/dev/null)" = "tree" ]; then
-        if [ "$res" = "$mtree" ]; then
-          if git -C "$WIKI" branch -D "$br" >/dev/null 2>&1; then
+    branch_contained "$br" "$mainref" || rc=$?
+    case "$rc" in
+      0)
+        if git -C "$WIKI" branch -D "$br" >/dev/null 2>&1; then
+          if [ "$BC_REASON" = "ancestry" ]; then
+            log "vault-worktree: deleted $br (already contained in $mainref)"
+          else
             log "vault-worktree: deleted $br (content already in $mainref — squash-merged or equivalent)"
           fi
-        else
-          # The valuable keep: real content absent from main. Name the files, so the
-          # one branch that needs a human is not worded identically to the noise.
-          local n
-          n="$(git -C "$WIKI" diff --name-only "$mtree" "$res" 2>/dev/null | wc -l | tr -d " ")"
-          log "vault-worktree: kept $br — UNINTEGRATED CONTENT ($n file(s) not in $mainref); integrate or delete by hand"
-        fi
-      else
-        # merge-tree unavailable (git < 2.38) or the merge conflicts. Either way the
-        # answer is unknown, which is a DIFFERENT report from "has unintegrated work".
-        log "vault-worktree: kept $br — could not determine containment (merge-tree rc=$rc); check by hand"
-      fi
-    fi
+        fi ;;
+      1)
+        # The valuable keep: real content absent from main. Name the files, so the one
+        # branch that needs a human is not worded identically to the noise.
+        log "vault-worktree: kept $br — UNINTEGRATED CONTENT ($BC_DIFF_FILES file(s) not in $mainref); integrate or delete by hand" ;;
+      *)
+        # merge-tree unavailable (git < 2.38). The answer is unknown, which is a DIFFERENT
+        # report from "has unintegrated work". Every uncertain path keeps, deliberately:
+        # deleting an unmerged branch costs work, keeping a merged one costs a stale ref.
+        log "vault-worktree: kept $br — could not determine containment (merge-tree unavailable); check by hand" ;;
+    esac
 }
 
 # Remove ONE clean worktree + its wt/ branch. Refuses if it has uncommitted changes
@@ -273,9 +302,18 @@ case "$CMD" in
     if same_repo_worktree "$PWD"; then git -C "$PWD" rev-parse --show-toplevel; exit 0; fi
     slug="${WIKI_WT_SESSION:-${CLAUDE_CODE_SESSION_ID:-$(date +%Y%m%d-%H%M%S)-$$}}"
     slug="$(printf '%s' "$slug" | tr -c 'A-Za-z0-9._-' '-')"
-    wt="$WT_ROOT/$slug"; branch="wt/$slug"
+    wt="$WT_ROOT/$slug"; branch="wt/$slug"; bc=""; behind=""; why=""
     if git -C "$WIKI" worktree list --porcelain 2>/dev/null | grep -qxF "worktree $wt"; then
       write_lease "$wt" "$branch"      # refresh the heartbeat so peers see us as live
+      # Same invariant as the reattach path below, one case earlier: a long session's own
+      # worktree drifts behind while peers land work. Reported WITHOUT fetching — this is
+      # the hot path, called repeatedly within a session, and a network round trip does not
+      # belong on it. So the number can UNDER-report (origin/main as last fetched), never
+      # over-report: silence here means "nothing known to be behind", not "current".
+      behind="$(behind_count "$branch" origin/main)"
+      if [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
+        log "vault-worktree: reusing $wt — $behind commit(s) behind origin/main as last fetched; rebase before editing appended-to pages"
+      fi
       printf '%s\n' "$wt"; exit 0
     fi
     exclude_default_root
@@ -301,9 +339,45 @@ case "$CMD" in
     # With a stable session slug the branch can outlive its worktree (retired but kept
     # because it held unmerged commits). Reattach to the existing branch — never reset it,
     # so those commits survive — otherwise cut a fresh one off base.
+    #
+    # BUT REATTACHING SILENTLY IS A FAIL-OPEN. `ensure` returns a valid path, exit 0, and a
+    # genuinely isolated worktree — only the BASE is wrong, and nothing surfaces that until
+    # merge time, when appended-to files (a chronological log, a generated index region)
+    # conflict deterministically. The skill text describes `ensure` as putting the session
+    # on a branch off origin/main, which is true only on the create path.
+    #
+    # Worse, this is the NORMAL case for a squash-merging vault: the branch is retained
+    # because its work is not an ancestor of main, so it grows staler with every merge in
+    # the session — stale precisely BECAUSE its work already landed.
+    #
+    # So ask the question `gc` already asks, with the same shared test, before reattaching:
+    # if the branch contributes no content the base lacks, there is nothing to protect, and
+    # cutting a fresh branch off base is strictly better than editing behind it. If it DOES
+    # hold work — or the answer is unknown — keep it and reattach, but say how far behind
+    # the caller now is instead of reporting plain success.
+    if git -C "$WIKI" show-ref --verify --quiet "refs/heads/$branch"; then
+      bc=0; branch_contained "$branch" "$base" || bc=$?
+      if [ "$bc" = "0" ] && ! git -C "$WIKI" worktree list --porcelain 2>/dev/null | grep -qxF "branch refs/heads/$branch"; then
+        if git -C "$WIKI" branch -D "$branch" >/dev/null 2>&1; then
+          log "vault-worktree: $branch held nothing $base lacks (already landed) — cutting it fresh off $base rather than reattaching behind it"
+        fi
+      fi
+    fi
     if git -C "$WIKI" show-ref --verify --quiet "refs/heads/$branch"; then
       if git -C "$WIKI" worktree add -q "$wt" "$branch" 2>/dev/null; then
-        log "vault-worktree: reattached $wt to existing $branch"
+        behind="$(behind_count "$branch" "$base")"
+        if [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
+          if [ "$bc" = "1" ]; then
+            why="it holds $BC_DIFF_FILES file(s) $base lacks"
+          else
+            why="containment could not be determined, so it was kept"
+          fi
+          log "vault-worktree: reattached $wt to existing $branch — $behind commit(s) BEHIND $base ($why)."
+          log "  You are editing on a stale base; appended-to pages will conflict at merge time."
+          log "  Rebase before editing:  git -C $wt rebase $base"
+        else
+          log "vault-worktree: reattached $wt to existing $branch (level with $base)"
+        fi
         write_lease "$wt" "$branch"
         printf '%s\n' "$wt"; exit 0
       fi
@@ -387,17 +461,75 @@ case "$CMD" in
     printf 'lease: %s -> %s [%s]\n' "$(session_id)" "${mine:-<paths unchanged>}" "$branch"
     ;;
 
+  claim)
+    # PROJECT PRESENCE — advisory, and deliberately NOT a lock.
+    #
+    # Two collision classes are already covered: vault-content edits collide as merge
+    # conflicts (fail-closed, nothing lost), and working-tree collisions are covered by the
+    # per-session worktree. The uncovered class is work a session performs OUTSIDE version
+    # control — investigation, and state-changing commands issued against external systems.
+    # That work has no coordination surface at all, so two sessions can converge on one
+    # project, duplicate the investigation and contend over the side effects, with neither
+    # able to see the other.
+    #
+    # This makes the overlap VISIBLE, which is the layer the concurrency model calls
+    # visibility, and it stops there on purpose. It is not a mutual-exclusion lock: a lock
+    # is advisory against an agent whose instruction to check it can be compacted out of
+    # context, sessions end by interrupt rather than clean release so stale locks are the
+    # normal outcome, and a gate that blocks at the wrong moments trains its user to force
+    # past it — which removes the gate entirely.
+    #
+    # It rides the LEASE record rather than a store of its own: liveness, staleness and the
+    # "provably finished" evidence are already decided there, in one place, and a second
+    # presence mechanism would give a second answer to the same question.
+    shift
+    slug="${1:-}"
+    if [ -d "$WT_ROOT/$(session_id)" ]; then wt="$WT_ROOT/$(session_id)"
+    else wt="$(cd "$PWD" && git rev-parse --show-toplevel 2>/dev/null || echo "$WIKI")"; fi
+    branch="$(git -C "$wt" symbolic-ref --short HEAD 2>/dev/null || echo '?')"
+    if [ -n "$slug" ]; then
+      CLAIM_PROJECT="$slug" write_lease "$wt" "$branch"
+      report_claim() {
+        local f="$1" theirs age
+        theirs="$(lease_get "$f" project)"; [ "$theirs" = "$slug" ] || return 0
+        age=$(( ( $(now_epoch) - $(lease_get "$f" heartbeat) ) / 60 ))
+        log "vault-worktree: NOTE — session $(lease_get "$f" session) is also on project '$slug' (active ${age}m ago)."
+        log "  Not blocked. Vault edits still collide as merge conflicts; what this warns about is"
+        log "  the work with NO other surface — investigation you would both repeat, and commands"
+        log "  issued against systems outside version control, where you would contend silently."
+      }
+      for_other_live_leases report_claim
+      printf 'claim: %s -> project %s [%s]\n' "$(session_id)" "$slug" "$branch"
+    else
+      # No slug: report, do not modify. A claim whose session is not live is shown as STALE
+      # rather than deleted — a session that died mid-work is exactly the thing a human
+      # should be able to see, and silently reaping it hides it.
+      [ -d "$LEASE_DIR" ] || { echo "no claims recorded"; exit 0; }
+      me="$(session_id)"; n=0
+      for f in "$LEASE_DIR"/*.lease; do
+        [ -f "$f" ] || continue
+        p="$(lease_get "$f" project)"; [ -n "$p" ] || continue
+        age=$(( ( $(now_epoch) - $(lease_get "$f" heartbeat) ) / 60 ))
+        s="$(lease_get "$f" session)"; mark=""; [ "$s" = "$me" ] && mark=" (you)"
+        state="live"; lease_live "$f" || state="STALE"
+        printf '%-28s %-24s %-8s %s\n' "$s$mark" "$p" "${age}m" "$state"
+        n=$((n+1))
+      done
+      if [ "$n" -eq 0 ]; then echo "(no project claims)"; fi
+    fi
+    ;;
+
   peers)
     [ -d "$LEASE_DIR" ] || { echo "no leases recorded"; exit 0; }
     me="$(session_id)"; n=0
-    printf '%-28s %-22s %-8s %s\n' SESSION BRANCH AGE PATHS
+    printf '%-28s %-22s %-8s %-20s %s\n' SESSION BRANCH AGE PROJECT PATHS
     for f in "$LEASE_DIR"/*.lease; do
       [ -f "$f" ] || continue
       lease_live "$f" || continue
       s="$(lease_get "$f" session)"; b="$(lease_get "$f" branch)"
       age=$(( ( $(now_epoch) - $(lease_get "$f" heartbeat) ) / 60 ))
       mark=""; [ "$s" = "$me" ] && mark=" (you)"
-      printf '%-28s %-22s %-8s %s\n' "$s$mark" "$b" "${age}m" "$(lease_get "$f" paths)"
+      printf '%-28s %-22s %-8s %-20s %s\n' "$s$mark" "$b" "${age}m" "$(lease_get "$f" project)" "$(lease_get "$f" paths)"
       n=$((n+1))
     done
     # if/then, not `[ ] &&` — a trailing false test would become this branch's exit
@@ -560,6 +692,6 @@ EOF
     grep '^#' "$0" | sed 's/^# \{0,1\}//'
     ;;
   *)
-    log "usage: vault-worktree.sh [ensure|gc|list]"; exit 1
+    log "usage: vault-worktree.sh [ensure|guard|lease|claim|peers|integrate|gc|list]"; exit 1
     ;;
 esac

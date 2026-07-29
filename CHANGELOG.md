@@ -4,6 +4,85 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.48.0] — 2026-07-29
+
+Minor — concurrent sessions can see that they are on the same project. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `concurrent-session-project-claims`, **partially accepted** — the presence layer ships, the mutation-deny tier does not, and the reasons are recorded below and in the queue entry.
+
+### Added
+- **`vault-worktree.sh claim <project-slug>`** — declares the project this session is working and names any live peer on the same slug, with how long ago that session was active. `wiki-context` claims the project it loads, so there is no new user-facing step. Bare `claim` reports every claim as `live` or `STALE`. Two collision classes were already covered — vault edits collide as merge conflicts, working trees are isolated per session; the uncovered one is the work performed *outside* version control: investigation both sessions repeat, and commands issued against external systems, where they contend silently with nothing to surface it.
+- `peers` gained a `PROJECT` column.
+
+### Notes — what was accepted, and what was not
+- **Recorded on the existing lease, not in a new store with a `PreToolUse` heartbeat.** Liveness, staleness and the *provably finished* evidence (a session whose worktree **and** branch are both gone has ended, immediately, without waiting on a clock) are already decided in one place. A second presence mechanism would answer the same question with its own rule, and two mechanisms disagreeing about who is live is worse than no answer. It also costs no write per tool call for information the heartbeat already carries.
+- **The state-changing deny tier is rejected for now**, on three grounds. The hook surface is machine-global, so a deny gate fires in sessions with nothing to do with the vault — this engine already holds that containing one surface must not license writing another. The proposal's open question 2 has no sound answer: *state-changing* is not a property of a tool (the same `Bash` tool is also the read-only surface), and a command-shape deny-list is "guessable and will leak", as the proposal says itself. And its recommended answer to open question 3 — allow-with-loud-notice when the claim store is unreadable — means the hard edge disappears exactly when the mechanism breaks, which makes it a notice claiming to be a gate. Ship visibility; design a hard edge from evidence that visibility was not enough.
+- **A claim is not a lock, deliberately** — the proposal's own reasoning, kept: it is advisory against an agent whose instruction to check it can be compacted out of context, sessions end by interrupt rather than clean release, and a gate that blocks at the wrong moment trains its user to force past it, which removes the gate entirely.
+- **Stale is reported, never reaped silently.** A session that died mid-work is exactly the thing a human should be able to see.
+- Cross-machine claims stay out of scope, as the reporter suggested: the record is per-machine and says so.
+
+## [1.47.0] — 2026-07-29
+
+Minor — status-line elements are individually consumable, so a vault with its own row can adopt them. Adopt with `bin/adopt.sh` or `update.sh`; no migration, and nothing about an existing status line changes. Reported through the queue as `statusline-composable-segments`.
+
+### Added
+- **`statusline.sh --segment <name>`** — `ctx`, `stale`, `rl`, `model`, `dir`, with `--segments` listing them. Each prints only its own fragment, with no separators; ordering and separators are the row owner's taste, not the engine's. A segment with nothing to say prints **nothing** and exits 0 — an absent, null or non-numeric field yields silence, never a placeholder like `ctx 0%`. `NO_COLOR` is honored and every path exits 0, as before.
+- **The composition contract is documented rather than inferred** — stdin is the session JSON the host sends (each invocation reads its own, so a row composing several feeds the payload to each), the empty-output convention, and the exit-0 guarantee.
+
+### Changed
+- **The full renderer is now composed from those same segment functions.** This is the property the proposal identified as load-bearing and it is why the feature is worth having at all: a segment path that duplicated the renderer's logic would merely relocate the drift problem. CI asserts the composed row and the full row are character-identical for one payload, so the two cannot diverge unnoticed.
+- **`ensure-statusline.sh` still refuses to clobber a foreign status line** — that refusal is correct and is *not* what this changed. What changed is that it now names the alternative. Silence made the refusal a dead end rather than a fork in the road: every element shipped to the status line was permanently unreachable for such a vault, and nothing reported it. The two workarounds available before were abandoning the local row, or hand-copying this implementation into it — a per-machine fork that receives no upstream fix and whose divergence is invisible from both ends.
+
+### Notes
+- The status line stays **opt-in** and no adoption step wires one. The proposal deliberately did not disturb that, and neither does this.
+- A future element requires no change to a consuming foreign row beyond opting into the new segment name.
+
+## [1.46.3] — 2026-07-29
+
+Patch — `ensure` never hands back a base silently behind the branch it claims to derive from. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `worktree-reattach-returns-stale-base`.
+
+### Fixed
+- **Reattaching to a surviving `wt/<session>` branch was reported as plain success.** Exit 0, a valid path, and genuine isolation — only the *base* was wrong, and nothing surfaced that until merge time, when append-only pages (a chronological log, a generated index region) conflict deterministically. The reporter's framing of this as **fail-open rather than data-loss** is right, and their retraction of their own first hypothesis — that `ensure` does not fetch — saved the investigation from starting in the wrong place. `ensure` does fetch; `base` was simply not consulted on the reattach path.
+- **The squash-merge aggravator was the more valuable half of the report, and it holds.** A vault whose workflow is branch → PR → squash-merge lands the work as a new commit with a different sha, so the branch is retained as still-holding-work and grows staler with every merge in the session — stale precisely *because* the work it held already landed. It is the normal case for a whole class of consumer, not a rare race.
+
+### Changed
+- **The reattach path now asks the question `gc` already asks, using the same test.** If the branch contributes no content `origin/main` lacks — judged by content, so a squash merge counts — it is cut fresh off `origin/main` rather than reattached behind it. If it *does* hold work, or containment cannot be determined, it is kept and reattached exactly as before, and the report names the distance (`N commit(s) BEHIND origin/main`), why the branch was kept, and the rebase command. Nothing is ever reset: the reporter's own warning against a naive `reset --hard` is the reason the safe case *deletes and re-cuts* instead.
+- **`ensure` also reports drift when it reuses an existing worktree** — the same invariant one case earlier, for a long session whose peers keep landing work. Deliberately without fetching: that is the hot path, so the number can under-report (`origin/main` as last fetched) but never over-report.
+- **`branch_contained` is now one implementation, shared by `gc` and `ensure`.** Two copies of "is this branch's work already landed?" would drift, and the subtle half — that ancestry is the wrong test for a squash-merging vault — is exactly the half a second copy gets wrong.
+
+### Notes
+- The reporter flagged `gc`'s containment test as possibly needing the same treatment. It already had it (`gc-containment-squash-merge`, v1.44.0): containment is judged by merging into the target and comparing trees. This change reuses that rather than adding a second axis.
+- A "could not determine" answer keeps the branch and still reports the distance, so an old git (< 2.38, no `merge-tree --write-tree`) degrades to the reporter's option (a) — report only — rather than to the old silence.
+- The `merge-tree rc=` in the old "could not determine" message was always `0`; it captured the exit status of `head`, not of `merge-tree`. Dropped rather than fixed — it told the reader nothing.
+
+## [1.46.2] — 2026-07-29
+
+Patch — `upkeep scan` reports a repo page whose clone it cannot locate instead of skipping it. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `upkeep-unresolvable-clone-skips-freshness-silently`.
+
+### Fixed
+- **A page whose clone directory differs from its `sources.repo` was dropped from the freshness comparison entirely** — no warning, no row, nothing in the summary. Fail-open, and *disguised* rather than merely quiet: the same page still reaches the queue through the `verify:` path, which needs no clone, so the operator drains it and reasonably concludes the page was attended to while the freshness question was never asked. Such a page can go stale indefinitely. It also changed what a clean queue means — from *"every repo page matches its clone"* to *"every repo page whose clone I could find matches"*.
+- **`sync-clones` names the clone it could not find.** Its own doctrine is that a skip is a reported outcome, applied to a dirty tree, a detached HEAD, no upstream and a diverged branch — but not to the one case where the clone is not there at all.
+
+### Added
+- **`unresolvable:` — a fifth queue kind.** It reports rather than guesses: searching the repos root for a directory whose remote matches would silently bind a page to an unrelated second checkout of the same upstream, and hard-erroring would punish a page legitimately not cloned on *this* machine, a normal state on a multi-machine vault. The row names both remedies — fix `sources.repo`, or clone it here — and drains through the same `done` verb. `scan` counts them separately, because folded into the total they read as ordinary work.
+
+### Notes
+- The scan already held exactly this principle a few dozen lines away, for a project page with an unrecognized status: *"it is exactly the page most likely to be wrong, and skipping it would recreate the invisible failure this whole queue exists to remove."* The defect was applying it to one page type and not the other — which is also why the fix reuses that vocabulary rather than inventing a parallel one.
+
+## [1.46.1] — 2026-07-29
+
+Patch — `submit` works in the pinned `engine/` submodule, which is the checkout it defaults to. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `submit-rejects-submodule-engine-checkout`.
+
+### Fixed
+- **The guard rejected the default checkout.** `submit` tested whether `engine/.git` is a *directory*; in a submodule it is a **file** holding a `gitdir:` pointer, so the test was false for every consumer using the documented default — while the resolver's own comment states that the pinned submodule is the engine checkout every consumer already has. The test now asks the property actually required: is this a git work tree it can branch in. Fail-closed, but what it closed was the *only* sanctioned upstream channel, and the printed remedy pointed at a separate clone a consumer vault by definition does not have — so the natural next move was editing the pinned submodule in place, the time bomb the skill exists to warn against.
+- **`submit` left the consumer's pinned engine parked on another commit.** It cut the proposal branch from `origin/main` and never came back, so in the submodule case the version every skill, hook and lint in that vault runs at was silently swapped, and the vault read as having an unexpected submodule pointer. The checkout is restored to where it was found; the branch survives as a ref, which is all `push` needs.
+- **The proposal commit now carries the regenerated ledger.** `PROPOSALS.md` is derived from `proposals/`, so adding a queue file without regenerating left the committed ledger stale — and the drift gate then failed the **reporter's own pull request**, for a step nothing had told them to run. Intake was doing this by hand on every arrival.
+
+### Changed
+- **`push` no longer depends on the environment being re-created.** The prepared marker records the checkout the branch lives in alongside the branch name, so a submission prepared with `ENGINE_REPO` set no longer dies at push time if the variable is not still exported. This supersedes the reporter's smaller observation — that the printed `To publish:` line omitted `ENGINE_REPO` — by removing the dependency rather than documenting it. An explicit `ENGINE_REPO` still wins.
+
+### Notes
+- The pre-push preview is read from the branch, not the working tree. Reading it from disk after the restore printed an **empty box** — caught by reviewing the diff rather than by any acceptance criterion, since it lives outside the design's frame. That box is the only review of *meaning* anywhere in the chain, and a safety surface that fails silently is worse than none; CI now asserts it shows the block.
+- The new check builds a real submodule fixture, because a fixture whose `.git` is a directory cannot reproduce the bug at all — it asserts that shape first, so the test cannot pass vacuously.
+
 ## [1.46.0] — 2026-07-28
 
 Minor — the copy-paste proposal channel is retired. `submit`/`push` are the way proposals travel; `stash` still runs, warns, and is no longer taught anywhere. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Completes the sequencing `engine-proposal-file-queue` asked for.
