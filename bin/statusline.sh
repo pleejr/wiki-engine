@@ -120,11 +120,13 @@ seg_ctx() {
 }
 
 # Rate limit only when it is close enough to change a plan — a number that is always on
-# screen and never actionable is one people stop reading.
+# screen and never actionable is one people stop reading. Bold, like the context gauge: it is
+# threshold-gated, so it appears ONLY when it is actionable, and an element that has earned
+# its place on the row should not then be the quietest thing on it.
 seg_rl() {
   [ -n "$ratelimit" ] && [ "$ratelimit" -eq "$ratelimit" ] 2>/dev/null || return 0
   [ "$ratelimit" -ge 80 ] || return 0
-  printf '%s5h limit %s%%%s' "$AMBER" "$ratelimit" "$RESET"
+  printf '%s5h limit %s%%%s' "$BOLD$AMBER" "$ratelimit" "$RESET"
 }
 
 # The staleness verdict, read from the preflight cache (may be empty/absent). A cache the

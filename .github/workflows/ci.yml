@@ -177,6 +177,19 @@ jobs:
           band 88 | grep -q '\^\[\[31m' \
             && echo "  ok   the now-band is still red" \
             || { echo "  FAIL now-band colour changed"; fail=1; }
+          # the rate limit is threshold-gated, so it only ever appears when it is actionable —
+          # it must not then be the quietest thing on the row. Still amber, and still silent
+          # below the threshold, which is the property that earns it the space at all.
+          rl() { printf '{"rate_limits":{"five_hour":{"used_percentage":%s}}}' "$1" | ./bin/statusline.sh --segment rl | cat -v; }
+          rl 81 | grep -q '\^\[\[1m' \
+            && echo "  ok   the rate limit is bold, like the gauge" \
+            || { echo "  FAIL rate limit is not bold: $(rl 81)"; fail=1; }
+          rl 81 | grep -q '\^\[\[33m' \
+            && echo "  ok   ...and still amber" \
+            || { echo "  FAIL rate limit colour changed: $(rl 81)"; fail=1; }
+          [ -z "$(rl 79)" ] \
+            && echo "  ok   ...and still silent below the threshold" \
+            || { echo "  FAIL rate limit printed below its threshold: $(rl 79)"; fail=1; }
           printf '{"context_window":{"used_percentage":42}}' | NO_COLOR=1 ./bin/statusline.sh --segment ctx | grep -q $'\033' \
             && { echo "  FAIL the new colour leaks escapes under NO_COLOR"; fail=1; } \
             || echo "  ok   the new colour is blanked under NO_COLOR too"
