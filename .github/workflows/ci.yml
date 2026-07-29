@@ -2103,3 +2103,68 @@ jobs:
             || { echo "  FAIL unmerged work was lost"; fail=1; }
 
           exit "$fail"
+
+      - name: A project claim is visible presence, and never a lock
+        run: |
+          # Two collision classes are already covered — vault edits collide as merge
+          # conflicts, working trees are isolated per session. The uncovered class is the
+          # work performed OUTSIDE version control: investigation both sessions repeat, and
+          # commands issued against external systems, where they contend silently.
+          #
+          # The property under test is that this stays VISIBILITY. It rides the lease
+          # record rather than a store of its own, so liveness is decided in one place; and
+          # it must never block, because a gate that blocks at the wrong moment trains its
+          # user to force past it, which removes the gate entirely.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-claim"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/claim"; rm -rf "$T"; mkdir -p "$T/v"; fail=0
+          V="$T/v"; git -C "$V" init -q .; printf 'seed\n' > "$V/a.md"
+          git -C "$V" add -A; git -C "$V" commit -qm seed
+          export WIKI_PATH="$V"
+          WIKI_WT_SESSION=alpha ./bin/vault-worktree.sh ensure >/dev/null 2>&1
+          WIKI_WT_SESSION=beta  ./bin/vault-worktree.sh ensure >/dev/null 2>&1
+
+          WIKI_WT_SESSION=alpha ./bin/vault-worktree.sh claim proj-x >/dev/null 2>&1
+          out="$(WIKI_WT_SESSION=beta ./bin/vault-worktree.sh claim proj-x 2>&1)"; rc=$?
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q "session alpha is also on project 'proj-x'" \
+            && echo "  ok   a second session on one project is told who else is there" \
+            || { echo "  FAIL the overlap was not reported"; fail=1; }
+          printf '%s' "$out" | grep -qE 'active [0-9]+m ago' \
+            && echo "  ok   ...with the holder's activity age" \
+            || { echo "  FAIL no activity age reported"; fail=1; }
+          [ "$rc" = "0" ] \
+            && echo "  ok   and it does NOT block — advisory, not a lock" \
+            || { echo "  FAIL claim refused (rc=$rc); this is presence, not mutual exclusion"; fail=1; }
+
+          # different projects must not gate each other, or the signal becomes noise
+          out2="$(WIKI_WT_SESSION=beta ./bin/vault-worktree.sh claim proj-y 2>&1)"
+          printf '%s' "$out2" | grep -q 'also on project' \
+            && { echo "  FAIL warned about a different project"; fail=1; } \
+            || echo "  ok   two sessions on two projects never gate each other"
+
+          # a claim rides the LEASE — one record, one liveness rule
+          grep -q '^project=proj-y$' "$V/.worktrees/.leases/beta.lease" \
+            && echo "  ok   the claim is recorded on the session's existing lease" \
+            || { echo "  FAIL a parallel claim store appeared"; fail=1; }
+          WIKI_WT_SESSION=beta ./bin/vault-worktree.sh peers | grep -q 'proj-y' \
+            && echo "  ok   peers reports the project" \
+            || { echo "  FAIL peers does not show claims"; fail=1; }
+
+          # a session that provably ended is reported STALE, not silently reaped: a session
+          # that died mid-work is exactly what a human should be able to see
+          git -C "$V" worktree remove --force "$V/.worktrees/alpha"
+          git -C "$V" branch -D wt/alpha >/dev/null 2>&1
+          rep="$(WIKI_WT_SESSION=beta ./bin/vault-worktree.sh claim 2>&1)"
+          printf '%s\n' "$rep"
+          printf '%s' "$rep" | grep -q 'alpha .* STALE' \
+            && echo "  ok   a dead session's claim is shown as stale, not deleted" \
+            || { echo "  FAIL a dead claim vanished or still reads as live"; fail=1; }
+          out3="$(WIKI_WT_SESSION=beta ./bin/vault-worktree.sh claim proj-x 2>&1)"
+          printf '%s' "$out3" | grep -q 'also on project' \
+            && { echo "  FAIL warned about a session that has finished"; fail=1; } \
+            || echo "  ok   ...and no longer warns about it, so no manual cleanup is needed"
+
+          exit "$fail"

@@ -33,6 +33,9 @@
 #   vault-worktree.sh ensure       # idempotent; print the worktree path to write in
 #   vault-worktree.sh guard        # exit 1 if run in the canonical checkout (pre-commit)
 #   vault-worktree.sh lease [P...] # declare intended paths; warn on overlap with peers
+#   vault-worktree.sh claim [SLUG] # declare the PROJECT this session is working; with no
+#                                  #   slug, report every claim and whether it is live or
+#                                  #   STALE. Advisory, never blocking — see the verb.
 #   vault-worktree.sh peers        # live sessions, their branches and declared paths
 #   vault-worktree.sh integrate    # locked: rebase this session's branch, ff main to it
 #   vault-worktree.sh gc [path...] # with paths: retire exactly those now (clean-only, no
@@ -134,6 +137,12 @@ write_lease() {
   local prev_paths=""
   [ -f "$f" ] && prev_paths="$(lease_get "$f" paths)"
   local paths="$*"; [ -n "$paths" ] || paths="$prev_paths"
+  # The project this session declared, if any. Carried on the SAME record as the paths,
+  # for the same reason `lease_live` is decided in one place: a second presence store with
+  # its own liveness rule can disagree with this one about who is working, and disagreement
+  # about that is worse than no answer at all.
+  local project="${CLAIM_PROJECT:-}"
+  [ -n "$project" ] || { [ -f "$f" ] && project="$(lease_get "$f" project)"; }
   mkdir -p "$LEASE_DIR" 2>/dev/null || return 0
   {
     printf 'session=%s\n' "$(session_id)"
@@ -142,6 +151,7 @@ write_lease() {
     printf 'started=%s\n' "$([ -f "$f" ] && lease_get "$f" started || date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'heartbeat=%s\n' "$(now_epoch)"
     printf 'paths=%s\n' "$paths"
+    printf 'project=%s\n' "$project"
   } > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f" 2>/dev/null || true
 }
 
@@ -451,17 +461,75 @@ case "$CMD" in
     printf 'lease: %s -> %s [%s]\n' "$(session_id)" "${mine:-<paths unchanged>}" "$branch"
     ;;
 
+  claim)
+    # PROJECT PRESENCE — advisory, and deliberately NOT a lock.
+    #
+    # Two collision classes are already covered: vault-content edits collide as merge
+    # conflicts (fail-closed, nothing lost), and working-tree collisions are covered by the
+    # per-session worktree. The uncovered class is work a session performs OUTSIDE version
+    # control — investigation, and state-changing commands issued against external systems.
+    # That work has no coordination surface at all, so two sessions can converge on one
+    # project, duplicate the investigation and contend over the side effects, with neither
+    # able to see the other.
+    #
+    # This makes the overlap VISIBLE, which is the layer the concurrency model calls
+    # visibility, and it stops there on purpose. It is not a mutual-exclusion lock: a lock
+    # is advisory against an agent whose instruction to check it can be compacted out of
+    # context, sessions end by interrupt rather than clean release so stale locks are the
+    # normal outcome, and a gate that blocks at the wrong moments trains its user to force
+    # past it — which removes the gate entirely.
+    #
+    # It rides the LEASE record rather than a store of its own: liveness, staleness and the
+    # "provably finished" evidence are already decided there, in one place, and a second
+    # presence mechanism would give a second answer to the same question.
+    shift
+    slug="${1:-}"
+    if [ -d "$WT_ROOT/$(session_id)" ]; then wt="$WT_ROOT/$(session_id)"
+    else wt="$(cd "$PWD" && git rev-parse --show-toplevel 2>/dev/null || echo "$WIKI")"; fi
+    branch="$(git -C "$wt" symbolic-ref --short HEAD 2>/dev/null || echo '?')"
+    if [ -n "$slug" ]; then
+      CLAIM_PROJECT="$slug" write_lease "$wt" "$branch"
+      report_claim() {
+        local f="$1" theirs age
+        theirs="$(lease_get "$f" project)"; [ "$theirs" = "$slug" ] || return 0
+        age=$(( ( $(now_epoch) - $(lease_get "$f" heartbeat) ) / 60 ))
+        log "vault-worktree: NOTE — session $(lease_get "$f" session) is also on project '$slug' (active ${age}m ago)."
+        log "  Not blocked. Vault edits still collide as merge conflicts; what this warns about is"
+        log "  the work with NO other surface — investigation you would both repeat, and commands"
+        log "  issued against systems outside version control, where you would contend silently."
+      }
+      for_other_live_leases report_claim
+      printf 'claim: %s -> project %s [%s]\n' "$(session_id)" "$slug" "$branch"
+    else
+      # No slug: report, do not modify. A claim whose session is not live is shown as STALE
+      # rather than deleted — a session that died mid-work is exactly the thing a human
+      # should be able to see, and silently reaping it hides it.
+      [ -d "$LEASE_DIR" ] || { echo "no claims recorded"; exit 0; }
+      me="$(session_id)"; n=0
+      for f in "$LEASE_DIR"/*.lease; do
+        [ -f "$f" ] || continue
+        p="$(lease_get "$f" project)"; [ -n "$p" ] || continue
+        age=$(( ( $(now_epoch) - $(lease_get "$f" heartbeat) ) / 60 ))
+        s="$(lease_get "$f" session)"; mark=""; [ "$s" = "$me" ] && mark=" (you)"
+        state="live"; lease_live "$f" || state="STALE"
+        printf '%-28s %-24s %-8s %s\n' "$s$mark" "$p" "${age}m" "$state"
+        n=$((n+1))
+      done
+      if [ "$n" -eq 0 ]; then echo "(no project claims)"; fi
+    fi
+    ;;
+
   peers)
     [ -d "$LEASE_DIR" ] || { echo "no leases recorded"; exit 0; }
     me="$(session_id)"; n=0
-    printf '%-28s %-22s %-8s %s\n' SESSION BRANCH AGE PATHS
+    printf '%-28s %-22s %-8s %-20s %s\n' SESSION BRANCH AGE PROJECT PATHS
     for f in "$LEASE_DIR"/*.lease; do
       [ -f "$f" ] || continue
       lease_live "$f" || continue
       s="$(lease_get "$f" session)"; b="$(lease_get "$f" branch)"
       age=$(( ( $(now_epoch) - $(lease_get "$f" heartbeat) ) / 60 ))
       mark=""; [ "$s" = "$me" ] && mark=" (you)"
-      printf '%-28s %-22s %-8s %s\n' "$s$mark" "$b" "${age}m" "$(lease_get "$f" paths)"
+      printf '%-28s %-22s %-8s %-20s %s\n' "$s$mark" "$b" "${age}m" "$(lease_get "$f" project)" "$(lease_get "$f" paths)"
       n=$((n+1))
     done
     # if/then, not `[ ] &&` — a trailing false test would become this branch's exit
@@ -624,6 +692,6 @@ EOF
     grep '^#' "$0" | sed 's/^# \{0,1\}//'
     ;;
   *)
-    log "usage: vault-worktree.sh [ensure|gc|list]"; exit 1
+    log "usage: vault-worktree.sh [ensure|guard|lease|claim|peers|integrate|gc|list]"; exit 1
     ;;
 esac

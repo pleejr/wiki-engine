@@ -4,6 +4,21 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.48.0] — 2026-07-29
+
+Minor — concurrent sessions can see that they are on the same project. Adopt with `bin/adopt.sh` or `update.sh`; no migration. Reported through the queue as `concurrent-session-project-claims`, **partially accepted** — the presence layer ships, the mutation-deny tier does not, and the reasons are recorded below and in the queue entry.
+
+### Added
+- **`vault-worktree.sh claim <project-slug>`** — declares the project this session is working and names any live peer on the same slug, with how long ago that session was active. `wiki-context` claims the project it loads, so there is no new user-facing step. Bare `claim` reports every claim as `live` or `STALE`. Two collision classes were already covered — vault edits collide as merge conflicts, working trees are isolated per session; the uncovered one is the work performed *outside* version control: investigation both sessions repeat, and commands issued against external systems, where they contend silently with nothing to surface it.
+- `peers` gained a `PROJECT` column.
+
+### Notes — what was accepted, and what was not
+- **Recorded on the existing lease, not in a new store with a `PreToolUse` heartbeat.** Liveness, staleness and the *provably finished* evidence (a session whose worktree **and** branch are both gone has ended, immediately, without waiting on a clock) are already decided in one place. A second presence mechanism would answer the same question with its own rule, and two mechanisms disagreeing about who is live is worse than no answer. It also costs no write per tool call for information the heartbeat already carries.
+- **The state-changing deny tier is rejected for now**, on three grounds. The hook surface is machine-global, so a deny gate fires in sessions with nothing to do with the vault — this engine already holds that containing one surface must not license writing another. The proposal's open question 2 has no sound answer: *state-changing* is not a property of a tool (the same `Bash` tool is also the read-only surface), and a command-shape deny-list is "guessable and will leak", as the proposal says itself. And its recommended answer to open question 3 — allow-with-loud-notice when the claim store is unreadable — means the hard edge disappears exactly when the mechanism breaks, which makes it a notice claiming to be a gate. Ship visibility; design a hard edge from evidence that visibility was not enough.
+- **A claim is not a lock, deliberately** — the proposal's own reasoning, kept: it is advisory against an agent whose instruction to check it can be compacted out of context, sessions end by interrupt rather than clean release, and a gate that blocks at the wrong moment trains its user to force past it, which removes the gate entirely.
+- **Stale is reported, never reaped silently.** A session that died mid-work is exactly the thing a human should be able to see.
+- Cross-machine claims stay out of scope, as the reporter suggested: the record is per-machine and says so.
+
 ## [1.47.0] — 2026-07-29
 
 Minor — status-line elements are individually consumable, so a vault with its own row can adopt them. Adopt with `bin/adopt.sh` or `update.sh`; no migration, and nothing about an existing status line changes. Reported through the queue as `statusline-composable-segments`.
