@@ -1830,6 +1830,68 @@ jobs:
 
           exit "$fail"
 
+      - name: A repo page whose clone cannot be found is reported, not skipped
+        run: |
+          # The scan resolved a clone by joining the repos root to the page's declared
+          # sources.repo and swallowed a miss with a bare `continue` — so a page whose
+          # clone sits under a DIFFERENT directory name (a rename, a disambiguating
+          # prefix, a second checkout) was dropped from the freshness comparison with no
+          # row of any kind emitted about it. Fail-open, and disguised rather than merely
+          # quiet: the same page still appears via the verify: path, which needs no clone,
+          # so the operator drains it and concludes it was attended to.
+          #
+          # It also changed what a clean queue MEANS — from "every repo page matches its
+          # clone" to "every repo page whose clone I could find matches".
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-unres"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/unres"; rm -rf "$T"; mkdir -p "$T/repos"; fail=0
+
+          # a clone that exists, under a name that is NOT the page's sources.repo
+          git init -q "$T/repos/other-name"
+          ( cd "$T/repos/other-name" && echo v1 > f && git add -A && git commit -qm c1 )
+          # a clone that resolves and IS stale, so the working path is proven in the same run
+          git init -q "$T/repos/good"
+          ( cd "$T/repos/good" && echo v1 > f && git add -A && git commit -qm c1 )
+
+          V="$T/v"; mkdir -p "$V/repos"
+          printf -- '---\ntitle: mismatch\ntype: repo\nboundary: personal\nsources:\n  repo: canonical-name\n  ref: v1\n  sha: deadbee\n---\n\n# mismatch\n' > "$V/repos/mismatch.md"
+          printf -- '---\ntitle: good\ntype: repo\nboundary: personal\nsources:\n  repo: good\n  ref: v1\n  sha: deadbee\n---\n\n# good\n' > "$V/repos/good.md"
+
+          out="$(UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" scan 2>&1)"
+          printf '%s\n' "$out"
+          rows="$(UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" list 2>&1)"
+          printf '%s\n' "$rows"
+
+          printf '%s' "$rows" | grep -q '^unresolvable:mismatch' \
+            && echo "  ok   the unlocatable clone is reported as its own state" \
+            || { echo "  FAIL the page was silently dropped from the scan"; fail=1; }
+          printf '%s' "$rows" | grep -q 'refresh:good' \
+            && echo "  ok   a resolvable stale page still queues normally" \
+            || { echo "  FAIL the working path regressed"; fail=1; }
+          # the row must not read as ordinary drift, and must name both remedies
+          printf '%s' "$rows" | grep -q 'freshness unknown' \
+            && echo "  ok   the row says freshness is unknown, not up to date" \
+            || { echo "  FAIL the row does not distinguish unknown from current"; fail=1; }
+          printf '%s' "$out" | grep -q 'no locatable clone' \
+            && echo "  ok   the scan summary says a clean queue means less than it looks" \
+            || { echo "  FAIL scan summary hides the unassessed pages"; fail=1; }
+
+          # sync-clones holds the same doctrine — a skip is a reported outcome — and was
+          # silent about exactly this case while naming dirty trees and detached HEADs
+          sc="$(UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" sync-clones --check 2>&1)"
+          printf '%s' "$sc" | grep -q 'no clone at' \
+            && echo "  ok   sync-clones names the clone it could not find" \
+            || { echo "  FAIL sync-clones skipped it silently"; fail=1; }
+
+          # and the item is drainable like any other
+          UPKEEP_REPOS_ROOT="$T/repos" ./bin/upkeep.sh --wiki "$V" done unresolvable:mismatch >/dev/null \
+            && echo "  ok   the row drains through the normal verb" \
+            || { echo "  FAIL the row cannot be drained"; fail=1; }
+
+          exit "$fail"
+
       - name: gc sweeps orphan wt/* branches, and never a live one
         run: |
           # A wt/* branch was only ever evaluated as a SIDE EFFECT of retiring its
