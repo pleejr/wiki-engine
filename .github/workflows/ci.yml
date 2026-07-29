@@ -1899,3 +1899,69 @@ jobs:
             || echo "  ok   a second sweep is a no-op"
 
           exit "$fail"
+
+      - name: ensure never reattaches to a stale base without saying so
+        run: |
+          # Reattaching to a surviving wt/<session> branch was reported as plain success:
+          # exit 0, a valid path, genuine isolation — only the BASE was wrong, and nothing
+          # surfaced that until merge time, when append-only pages conflict. Fail-open.
+          #
+          # And it is the NORMAL case for a squash-merging vault, not an edge case: the
+          # branch is retained because its work is not an ancestor of main, so it grows
+          # staler with every merge in the session — stale precisely BECAUSE its work
+          # already landed.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-reattach"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/reattach"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+
+          # a vault WITH an origin, since the base is origin/main
+          git init -q --bare "$T/origin.git"
+          git clone -q "$T/origin.git" "$T/vault" 2>/dev/null
+          V="$T/vault"; printf 'log\n' > "$V/log.md"
+          git -C "$V" add -A; git -C "$V" commit -qm seed; git -C "$V" push -q -u origin main
+          export WIKI_PATH="$V"
+
+          # (1) work lands by SQUASH merge, so the branch tip is not an ancestor of main
+          W="$(WIKI_WT_SESSION=s1 "$VW" ensure 2>/dev/null)"
+          printf 'session-entry\n' >> "$W/log.md"; git -C "$W" commit -qam "session work"
+          git -C "$V" merge -q --squash wt/s1; git -C "$V" commit -qm squashed
+          printf 'x\n' > "$V/other.md"; git -C "$V" add -A; git -C "$V" commit -qm "peer file"
+          git -C "$V" push -q origin main
+          git -C "$V" worktree remove --force "$W"
+
+          out="$(WIKI_WT_SESSION=s1 "$VW" ensure 2>&1 >/dev/null)"
+          W2="$(WIKI_WT_SESSION=s1 "$VW" ensure 2>/dev/null)"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'held nothing origin/main lacks' \
+            && echo "  ok   a branch whose content already landed is cut fresh, not reattached behind" \
+            || { echo "  FAIL reattached to a branch with nothing left to protect"; fail=1; }
+          [ "$(git -C "$W2" rev-parse HEAD)" = "$(git -C "$V" rev-parse origin/main)" ] \
+            && echo "  ok   the returned worktree is level with origin/main" \
+            || { echo "  FAIL the returned base is behind origin/main"; fail=1; }
+          WIKI_WT_SESSION=s1 "$VW" gc "$W2" >/dev/null 2>&1 || true
+
+          # (2) a branch that DOES hold work is never reset — it is kept, reattached, and
+          # the distance is REPORTED rather than swallowed
+          W="$(WIKI_WT_SESSION=s2 "$VW" ensure 2>/dev/null)"
+          printf 'unmerged\n' > "$W/stranded.md"; git -C "$W" add -A; git -C "$W" commit -qm stranded
+          printf 'peer\n' >> "$V/log.md"; git -C "$V" commit -qam "peer append"; git -C "$V" push -q origin main
+          git -C "$V" worktree remove --force "$W"
+          out2="$(WIKI_WT_SESSION=s2 "$VW" ensure 2>&1 >/dev/null)"
+          printf '%s\n' "$out2"
+          printf '%s' "$out2" | grep -q 'BEHIND origin/main' \
+            && echo "  ok   the reattach reports how far behind the base is" \
+            || { echo "  FAIL reattach reported plain success on a stale base"; fail=1; }
+          printf '%s' "$out2" | grep -q 'rebase' \
+            && echo "  ok   ...and says what to do about it" \
+            || { echo "  FAIL no remedy offered"; fail=1; }
+          git -C "$V" show-ref --verify --quiet refs/heads/wt/s2 \
+            && echo "  ok   the branch holding work survives" \
+            || { echo "  FAIL a branch holding unmerged work was destroyed"; fail=1; }
+          [ -f "$T/vault/.worktrees/s2/stranded.md" ] \
+            && echo "  ok   the unmerged work is still there" \
+            || { echo "  FAIL unmerged work was lost"; fail=1; }
+
+          exit "$fail"
