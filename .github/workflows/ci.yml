@@ -451,6 +451,12 @@ jobs:
           export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-int"
           git config --global user.email ci@example.com
           git config --global user.name CI
+          # Pin the default branch. Without it `git init --bare` leaves HEAD on `master`,
+          # so a clone of that remote lands on an unborn `master` and `push origin main`
+          # fails with "src refspec main does not match any". It passed locally only
+          # because the author's global config sets init.defaultBranch — the fixture was
+          # reading a setting from the developer's machine that CI's clean config lacks.
+          git config --global init.defaultBranch main
           set -x   # fixture-heavy step: trace it, or a swallowed failure costs a run to locate
           VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
           setup() {
@@ -506,6 +512,7 @@ jobs:
           # (b) REAL divergence (content differs) must refuse, not silently pick a side
           setup
           git clone -q "$RUNNER_TEMP/i9/remote" "$RUNNER_TEMP/i9/o" 2>/dev/null
+          git -C "$RUNNER_TEMP/i9/o" checkout -q -B main origin/main
           printf 'theirs\n' > "$RUNNER_TEMP/i9/o/up.md"
           git -C "$RUNNER_TEMP/i9/o" add -A; git -C "$RUNNER_TEMP/i9/o" commit -qm theirs
           git -C "$RUNNER_TEMP/i9/o" push -q origin main
