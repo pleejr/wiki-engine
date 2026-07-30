@@ -675,8 +675,13 @@ for pr in prs:
     printf 'OPEN — awaiting intake (%d):\n%s\n' "$n_open" "$out_open"
   elif [[ "$n_pr" -eq 0 && -z "$pr_note" ]]; then
     printf 'OPEN — awaiting intake: none, and no open proposal pull requests. The queue is drained.\n\n'
+  elif [[ "$n_pr" -gt 0 ]]; then
+    # Drained of REVIEW work, but not of work: the pull requests above still need merging.
+    printf 'OPEN — awaiting intake: none. The queue is drained of merged proposals — but see AWAITING MERGE above.\n\n'
   else
-    printf 'OPEN — awaiting intake: none merged and unreviewed.\n\n'
+    # Could not check the remote. Still say "drained" about what was actually inspected,
+    # and keep the caveat attached, so this never reads as an unqualified all-clear.
+    printf 'OPEN — awaiting intake: none. The merged queue is drained; open pull requests were NOT checked (above).\n\n'
   fi
   if [[ "${QUEUE_ALL:-0}" == "1" && "$n_other" -gt 0 ]]; then
     printf 'RESOLVED (%d):\n%s\n' "$n_other" "$out_other"
