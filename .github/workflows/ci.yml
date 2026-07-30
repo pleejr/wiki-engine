@@ -451,6 +451,7 @@ jobs:
           export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-int"
           git config --global user.email ci@example.com
           git config --global user.name CI
+          set -x   # fixture-heavy step: trace it, or a swallowed failure costs a run to locate
           VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
           setup() {
             # Build the working repo with `init` + `remote add`, NOT by cloning the empty
@@ -486,7 +487,7 @@ jobs:
             git -C "$RUNNER_TEMP/i9/pub" push -q origin main
           }
           commit_in_wt() {    # $1 = session id; echoes the worktree path
-            W="$(WIKI_WT_SESSION="$1" "$VW" ensure 2>/dev/null | tail -1)"
+            W="$(WIKI_WT_SESSION="$1" "$VW" ensure | tail -1)"
             printf '%s\n' "$1" >> "$W/notes.md"
             git -C "$W" add notes.md; git -C "$W" commit -qm "$1"
             echo "$W"
@@ -495,9 +496,9 @@ jobs:
 
           # (a) squash divergence: content-equal, history republished -> adopt and succeed
           setup
-          W="$(commit_in_wt s1)"; (cd "$W" && WIKI_WT_SESSION=s1 "$VW" integrate >/dev/null 2>&1)
+          W="$(commit_in_wt s1)"; (cd "$W" && WIKI_WT_SESSION=s1 "$VW" integrate >/dev/null)
           squash_publish
-          W="$(commit_in_wt s2)"; (cd "$W" && WIKI_WT_SESSION=s2 "$VW" integrate >/dev/null 2>&1) \
+          W="$(commit_in_wt s2)"; (cd "$W" && WIKI_WT_SESSION=s2 "$VW" integrate >/dev/null) \
             || { echo "integrate refused a content-equal squash divergence"; exit 1; }
           [ "$(behind_count)" = "0" ] \
             || { echo "canonical still behind origin after integrate — stale base bug is back"; exit 1; }
@@ -511,17 +512,17 @@ jobs:
           printf 'ours\n' > "$WIKI_PATH/local.md"
           git -C "$WIKI_PATH" add -A; git -C "$WIKI_PATH" commit -qm ours
           W="$(commit_in_wt s3)"; rc=0
-          (cd "$W" && WIKI_WT_SESSION=s3 "$VW" integrate >/dev/null 2>&1) || rc=$?
+          (cd "$W" && WIKI_WT_SESSION=s3 "$VW" integrate >/dev/null) || rc=$?
           [ "$rc" = "3" ] || { echo "expected exit 3 on real divergence, got $rc"; exit 1; }
 
           # (c) squash divergence with a DIRTY canonical must refuse — reset --hard would
           #     discard the uncommitted edit without complaint, so both guards are required
           setup
-          W="$(commit_in_wt s4)"; (cd "$W" && WIKI_WT_SESSION=s4 "$VW" integrate >/dev/null 2>&1)
+          W="$(commit_in_wt s4)"; (cd "$W" && WIKI_WT_SESSION=s4 "$VW" integrate >/dev/null)
           squash_publish
           printf 'UNCOMMITTED\n' >> "$WIKI_PATH/index.md"
           W="$(commit_in_wt s5)"; rc=0
-          (cd "$W" && WIKI_WT_SESSION=s5 "$VW" integrate >/dev/null 2>&1) || rc=$?
+          (cd "$W" && WIKI_WT_SESSION=s5 "$VW" integrate >/dev/null) || rc=$?
           [ "$rc" = "3" ] || { echo "expected exit 3 when canonical is dirty, got $rc"; exit 1; }
           grep -q UNCOMMITTED "$WIKI_PATH/index.md" \
             || { echo "uncommitted canonical edit was destroyed"; exit 1; }
