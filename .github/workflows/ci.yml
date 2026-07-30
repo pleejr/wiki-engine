@@ -466,7 +466,15 @@ jobs:
             git -C "$RUNNER_TEMP/i9/v" commit -qm init
             git -C "$RUNNER_TEMP/i9/v" branch -M main
             git -C "$RUNNER_TEMP/i9/v" remote add origin "$RUNNER_TEMP/i9/remote"
-            git -C "$RUNNER_TEMP/i9/v" push -q -u origin main
+            if ! git -C "$RUNNER_TEMP/i9/v" push -q -u origin main; then
+              echo "--- fixture diagnostics ---"
+              git --version
+              echo "GIT_CONFIG_GLOBAL=$GIT_CONFIG_GLOBAL"
+              git -C "$RUNNER_TEMP/i9/v" status --porcelain -b || true
+              git -C "$RUNNER_TEMP/i9/v" log --oneline -3 || echo "(no commits)"
+              git -C "$RUNNER_TEMP/i9/v" branch -a || true
+              exit 1
+            fi
             export WIKI_PATH="$RUNNER_TEMP/i9/v"
           }
           squash_publish() {  # publish current main as a NEW object, as a squash-merge does
