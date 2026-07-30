@@ -453,13 +453,19 @@ jobs:
           git config --global user.name CI
           VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
           setup() {
+            # Build the working repo with `init` + `remote add`, NOT by cloning the empty
+            # bare one: a clone of an empty repository leaves an unborn HEAD, and whether
+            # the later `branch -M main` yields a pushable ref depends on the git version.
+            # It worked on the author's machine and failed on the runner, which is the
+            # whole reason a fixture gets built from explicit state rather than inference.
             rm -rf "$RUNNER_TEMP/i9"; mkdir -p "$RUNNER_TEMP/i9"
             git init -q --bare "$RUNNER_TEMP/i9/remote"
-            git clone -q "$RUNNER_TEMP/i9/remote" "$RUNNER_TEMP/i9/v" 2>/dev/null
+            git init -q "$RUNNER_TEMP/i9/v"
             printf 'base\n' > "$RUNNER_TEMP/i9/v/index.md"
             git -C "$RUNNER_TEMP/i9/v" add -A
             git -C "$RUNNER_TEMP/i9/v" commit -qm init
             git -C "$RUNNER_TEMP/i9/v" branch -M main
+            git -C "$RUNNER_TEMP/i9/v" remote add origin "$RUNNER_TEMP/i9/remote"
             git -C "$RUNNER_TEMP/i9/v" push -q -u origin main
             export WIKI_PATH="$RUNNER_TEMP/i9/v"
           }
