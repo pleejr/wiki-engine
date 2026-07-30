@@ -581,6 +581,52 @@ case "$CMD" in
 
     main="$(git -C "$WIKI" symbolic-ref --short HEAD 2>/dev/null || echo main)"
     git -C "$WIKI" fetch -q origin "$main" 2>/dev/null || true
+
+    # Reconcile canonical <main> with what we just fetched, BEFORE choosing a rebase base.
+    # Without this the fetch above is never consulted: the rebase below uses the LOCAL ref,
+    # so a vault publishing by branch -> pull request -> squash-merge (where the squash is a
+    # new object its local <main> is not an ancestor of) based every integrate on a
+    # superseded history and printed success — leaving canonical divergent and the NEXT
+    # publication unmergeable, far from the tool that caused it.
+    #
+    # Rebasing onto origin/<main> instead is NOT the fix, though it looks like the obvious
+    # one-word change: the fast-forward below then refuses, because local <main> is no
+    # longer an ancestor of the rebased branch. The local ref has to actually move.
+    if git -C "$WIKI" rev-parse -q --verify "origin/$main" >/dev/null 2>&1; then
+      if git -C "$WIKI" merge-base --is-ancestor "$main" "origin/$main" 2>/dev/null; then
+        # Behind (or equal) — advance it so the rebase base is what origin actually has.
+        # --ff-only is the backstop: git refuses rather than clobber an uncommitted edit.
+        if ! VAULT_INTEGRATE=1 git -C "$WIKI" merge --ff-only -q "origin/$main" 2>/dev/null; then
+          log "vault-worktree: $main is behind origin/$main but will not fast-forward — resolve in $WIKI, then re-run integrate"
+          exit 3
+        fi
+      elif ! git -C "$WIKI" merge-base --is-ancestor "origin/$main" "$main" 2>/dev/null; then
+        # Neither ref contains the other. Before refusing, check for the ONE divergence that
+        # is provably safe to resolve: identical CONTENT, different history. That is the
+        # signature of a squash-merge — local <main>'s commits were published as a single
+        # new object — and it is the normal steady state of any vault whose convention is
+        # branch -> pull request -> squash-merge, so refusing there would refuse forever.
+        if [ -z "$(git -C "$WIKI" diff --name-only "origin/$main" "$main" 2>/dev/null)" ] \
+           && [ -z "$(git -C "$WIKI" status --porcelain 2>/dev/null)" ]; then
+          # Content-equal and canonical is clean: nothing to lose by adopting origin's
+          # history. Both conditions are required — the diff proves no committed work is
+          # dropped, the status check proves no UNcommitted work is, and `reset --hard`
+          # would destroy the latter without complaint.
+          git -C "$WIKI" reset --hard -q "origin/$main" 2>/dev/null || {
+            log "vault-worktree: could not adopt origin/$main — resolve in $WIKI, then re-run integrate"; exit 3; }
+          log "vault-worktree: adopted origin/$main (same content, republished history — squash-merge)"
+        else
+          # Real divergence: histories AND content differ, or canonical has uncommitted
+          # work. Picking a side silently drops one of them, and this is precisely the
+          # state the old behaviour created, so it has to be said out loud.
+          log "vault-worktree: $main has DIVERGED from origin/$main — nothing was integrated"
+          log "vault-worktree: reconcile canonical first (e.g. rebase $main onto origin/$main), then re-run integrate"
+          exit 3
+        fi
+      fi
+      # else: local is AHEAD of origin (unpushed work, e.g. a push-to-main vault). It
+      # already contains origin/<main>, so the local ref is the correct base — proceed.
+    fi
     # Rebase INSIDE the worktree: a conflict then surfaces in the session's own tree,
     # where it can be resolved, instead of leaving canonical mid-merge for everyone.
     if ! git -C "$wt" rebase -q "$main" 2>/dev/null; then

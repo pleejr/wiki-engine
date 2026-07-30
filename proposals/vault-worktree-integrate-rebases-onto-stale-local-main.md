@@ -1,6 +1,7 @@
 ---
 slug: vault-worktree-integrate-rebases-onto-stale-local-main
-outcome: open
+outcome: partially-accepted
+reason: "defect confirmed and fixed; the suggested one-word change was tested and REJECTED — rebasing onto origin/<main> makes local <main> no longer an ancestor of the rebased branch, so the final merge --ff-only refuses and the divergence remains, trading a silent success for a misleading 'did main move mid-integrate?'. The local ref has to move instead: integrate now fast-forwards canonical to origin/<main> when behind, ADOPTS origin when the divergence is content-equal (the squash-merge signature, guarded by a clean-canonical check because reset --hard would discard uncommitted work), and refuses with exit 3 on real divergence. The two open design questions are deferred, not adopted: integrate still moves canonical <main>, and the success message still does not distinguish integrated-locally from published."
 received: 2026-07-30
 ---
 

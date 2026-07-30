@@ -437,6 +437,82 @@ jobs:
           [ "$rc" -ne 0 ] || { echo "ensure reported SUCCESS while handing back the shared tree"; exit 1; }
           [ "$OUT" = "$V" ] || { echo "fallback should still print the canonical path"; exit 1; }
 
+      - name: integrate reconciles canonical with origin before choosing a rebase base
+        run: |
+          # REGRESSION (proposal: vault-worktree-integrate-rebases-onto-stale-local-main):
+          # integrate fetched origin/<main> and then rebased onto the LOCAL <main>, never
+          # consulting what it fetched. A vault publishing by branch -> PR -> squash-merge
+          # gets a NEW object on origin its local <main> is not an ancestor of, so every
+          # integrate based work on a superseded history and printed success — leaving
+          # canonical divergent and the NEXT publication unmergeable, far from the cause.
+          #
+          # No prior fixture involved a remote whose <main> moved independently, which is
+          # why this shipped: the fixtures encoded a push-to-main consumer only.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-int"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+          setup() {
+            rm -rf "$RUNNER_TEMP/i9"; mkdir -p "$RUNNER_TEMP/i9"
+            git init -q --bare "$RUNNER_TEMP/i9/remote"
+            git clone -q "$RUNNER_TEMP/i9/remote" "$RUNNER_TEMP/i9/v" 2>/dev/null
+            printf 'base\n' > "$RUNNER_TEMP/i9/v/index.md"
+            git -C "$RUNNER_TEMP/i9/v" add -A
+            git -C "$RUNNER_TEMP/i9/v" commit -qm init
+            git -C "$RUNNER_TEMP/i9/v" branch -M main
+            git -C "$RUNNER_TEMP/i9/v" push -q -u origin main
+            export WIKI_PATH="$RUNNER_TEMP/i9/v"
+          }
+          squash_publish() {  # publish current main as a NEW object, as a squash-merge does
+            git -C "$WIKI_PATH" push -q origin main:refs/heads/f1
+            git clone -q "$RUNNER_TEMP/i9/remote" "$RUNNER_TEMP/i9/pub" 2>/dev/null
+            git -C "$RUNNER_TEMP/i9/pub" checkout -q main
+            git -C "$RUNNER_TEMP/i9/pub" merge --squash -q origin/f1 >/dev/null 2>&1
+            git -C "$RUNNER_TEMP/i9/pub" commit -qm "squashed (#1)"
+            git -C "$RUNNER_TEMP/i9/pub" push -q origin main
+          }
+          commit_in_wt() {    # $1 = session id; echoes the worktree path
+            W="$(WIKI_WT_SESSION="$1" "$VW" ensure 2>/dev/null | tail -1)"
+            printf '%s\n' "$1" >> "$W/notes.md"
+            git -C "$W" add notes.md; git -C "$W" commit -qm "$1"
+            echo "$W"
+          }
+          behind_count() { git -C "$WIKI_PATH" fetch -q origin main; git -C "$WIKI_PATH" rev-list --count HEAD..origin/main; }
+
+          # (a) squash divergence: content-equal, history republished -> adopt and succeed
+          setup
+          W="$(commit_in_wt s1)"; (cd "$W" && WIKI_WT_SESSION=s1 "$VW" integrate >/dev/null 2>&1)
+          squash_publish
+          W="$(commit_in_wt s2)"; (cd "$W" && WIKI_WT_SESSION=s2 "$VW" integrate >/dev/null 2>&1) \
+            || { echo "integrate refused a content-equal squash divergence"; exit 1; }
+          [ "$(behind_count)" = "0" ] \
+            || { echo "canonical still behind origin after integrate — stale base bug is back"; exit 1; }
+
+          # (b) REAL divergence (content differs) must refuse, not silently pick a side
+          setup
+          git clone -q "$RUNNER_TEMP/i9/remote" "$RUNNER_TEMP/i9/o" 2>/dev/null
+          printf 'theirs\n' > "$RUNNER_TEMP/i9/o/up.md"
+          git -C "$RUNNER_TEMP/i9/o" add -A; git -C "$RUNNER_TEMP/i9/o" commit -qm theirs
+          git -C "$RUNNER_TEMP/i9/o" push -q origin main
+          printf 'ours\n' > "$WIKI_PATH/local.md"
+          git -C "$WIKI_PATH" add -A; git -C "$WIKI_PATH" commit -qm ours
+          W="$(commit_in_wt s3)"; rc=0
+          (cd "$W" && WIKI_WT_SESSION=s3 "$VW" integrate >/dev/null 2>&1) || rc=$?
+          [ "$rc" = "3" ] || { echo "expected exit 3 on real divergence, got $rc"; exit 1; }
+
+          # (c) squash divergence with a DIRTY canonical must refuse — reset --hard would
+          #     discard the uncommitted edit without complaint, so both guards are required
+          setup
+          W="$(commit_in_wt s4)"; (cd "$W" && WIKI_WT_SESSION=s4 "$VW" integrate >/dev/null 2>&1)
+          squash_publish
+          printf 'UNCOMMITTED\n' >> "$WIKI_PATH/index.md"
+          W="$(commit_in_wt s5)"; rc=0
+          (cd "$W" && WIKI_WT_SESSION=s5 "$VW" integrate >/dev/null 2>&1) || rc=$?
+          [ "$rc" = "3" ] || { echo "expected exit 3 when canonical is dirty, got $rc"; exit 1; }
+          grep -q UNCOMMITTED "$WIKI_PATH/index.md" \
+            || { echo "uncommitted canonical edit was destroyed"; exit 1; }
+          echo "integrate reconcile: squash-adopt, real-divergence refusal, dirty refusal all OK"
+
       - name: Vault gate runs from a worktree, not just canonical
         run: |
           # REGRESSION: a hook that resolves engine/ from `--show-toplevel` is silently
