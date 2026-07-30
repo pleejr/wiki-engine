@@ -533,7 +533,18 @@ jobs:
           [ "$rc" = "3" ] || { echo "expected exit 3 when canonical is dirty, got $rc"; exit 1; }
           grep -q UNCOMMITTED "$WIKI_PATH/index.md" \
             || { echo "uncommitted canonical edit was destroyed"; exit 1; }
-          echo "integrate reconcile: squash-adopt, real-divergence refusal, dirty refusal all OK"
+          # (d) an UNTRACKED file in canonical must NOT block the adopt path: reset --hard
+          #     leaves untracked files alone, so counting them would make this check
+          #     permanently red in any vault that ever leaves a stray file behind.
+          setup
+          W="$(commit_in_wt s6)"; (cd "$W" && WIKI_WT_SESSION=s6 "$VW" integrate >/dev/null)
+          squash_publish
+          printf 'stray\n' > "$WIKI_PATH/untracked.txt"
+          W="$(commit_in_wt s7)"; (cd "$W" && WIKI_WT_SESSION=s7 "$VW" integrate >/dev/null) \
+            || { echo "an untracked file blocked the adopt path"; exit 1; }
+          [ -f "$WIKI_PATH/untracked.txt" ] || { echo "untracked file was destroyed"; exit 1; }
+
+          echo "integrate reconcile: squash-adopt, real-divergence refusal, dirty refusal, untracked-tolerated all OK"
 
       - name: Vault gate runs from a worktree, not just canonical
         run: |

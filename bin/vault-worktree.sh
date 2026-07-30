@@ -606,11 +606,16 @@ case "$CMD" in
         # signature of a squash-merge — local <main>'s commits were published as a single
         # new object — and it is the normal steady state of any vault whose convention is
         # branch -> pull request -> squash-merge, so refusing there would refuse forever.
+        # -uno: `reset --hard` does not touch UNTRACKED files, so they are not at risk and
+        # must not block. Counting them would make this check permanently red in any vault
+        # that leaves a stray file in canonical — the always-red-check-gets-bypassed failure
+        # this repo has already fixed twice, most recently for the canonical dirty-check
+        # below.
         if [ -z "$(git -C "$WIKI" diff --name-only "origin/$main" "$main" 2>/dev/null)" ] \
-           && [ -z "$(git -C "$WIKI" status --porcelain 2>/dev/null)" ]; then
+           && [ -z "$(git -C "$WIKI" status --porcelain -uno 2>/dev/null)" ]; then
           # Content-equal and canonical is clean: nothing to lose by adopting origin's
           # history. Both conditions are required — the diff proves no committed work is
-          # dropped, the status check proves no UNcommitted work is, and `reset --hard`
+          # dropped, the status check proves no uncommitted TRACKED work is, and `reset --hard`
           # would destroy the latter without complaint.
           git -C "$WIKI" reset --hard -q "origin/$main" 2>/dev/null || {
             log "vault-worktree: could not adopt origin/$main — resolve in $WIKI, then re-run integrate"; exit 3; }
