@@ -6,7 +6,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-Untagged — CI/release only. Consumers read workflows from `HEAD`, never through the pin, so this rides along into the next functional release.
+_Nothing yet._
+
+## [1.49.0] — 2026-07-30
+
+Minor — `integrate` no longer bases work on a stale local `<main>`, and the proposal queue can see pull requests that have not merged yet. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
+
+Carries the previously-untagged `release.yml` changes, which had been parked under `## [Unreleased]` waiting for exactly this: a functional release to ride along with.
 
 ### Added
 - **`engine-proposal.sh queue` now surfaces pushed-but-unmerged proposal pull requests**, in an `AWAITING MERGE` section listed *before* the merged-and-unreviewed ones — they need a **merge**, not a design review. Arrival stays derived from the merge; nothing writes a ledger row earlier. Between `push` and merge a proposal was visible to the consumer (which reports `SUBMITTED`) and invisible to the engine-dev end, whose only surface reads merged files — and when the proposal comes from a **fork**, merging is something only this end can do, so it could sit indefinitely with both ends behaving correctly. It **degrades loudly**: with no `gh`, no network, or `QUEUE_NO_REMOTE=1`, it says it could not look and warns the list may be incomplete, because a remote section that is quietly empty when it could not check is the same failure one level up. `Proposal: queue-cannot-see-unmerged-proposal-prs`
