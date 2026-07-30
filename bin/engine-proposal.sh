@@ -622,11 +622,66 @@ do_queue() {
     fi
   done
 
+  # AWAITING MERGE — the interval between `push` and merge, where a proposal is visible
+  # to the consumer (which reports it SUBMITTED) and invisible here, because arrival is
+  # defined as the merged file. A proposal pushed from a FORK can only be merged by this
+  # end, so it can sit indefinitely with both ends behaving correctly and nobody holding it.
+  #
+  # It degrades loudly on purpose. A remote section that is quietly empty when it could not
+  # look is the very failure being fixed, one level up: "no open proposals" and "I could not
+  # check" must never render the same.
+  local n_pr=0 out_pr="" pr_note=""
+  if [[ "${QUEUE_NO_REMOTE:-0}" == "1" ]]; then
+    pr_note="skipped (QUEUE_NO_REMOTE=1)"
+  elif ! command -v gh >/dev/null 2>&1; then
+    pr_note="could not check — the gh CLI is not installed"
+  else
+    local pr_json
+    if ! pr_json="$(cd "$repo" && gh pr list --state open --limit 50 \
+                      --json number,title,headRefName,files 2>/dev/null)"; then
+      pr_note="could not check — gh could not reach the remote (offline, or not authenticated)"
+    else
+      local line
+      # Only pull requests that ADD a proposals/<slug>.md, and only slugs not already
+      # merged: once the file lands, the file-derived entry above is the single record.
+      while IFS=$'\t' read -r num slug title; do
+        [[ -n "${slug:-}" ]] || continue
+        [[ -e "$q/$slug.md" ]] && continue
+        out_pr+="$(printf '  %-52s #%s  %s\n' "$slug" "$num" "${title:0:38}")"$'\n'
+        n_pr=$((n_pr+1))
+      done < <(printf '%s' "$pr_json" | python3 -c '
+import json,sys
+try: prs = json.load(sys.stdin)
+except Exception: prs = []
+for pr in prs:
+    for f in pr.get("files") or []:
+        path = f.get("path","")
+        if path.startswith("proposals/") and path.endswith(".md"):
+            print("\t".join([str(pr["number"]), path[len("proposals/"):-3], pr.get("title","")]))
+            break
+' 2>/dev/null)
+    fi
+  fi
+
   printf 'engine-proposal: queue at %s\n\n' "${q#$PWD/}"
+  if [[ "$n_pr" -gt 0 ]]; then
+    # Deliberately FIRST and named differently: these need a MERGE, not a design review.
+    printf 'AWAITING MERGE — pushed, pull request still open (%d):\n%s\n' "$n_pr" "$out_pr"
+  fi
+  if [[ -n "$pr_note" ]]; then
+    printf 'AWAITING MERGE — %s.\n  Open proposal pull requests are NOT included below; this list may be incomplete.\n\n' "$pr_note"
+  fi
   if [[ "$n_open" -gt 0 ]]; then
     printf 'OPEN — awaiting intake (%d):\n%s\n' "$n_open" "$out_open"
+  elif [[ "$n_pr" -eq 0 && -z "$pr_note" ]]; then
+    printf 'OPEN — awaiting intake: none, and no open proposal pull requests. The queue is drained.\n\n'
+  elif [[ "$n_pr" -gt 0 ]]; then
+    # Drained of REVIEW work, but not of work: the pull requests above still need merging.
+    printf 'OPEN — awaiting intake: none. The queue is drained of merged proposals — but see AWAITING MERGE above.\n\n'
   else
-    printf 'OPEN — awaiting intake: none. The queue is drained.\n\n'
+    # Could not check the remote. Still say "drained" about what was actually inspected,
+    # and keep the caveat attached, so this never reads as an unqualified all-clear.
+    printf 'OPEN — awaiting intake: none. The merged queue is drained; open pull requests were NOT checked (above).\n\n'
   fi
   if [[ "${QUEUE_ALL:-0}" == "1" && "$n_other" -gt 0 ]]; then
     printf 'RESOLVED (%d):\n%s\n' "$n_other" "$out_other"

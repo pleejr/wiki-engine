@@ -437,6 +437,51 @@ jobs:
           [ "$rc" -ne 0 ] || { echo "ensure reported SUCCESS while handing back the shared tree"; exit 1; }
           [ "$OUT" = "$V" ] || { echo "fallback should still print the canonical path"; exit 1; }
 
+      - name: queue surfaces pushed-but-unmerged proposal pull requests
+        run: |
+          # Proposal: queue-cannot-see-unmerged-proposal-prs — arrival is the MERGED file,
+          # so between push and merge a proposal was visible to the consumer (SUBMITTED)
+          # and invisible here. When it comes from a fork, only this end can merge it, so
+          # it can sit forever with both ends behaving correctly.
+          set -x
+          STUB="$RUNNER_TEMP/ghstub"; mkdir -p "$STUB"
+          cat > "$STUB/gh" <<'STUBEOF'
+          #!/usr/bin/env bash
+          cat <<'JSON'
+          [{"number":101,"title":"proposal: brand-new-thing","headRefName":"proposal/brand-new-thing",
+            "files":[{"path":"proposals/brand-new-thing.md"},{"path":"PROPOSALS.md"}]},
+           {"number":103,"title":"chore: unrelated","headRefName":"y","files":[{"path":"bin/foo.sh"}]}]
+          JSON
+          STUBEOF
+          sed -i 's/^          //' "$STUB/gh"; chmod +x "$STUB/gh"
+
+          # (a) an open proposal PR is listed, and an unrelated PR is not
+          out="$(PATH="$STUB:$PATH" ./bin/engine-proposal.sh queue 2>&1)"
+          printf '%s\n' "$out" | grep -q "AWAITING MERGE — pushed" || { echo "no awaiting-merge section"; exit 1; }
+          printf '%s\n' "$out" | grep -q "brand-new-thing" || { echo "open proposal PR not listed"; exit 1; }
+          printf '%s\n' "$out" | grep -q "unrelated" && { echo "unrelated PR leaked into the queue"; exit 1; }
+
+          # (b) a PR whose slug is ALREADY merged must not double-report
+          cat > "$STUB/gh" <<'STUBEOF2'
+          #!/usr/bin/env bash
+          cat <<'JSON'
+          [{"number":102,"title":"already merged","headRefName":"x",
+            "files":[{"path":"proposals/SLUG.md"}]}]
+          JSON
+          STUBEOF2
+          sed -i 's/^          //' "$STUB/gh"
+          MERGED="$(basename "$(ls proposals/*.md | head -1)" .md)"
+          sed -i "s/SLUG/$MERGED/" "$STUB/gh"; chmod +x "$STUB/gh"
+          PATH="$STUB:$PATH" ./bin/engine-proposal.sh queue 2>&1 | grep -q "AWAITING MERGE — pushed" \
+            && { echo "a merged slug was re-reported as awaiting merge"; exit 1; }
+
+          # (c) it must say it could not look, never render an empty list as complete
+          env PATH=/usr/bin:/bin ./bin/engine-proposal.sh queue 2>&1 \
+            | grep -q "could not check" || { echo "missing-gh case did not say so"; exit 1; }
+          QUEUE_NO_REMOTE=1 ./bin/engine-proposal.sh queue 2>&1 \
+            | grep -q "may be incomplete" || { echo "skipped case did not warn"; exit 1; }
+          echo "queue remote surface: lists, dedups, and degrades loudly — OK"
+
       - name: integrate reconciles canonical with origin before choosing a rebase base
         run: |
           # REGRESSION (proposal: vault-worktree-integrate-rebases-onto-stale-local-main):
