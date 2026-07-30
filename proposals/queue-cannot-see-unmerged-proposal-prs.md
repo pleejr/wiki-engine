@@ -1,6 +1,6 @@
 ---
 slug: queue-cannot-see-unmerged-proposal-prs
-outcome: open
+outcome: accepted
 received: 2026-07-30
 ---
 
