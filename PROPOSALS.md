@@ -61,5 +61,6 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `upkeep-sync-clones` | shipped | derived |
 | `upkeep-tolerate-describe-refs` | shipped | derived |
 | `upkeep-unresolvable-clone-skips-freshness-silently` | shipped | derived |
+| `vault-worktree-integrate-rebases-onto-stale-local-main` | open | received 2026-07-30 |
 | `worktree-reattach-returns-stale-base` | shipped | derived |
 <!-- proposals:end -->
