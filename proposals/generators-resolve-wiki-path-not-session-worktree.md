@@ -1,6 +1,6 @@
 ---
 slug: generators-resolve-wiki-path-not-session-worktree
-outcome: open
+outcome: accepted
 received: 2026-08-01
 ---
 

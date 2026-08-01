@@ -17,14 +17,18 @@
 #   <!-- projects:end -->
 #
 # Usage:
-#   gen-projects-index.sh                 update $WIKI_PATH/index.md in place
+#   gen-projects-index.sh                 update the index.md of the working tree cwd
+#                                         is in, else $WIKI_PATH's (see wiki-root-lib.sh)
 #   gen-projects-index.sh --stdout        print the generated block only
 #   gen-projects-index.sh --check         exit 1 if index.md is out of date (no write)
 #   gen-projects-index.sh --wiki DIR      target DIR (its projects/ + index.md)
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
+
 MODE="write"
-WIKI="${WIKI_PATH:-}"
+WIKI=""   # explicit --wiki only; the default is resolved below, not here
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -36,7 +40,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
+# This writes a TRACKED file, so it must target the tree the caller commits from —
+# not the machine-global $WIKI_PATH, which is a different working tree whenever the
+# session is in its worktree. See wiki-root-lib.sh for why, and for what must not
+# resolve this way.
+WIKI="$(resolve_wiki_root "$WIKI")" || exit 1
 PROJECTS_DIR="$WIKI/projects"
 [ -d "$PROJECTS_DIR" ] || { echo "error: no projects dir at $PROJECTS_DIR" >&2; exit 1; }
 
