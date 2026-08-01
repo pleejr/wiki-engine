@@ -790,19 +790,31 @@ jobs:
           # Arm the gate the way a real vault does: a TRACKED seam declaring where the
           # patterns live, and a GIT-IGNORED patterns file that names them.
           printf 'foreign_boundary_patterns = .wiki-gates.local\n' > "$V/.wiki-gates.conf"
-          printf '.wiki-gates.local\n' >> "$V/.gitignore"
+          printf '.wiki-gates.local\n.seam-ignored\n' >> "$V/.gitignore"
           printf 'ACME-INTERNAL\n' > "$V/.wiki-gates.local"
+          # Two probes for the ignored-vs-tracked rule in (3), so that assertion depends
+          # on files THIS step creates rather than on how the scaffolded .gitignore
+          # happens to treat a seam file — which is what made an earlier version of this
+          # test pass locally and die on the runner with an opaque `git rm` pathspec error.
+          printf 'tracked\n'  > "$V/.seam-tracked"
+          printf 'ignored\n'  > "$V/.seam-ignored"
           git -C "$V" check-ignore -q .wiki-gates.local \
             || { echo "FAIL: fixture is wrong — the patterns file is not git-ignored"; exit 1; }
+          git -C "$V" check-ignore -q .seam-ignored \
+            || { echo "FAIL: fixture is wrong — .seam-ignored is not git-ignored"; exit 1; }
           # A page that violates the pattern, committed like any other content.
           printf -- '---\ntitle: t\ntype: note\nboundary: personal\n---\n\nrefers to ACME-INTERNAL systems.\n\n[[a]] [[b]]\n' \
             > "$V/notes/offender.md"
           git -C "$V" add -A
           git -C "$V" -c core.hooksPath=/dev/null commit -qm "seam fixture"
+          git -C "$V" ls-files --error-unmatch .seam-tracked >/dev/null 2>&1 \
+            || { echo "FAIL: fixture is wrong — .seam-tracked was not committed"; exit 1; }
           WT="$RUNNER_TEMP/seam-wt"; rm -rf "$WT"
           git -C "$V" worktree add -q "$WT" -b wt/seam HEAD
           [ -f "$WT/.wiki-gates.local" ] \
             && { echo "FAIL: fixture is wrong — the ignored file reached the worktree"; exit 1; }
+          [ -f "$WT/.seam-ignored" ] \
+            && { echo "FAIL: fixture is wrong — .seam-ignored reached the worktree"; exit 1; }
 
           gate() { ./bin/lint.sh --wiki "$1" 2>&1 | sed -n '/=== foreign boundary ===/,/^$/p'; }
 
@@ -849,13 +861,12 @@ jobs:
           # — a file a tool is about to CREATE must not resolve to canonical and get
           # written outside the branch, which is the bug the generator fix just removed.
           . "$ENGINE/bin/wiki-root-lib.sh"
-          git -C "$WT" rm -q .wiki-gates.conf
-          got="$(resolve_seam_file "$WT" .wiki-gates.conf)"
+          git -C "$WT" rm -q .seam-tracked
+          got="$(resolve_seam_file "$WT" .seam-tracked)"
           [ -z "$got" ] \
             || { echo "FAIL: a tracked seam file deleted on the branch resolved to $got"; exit 1; }
-          git -C "$WT" checkout -q -- .wiki-gates.conf
-          got="$(resolve_seam_file "$WT" .wiki-gates.local)"
-          [ "$got" = "$V/.wiki-gates.local" ] \
+          got="$(resolve_seam_file "$WT" .seam-ignored)"
+          [ "$got" = "$V/.seam-ignored" ] \
             || { echo "FAIL: an ignored-and-absent seam file did not resolve to canonical (got '$got')"; exit 1; }
           echo "ok: only ignored-and-absent falls back to canonical; tracked-and-deleted stays deleted"
 
