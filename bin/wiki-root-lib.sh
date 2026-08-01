@@ -79,6 +79,52 @@ _abs_common_dir() {
   return 0
 }
 
+# _canonical_root DIR — the CANONICAL working tree of DIR's repository (DIR itself
+# when DIR is canonical); empty when DIR is not in a repository, or when the derived
+# root is not a working tree root after all (a `.git` FILE, as a submodule has,
+# resolves its common dir into the superproject's .git/modules/... where `..` names
+# no worktree). Same derivation scaffold/pre-commit already uses.
+_canonical_root() {
+  local dir="$1" common top
+  common="$(_abs_common_dir "$dir")" || return 0
+  [ -n "$common" ] || return 0
+  top="$(cd "$common/.." 2>/dev/null && pwd)" || return 0
+  local check; check="$(cd "$top" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  [ "$check" = "$top" ] && printf '%s\n' "$top"
+  return 0
+}
+
+# resolve_seam_file CONTENT_ROOT REL — echo the path a vault-seam file should be READ
+# from; empty when it exists in neither place.
+#
+# THE PROBLEM this solves is the mirror image of resolve_wiki_root's, and the two want
+# OPPOSITE trees, which is why they are separate functions rather than one setting.
+# A gate scans the tree being committed, but some of its INPUTS are per-machine state
+# the vault git-ignores ON PURPOSE — the foreign-boundary patterns file names the
+# identifiers a vault must reject, so tracking it would commit the very strings the
+# gate exists to keep out. Git-ignored means structurally absent from every linked
+# worktree, while `pre-commit` lints the worktree and `vault-worktree.sh guard`
+# refuses canonical commits — so such a gate read its rules from the one tree that
+# cannot hold them and reported itself `not armed` on every commit. Fail-open, on a
+# boundary gate, and indistinguishable from a vault that never configured it.
+#
+# THE FALLBACK IS GATED ON `git check-ignore`, not on mere absence, and that is the
+# load-bearing part. "Absent from the content tree" also describes a tracked file the
+# branch legitimately deleted, and a file a tool is about to CREATE — the summary
+# baseline is written by `--seed-baseline`, so resolving it to canonical would write
+# outside the branch being committed, which is precisely the bug resolve_wiki_root
+# was added to fix. Ignored-and-absent is narrow enough to mean only one thing:
+# deliberate per-machine state that lives in canonical or nowhere.
+resolve_seam_file() {
+  local root="${1:-}" rel="${2:-}"
+  [ -n "$root" ] && [ -n "$rel" ] || return 0
+  if [ -f "$root/$rel" ]; then printf '%s\n' "$root/$rel"; return 0; fi
+  ( cd "$root" 2>/dev/null && git check-ignore -q -- "$rel" 2>/dev/null ) || return 0
+  local canon; canon="$(_canonical_root "$root")" || canon=""
+  [ -n "$canon" ] && [ "$canon" != "$root" ] && [ -f "$canon/$rel" ] && printf '%s\n' "$canon/$rel"
+  return 0
+}
+
 # resolve_wiki_root [EXPLICIT_WIKI] — echo the working tree to operate on.
 # Exits non-zero (with the historical message) when there is nothing to resolve, so
 # a caller that could previously rely on `[ -n "$WIKI" ] || error` keeps that gate.

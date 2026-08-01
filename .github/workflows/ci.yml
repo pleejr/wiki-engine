@@ -766,6 +766,120 @@ jobs:
             || { echo "FAIL: gen-skills-index.sh --stdout now requires a vault"; exit 1; }
           echo "ok: --stdout still needs no vault"
 
+      - name: A per-machine gate keeps its rules when the lint runs from a worktree
+        run: |
+          # REGRESSION: the foreign-boundary gate read its patterns from "$WIKI/<file>",
+          # where $WIKI is the tree being linted. That file is git-ignored BY DESIGN —
+          # tracking the identifiers a vault must reject would commit the very strings
+          # the gate exists to keep out — and a git-ignored file is structurally absent
+          # from every linked worktree. Meanwhile pre-commit lints the WORKTREE and
+          # `vault-worktree.sh guard` refuses canonical commits, so every commit an
+          # adopted vault makes was gated by a gate reading its rules from the one tree
+          # that cannot hold them. It printed `not armed` and exited 0 — a deliberately
+          # armed vault and an unconfigured one produced identical output. Vault CI could
+          # not backstop it either: a fresh clone has no copy of an ignored file.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-seam"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-seam.json"
+          ENGINE="$PWD"
+          V="$RUNNER_TEMP/seamvault"; rm -rf "$V"
+          ./bin/new-wiki.sh --path "$V" --boundary personal \
+            --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+
+          # Arm the gate the way a real vault does: a TRACKED seam declaring where the
+          # patterns live, and a GIT-IGNORED patterns file that names them.
+          printf 'foreign_boundary_patterns = .wiki-gates.local\n' > "$V/.wiki-gates.conf"
+          printf '.wiki-gates.local\n' >> "$V/.gitignore"
+          printf 'ACME-INTERNAL\n' > "$V/.wiki-gates.local"
+          git -C "$V" check-ignore -q .wiki-gates.local \
+            || { echo "FAIL: fixture is wrong — the patterns file is not git-ignored"; exit 1; }
+          # A page that violates the pattern, committed like any other content.
+          printf -- '---\ntitle: t\ntype: note\nboundary: personal\n---\n\nrefers to ACME-INTERNAL systems.\n\n[[a]] [[b]]\n' \
+            > "$V/notes/offender.md"
+          git -C "$V" add -A
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm "seam fixture"
+          WT="$RUNNER_TEMP/seam-wt"; rm -rf "$WT"
+          git -C "$V" worktree add -q "$WT" -b wt/seam HEAD
+          [ -f "$WT/.wiki-gates.local" ] \
+            && { echo "FAIL: fixture is wrong — the ignored file reached the worktree"; exit 1; }
+
+          gate() { ./bin/lint.sh --wiki "$1" 2>&1 | sed -n '/=== foreign boundary ===/,/^$/p'; }
+
+          # (1) linting the WORKTREE must arm the gate and catch the offender
+          out="$(gate "$WT")"
+          printf '%s\n' "$out" | grep -q 'not armed' \
+            && { echo "FAIL: the gate is still unarmed when linting a worktree:"; printf '%s\n' "$out"; exit 1; }
+          printf '%s\n' "$out" | grep -q 'matches foreign-boundary pattern' \
+            || { echo "FAIL: the gate armed but did not catch the offending page:"; printf '%s\n' "$out"; exit 1; }
+          ./bin/lint.sh --wiki "$WT" >/dev/null 2>&1 \
+            && { echo "FAIL: lint.sh exited 0 with a foreign-boundary violation present"; exit 1; }
+          echo "ok: a worktree lint reads the canonical per-machine patterns and fails on a violation"
+
+          # (2) LOAD-BEARING, PROVEN — reinstate the pre-fix lookup (seam files read from
+          # $WIKI only) and require (1) to go RED. A regression test for a fail-open bug
+          # is worth nothing unless it fails for the bug that actually happened.
+          # A whole engine LAYOUT, not just bin/: lint.sh resolves scaffold/node-dirs.txt
+          # and skills/ relative to its own directory, so a bin-only copy dies on an
+          # unbound NODE_DIRS long before the gate runs — and that reads as "the bug did
+          # not reproduce" when in truth nothing was tested. Exactly the blind-test shape
+          # this assertion exists to prevent, met while writing the assertion.
+          BUGROOT="$RUNNER_TEMP/seam-buggy"; rm -rf "$BUGROOT"; mkdir -p "$BUGROOT"
+          cp -R "$ENGINE/bin" "$BUGROOT/bin"
+          ln -s "$ENGINE/skills" "$BUGROOT/skills"
+          ln -s "$ENGINE/scaffold" "$BUGROOT/scaffold"
+          python3 - "$BUGROOT/bin/wiki-root-lib.sh" <<'PY'
+          import sys
+          p = sys.argv[1]; s = open(p).read()
+          i = s.index('resolve_seam_file() {'); j = s.index('\n}\n', i) + 3
+          s = s[:i] + 'resolve_seam_file() {\n  [ -f "$1/$2" ] && printf \'%s\\n\' "$1/$2"\n  return 0\n}\n' + s[j:]
+          open(p, 'w').write(s)
+          PY
+          bug_out="$("$BUGROOT/bin/lint.sh" --wiki "$WT" 2>&1 | sed -n '/=== foreign boundary ===/,/^$/p')"
+          printf '%s\n' "$bug_out" | grep -q 'not armed' \
+            || { echo "FAIL: the old \$WIKI-only lookup did NOT disarm the gate — this test is blind:"; printf '%s\n' "$bug_out"; exit 1; }
+          echo "ok: red when seam files are read from the linted tree only (the reported bug)"
+
+          # (3) the fallback is gated on git-ignored-ness, NOT on mere absence — asserted
+          # against the resolver directly, because the gate's own output cannot isolate
+          # it: deleting .wiki-gates.conf only falls back to the ENGINE default filename,
+          # which is the ignored file, so the gate stays armed for a reason that has
+          # nothing to do with this rule. A TRACKED seam file a branch deleted must stay
+          # deleted (or no branch could ever remove one), and — the case that matters most
+          # — a file a tool is about to CREATE must not resolve to canonical and get
+          # written outside the branch, which is the bug the generator fix just removed.
+          . "$ENGINE/bin/wiki-root-lib.sh"
+          git -C "$WT" rm -q .wiki-gates.conf
+          got="$(resolve_seam_file "$WT" .wiki-gates.conf)"
+          [ -z "$got" ] \
+            || { echo "FAIL: a tracked seam file deleted on the branch resolved to $got"; exit 1; }
+          git -C "$WT" checkout -q -- .wiki-gates.conf
+          got="$(resolve_seam_file "$WT" .wiki-gates.local)"
+          [ "$got" = "$V/.wiki-gates.local" ] \
+            || { echo "FAIL: an ignored-and-absent seam file did not resolve to canonical (got '$got')"; exit 1; }
+          echo "ok: only ignored-and-absent falls back to canonical; tracked-and-deleted stays deleted"
+
+          # (4) absent from BOTH trees is still honestly reported as unarmed
+          mv "$V/.wiki-gates.local" "$V/.wiki-gates.local.bak"
+          out="$(gate "$WT")"
+          printf '%s\n' "$out" | grep -q 'not armed' \
+            || { echo "FAIL: a genuinely absent patterns file was not reported unarmed:"; printf '%s\n' "$out"; exit 1; }
+          echo "ok: absent from both trees still reports 'not armed' rather than passing silently"
+          mv "$V/.wiki-gates.local.bak" "$V/.wiki-gates.local"
+
+          # (5) the summary baseline is WRITTEN, so it must stay in the linted tree. If it
+          # ever resolved to canonical, --seed-baseline would write outside the branch and
+          # dirty a tree other sessions share — the bug the generator fix just removed.
+          rm -f "$WT/.wiki-gates-summary-baseline" "$V/.wiki-gates-summary-baseline"
+          printf -- '---\ntitle: p\ntype: project\nstatus: active\nsummary: still blocked on inputs\n---\n\n[[a]] [[b]]\n' \
+            > "$WT/projects/vol.md"
+          ./bin/lint-summary-volatility.sh --wiki "$WT" --seed-baseline >/dev/null 2>&1 || true
+          [ -f "$WT/.wiki-gates-summary-baseline" ] \
+            || { echo "FAIL: --seed-baseline did not write the linted tree"; exit 1; }
+          [ -f "$V/.wiki-gates-summary-baseline" ] \
+            && { echo "FAIL: --seed-baseline wrote the CANONICAL tree instead of the branch"; exit 1; }
+          echo "ok: the written baseline stays in the linted tree, never canonical"
+
       - name: Adoption repairs a vault wired by an earlier release
         run: |
           # The upgrade path, end to end through the real adoption entry point: a vault
