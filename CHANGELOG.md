@@ -14,6 +14,9 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
   - Shared as `bin/wiki-root-lib.sh`, and deliberately **not** adopted by two families: the RAG tools (`.rag/` is untracked and exists only in canonical) and the machine/engine-wiring tools (`engine/` is a submodule, which `git worktree add` never populates). Retargeting either would not fix a bug; it would invent one.
   - CI reinstates the pre-fix resolution and requires the assertion to go **red**, then covers the escape hatch, the unrelated-repo and non-repo fall-throughs, the unset-`$WIKI_PATH` fail-closed path, and that `--stdout` still needs no vault.
 
+### Changed
+- **`scaffold/rag-requirements.txt` pins `huggingface_hub==1.26.0`** (was `1.25.1`). A pure-Python `py3-none-any` wheel with `requires_python >=3.10.0`, so the compiled-wheel-lag hazard governing this file's other pins does not apply, and `fastembed==0.8.0` asks for `huggingface-hub<2.0,>=0.20`, so the resolver has no quarrel with it. Verified with a fresh venv on Python 3.14.6: `pip check` clean, a bge-base embed of known text returns the documented 768-dim unit vector, and `rag_deps_check.py` reports current. One pin moves, which is what keeps a bad bump bisectable. `Proposal: bump-pinned-huggingface-hub-1-26-0`
+
 ## [1.49.0] — 2026-07-30
 
 Minor — `integrate` no longer bases work on a stale local `<main>`, and the proposal queue can see pull requests that have not merged yet. Adopt with `bin/adopt.sh` or `update.sh`; no migration.

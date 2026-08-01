@@ -1,6 +1,6 @@
 ---
 slug: bump-pinned-huggingface-hub-1-26-0
-outcome: open
+outcome: accepted
 received: 2026-07-31
 ---
 
