@@ -32,7 +32,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
   - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
   - `lint.sh` — umbrella lint **and write-time gate** (memory + frontmatter-property + soft-wrap + catalog + boundary-present + boundary-matches-vault + provenance-present + repo-ref-is-a-clean-tag + link-integrity + foreign-boundary); `checkpoint`, a pre-commit hook, and vault CI run it.
   - `verify-status.sh` · `upkeep.sh` — the `verified:` correctness reporter (verified/stale/unverified, `--todo`, `--check`), and the drainable upkeep queue (`scan`/`next`/`done`) it feeds.
-  - `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation (skills + projects), memory validation, soft-wrap normalization.
+  - `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation (skills + projects), memory validation, soft-wrap normalization. The generators write the working tree they are invoked from rather than `$WIKI_PATH`, so a session in its own worktree updates the index on the branch it is committing from (`bin/wiki-root-lib.sh`).
 
 ## Prerequisites
 

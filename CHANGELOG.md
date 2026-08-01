@@ -6,7 +6,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+- **The index generators now write the working tree they are invoked from, not the machine-global `$WIKI_PATH`.** `gen-projects-index.sh` and `gen-skills-index.sh` resolved their target as `WIKI="${WIKI_PATH:-}"` and never consulted cwd, while `vault-worktree.sh` exists precisely so a writing session never touches that shared canonical checkout — so the two features contradicted each other, and a bare invocation from inside a session worktree regenerated **canonical** `index.md` with exit 0 and a success line naming the wrong tree. Two consequences: the regenerated index landed *outside* the branch whose page edit required it, so a pull request changing a project's `summary:` could omit the index update that summary demands; and the shared tree acquired an uncommitted modification nothing asked for, which a concurrent session's `git add -A` sweeps into a foreign commit — the exact clobber worktrees were introduced to prevent. Reported from a consumer vault. `Proposal: generators-resolve-wiki-path-not-session-worktree`
+  - Resolution is now, in order: an explicit `--wiki`, then cwd's working tree **when it is a different working tree of the same repository** as `$WIKI_PATH`, then `$WIKI_PATH`. The same-repository test compares `git rev-parse --git-common-dir`, not `--show-toplevel`: engine development happens inside *other* repositories with `$WIKI_PATH` still exported, and retargeting on the toplevel alone would try to generate a vault index into whichever repo the caller happened to be standing in.
+  - A retarget **announces itself on stderr**. Silence is what made the original bug fail open — it reported success naming a path the caller was not committing from, and that read as ordinary success.
+  - `--wiki "$WIKI_PATH"` preserves the old behaviour from anywhere, so the escape hatch is preserved rather than removed. Callers that already pass `--wiki` (the `pre-commit` hook via `lint.sh`, `new-wiki.sh`, the `checkpoint` skill) are unaffected, as are cwd outside any repository, cwd in an unrelated repository, and cwd in canonical itself.
+  - Shared as `bin/wiki-root-lib.sh`, and deliberately **not** adopted by two families: the RAG tools (`.rag/` is untracked and exists only in canonical) and the machine/engine-wiring tools (`engine/` is a submodule, which `git worktree add` never populates). Retargeting either would not fix a bug; it would invent one.
+  - CI reinstates the pre-fix resolution and requires the assertion to go **red**, then covers the escape hatch, the unrelated-repo and non-repo fall-throughs, the unset-`$WIKI_PATH` fail-closed path, and that `--stdout` still needs no vault.
 
 ## [1.49.0] — 2026-07-30
 

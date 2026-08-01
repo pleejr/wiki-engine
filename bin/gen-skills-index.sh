@@ -13,7 +13,8 @@
 #   <!-- skills:end -->
 #
 # Usage:
-#   gen-skills-index.sh                 update $WIKI_PATH/index.md in place
+#   gen-skills-index.sh                 update the index.md of the working tree cwd
+#                                       is in, else $WIKI_PATH's (see wiki-root-lib.sh)
 #   gen-skills-index.sh --stdout        print the generated block only
 #   gen-skills-index.sh --check         exit 1 if index.md is out of date (no write)
 #   gen-skills-index.sh --wiki DIR      target DIR/index.md instead of $WIKI_PATH
@@ -22,9 +23,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILLS_DIR="$ENGINE_ROOT/skills"
+. "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
 
 MODE="write"
-WIKI="${WIKI_PATH:-}"
+WIKI=""   # explicit --wiki only; the default is resolved below, not here
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -71,7 +73,10 @@ if [ "$MODE" = "stdout" ]; then
   exit 0
 fi
 
-[ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
+# Resolved here, below the --stdout exit, so printing the block still needs no vault
+# at all. This writes a TRACKED file, so it must target the tree the caller commits
+# from rather than the machine-global $WIKI_PATH — see wiki-root-lib.sh.
+WIKI="$(resolve_wiki_root "$WIKI")" || exit 1
 INDEX="$WIKI/index.md"
 [ -f "$INDEX" ] || { echo "error: no index at $INDEX" >&2; exit 1; }
 

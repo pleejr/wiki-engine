@@ -676,6 +676,96 @@ jobs:
             || echo "ok: red when no hook is installed at all (v1.32.0 bug)"
           cp scaffold/pre-commit "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"
 
+      - name: A generator writes the tree it is invoked from, never the shared canonical one
+        run: |
+          # REGRESSION: the index generators resolved their target as WIKI="$WIKI_PATH"
+          # and never consulted cwd. $WIKI_PATH is a machine-global constant naming the
+          # CANONICAL checkout, while vault-worktree.sh exists so a writing session never
+          # touches that tree — so a bare invocation from inside a session worktree
+          # regenerated the CANONICAL index.md, with exit 0 and a success line. Two
+          # consequences: the regenerated index landed outside the branch whose page edit
+          # required it, and the shared tree acquired an uncommitted modification that a
+          # concurrent session's `git add -A` sweeps into a foreign commit — the exact
+          # clobber worktrees prevent. Fail-open, so nothing surfaced it.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-gwt"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          ENGINE="$PWD"
+          V="$RUNNER_TEMP/gwt"; rm -rf "$V"; mkdir -p "$V/projects"
+          git -C "$V" init -q -b main .
+          printf -- '---\nslug: alpha\nstatus: active\nsummary: canonical-only project\n---\n' > "$V/projects/alpha.md"
+          printf -- '# index\n\n<!-- projects:start -->\n<!-- projects:end -->\n' > "$V/index.md"
+          git -C "$V" add -A && git -C "$V" commit -qm seed
+          WT="$V/.worktrees/sess"
+          git -C "$V" worktree add -q -b wt/sess "$WT" main
+          # A page that exists ONLY in the worktree, so "which tree did it scan?" is
+          # observable in the output rather than inferred.
+          printf -- '---\nslug: beta\nstatus: active\nsummary: worktree-only project\n---\n' > "$WT/projects/beta.md"
+
+          run_gen() { ( cd "$1" && shift && WIKI_PATH="$V" bash "$@" ); }
+
+          # (1) bare, from the worktree -> the WORKTREE's index, canonical untouched
+          run_gen "$WT" "$ENGINE/bin/gen-projects-index.sh"
+          grep -q 'beta' "$WT/index.md" \
+            || { echo "FAIL: worktree index.md was not regenerated from the worktree's projects/"; exit 1; }
+          [ -z "$(git -C "$V" status --porcelain -- index.md)" ] \
+            || { echo "FAIL: the shared canonical tree was modified by a worktree invocation"; git -C "$V" status --short; exit 1; }
+          echo "ok: bare invocation targets the worktree and leaves canonical clean"
+
+          # (2) LOAD-BEARING, PROVEN — reinstate the pre-fix resolution and require the
+          # assertions above to go RED. A regression test for a fail-open bug is worth
+          # nothing unless it fails for the bug that actually happened.
+          BUG="$RUNNER_TEMP/gwt-buggy"; rm -rf "$BUG"; cp -R "$ENGINE/bin" "$BUG"
+          cat > "$BUG/wiki-root-lib.sh" <<'OLD'
+          resolve_wiki_root() {
+            [ -n "${1:-}" ] && { printf '%s\n' "$1"; return 0; }
+            [ -n "${WIKI_PATH:-}" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; return 1; }
+            printf '%s\n' "$WIKI_PATH"
+          }
+          OLD
+          git -C "$V" checkout -q -- index.md 2>/dev/null || true
+          run_gen "$WT" "$BUG/gen-projects-index.sh" >/dev/null
+          if [ -z "$(git -C "$V" status --porcelain -- index.md)" ]; then
+            echo "FAIL: the old \$WIKI_PATH-only resolution did NOT dirty canonical — this test is blind"; exit 1
+          fi
+          echo "ok: red when the generator resolves \$WIKI_PATH regardless of cwd (the reported bug)"
+          git -C "$V" checkout -q -- index.md
+
+          # (3) the escape hatch still reaches canonical deliberately, from the worktree
+          run_gen "$WT" "$ENGINE/bin/gen-projects-index.sh" --wiki "$V" >/dev/null
+          [ -n "$(git -C "$V" status --porcelain -- index.md)" ] \
+            || { echo "FAIL: --wiki \$WIKI_PATH no longer targets canonical"; exit 1; }
+          git -C "$V" checkout -q -- index.md
+          echo "ok: --wiki still overrides, so the old behaviour is preserved, not removed"
+
+          # (4) cwd in an UNRELATED repository must NOT retarget. Engine development
+          # happens inside other repos with $WIKI_PATH still exported; retargeting on
+          # `--show-toplevel` alone would try to generate an index into whichever repo
+          # the caller happened to be standing in. This is why the resolver compares
+          # git-common-dir instead of trusting the toplevel.
+          run_gen "$ENGINE" "$ENGINE/bin/gen-projects-index.sh" --check 2>&1 \
+            | grep -q "$V/index.md" \
+            || { echo "FAIL: an unrelated repo retargeted the generator away from \$WIKI_PATH"; exit 1; }
+          echo "ok: an unrelated repository falls through to \$WIKI_PATH"
+
+          # (5) cwd outside any repository falls through too (cron, a bare hook env)
+          run_gen "$RUNNER_TEMP" "$ENGINE/bin/gen-projects-index.sh" --check 2>&1 \
+            | grep -q "$V/index.md" \
+            || { echo "FAIL: a non-repo cwd did not fall through to \$WIKI_PATH"; exit 1; }
+          echo "ok: a cwd outside any repository falls through to \$WIKI_PATH"
+
+          # (6) neither --wiki nor $WIKI_PATH still fails with the historical message,
+          # rather than silently resolving something from cwd.
+          out="$( cd "$WT" && env -u WIKI_PATH bash "$ENGINE/bin/gen-projects-index.sh" --check 2>&1 || true )"
+          printf '%s\n' "$out" | grep -q 'set \$WIKI_PATH or pass --wiki' \
+            || { echo "FAIL: unset \$WIKI_PATH no longer fails closed:"; printf '%s\n' "$out"; exit 1; }
+          echo "ok: unset \$WIKI_PATH still fails closed"
+
+          # (7) --stdout needs no vault at all, which the resolver must not have broken.
+          env -u WIKI_PATH bash "$ENGINE/bin/gen-skills-index.sh" --stdout >/dev/null \
+            || { echo "FAIL: gen-skills-index.sh --stdout now requires a vault"; exit 1; }
+          echo "ok: --stdout still needs no vault"
+
       - name: Adoption repairs a vault wired by an earlier release
         run: |
           # The upgrade path, end to end through the real adoption entry point: a vault
