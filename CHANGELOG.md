@@ -6,6 +6,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [1.50.0] — 2026-08-01
+
+Minor — two fail-open defects fixed, both about a tool resolving the WRONG working tree, and in opposite directions. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
+
+The pair is worth reading together: `resolve_wiki_root` picks the tree a tool **writes** (the session worktree the caller commits from), while `resolve_seam_file` finds machine-local input a tool **reads** (the canonical checkout, the only tree a git-ignored file can live in). One rule for both would have been wrong for one of them, which is why they are separate functions rather than a setting.
+
 ### Fixed
 - **A gate whose rules live in a git-ignored per-machine file is no longer silently unarmed on every commit.** `lint.sh`'s foreign-boundary gate read its patterns from `$WIKI/<file>`, where `$WIKI` is the tree being linted. That file is git-ignored *by design* — tracking the identifiers a vault must reject would commit the very strings the gate exists to keep out — and a git-ignored file is structurally absent from every linked worktree. Since `pre-commit` lints the **worktree** and `vault-worktree.sh guard` refuses canonical commits, every commit an adopted vault makes was gated by a gate reading its rules from the one tree that cannot hold them. It printed `not armed` and exited 0, so a deliberately armed vault and an unconfigured one produced identical output, and vault CI could not backstop it either — a fresh clone has no copy of an ignored file. Fail-open, on a boundary gate. Found while reviewing the generator report below, and separate from it: the two want **opposite** trees. `Proposal: per-machine-gate-config-resolved-from-worktree`
   - Seam files are now read through `resolve_seam_file` (`bin/wiki-root-lib.sh`): present in the linted tree it wins, and when it is **absent *and* `git check-ignore` says the tree deliberately ignores it**, the canonical checkout supplies it. Applied to `lint.sh` (the gates seam + the foreign-boundary patterns), `lint-links.sh` (the seam + external-refs), and `lint-summary-volatility.sh` (the seam + the marker list).
