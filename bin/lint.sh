@@ -40,6 +40,7 @@
 set -uo pipefail   # deliberately not -e: run all checks, then aggregate
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
 WIKI="${WIKI_PATH:-}"
 STRICT=""
 
@@ -253,10 +254,18 @@ section "link integrity"
 # permanent history, i.e. commit the very thing the gate exists to keep out. The
 # cost is that a fresh clone starts unarmed, so an unarmed gate SAYS SO — a silent
 # pass would be indistinguishable from a clean one.
+#
+# The patterns file is therefore read through resolve_seam_file: present in the tree
+# being linted it wins, and when it is ABSENT-AND-GIT-IGNORED there — which is what
+# every linked worktree looks like, and `pre-commit` lints the worktree while
+# `vault-worktree.sh guard` refuses canonical commits — it is read from the canonical
+# checkout, the only tree that can hold it. Without that, this gate said `not armed`
+# on every commit an adopted vault makes, and vault CI could not backstop it either
+# (a fresh clone has no copy of an ignored file). See bin/wiki-root-lib.sh.
 section "foreign boundary"
-GATES_CONF="$WIKI/.wiki-gates.conf"
+GATES_CONF="$(resolve_seam_file "$WIKI" ".wiki-gates.conf")"
 fb_file=""
-if [ -f "$GATES_CONF" ]; then
+if [ -n "$GATES_CONF" ] && [ -f "$GATES_CONF" ]; then
   fb_file="$(awk -F= '
     /^[ \t]*#/ { next }
     { key=$1; sub(/^[ \t]+/,"",key); sub(/[ \t]+$/,"",key)
@@ -265,12 +274,13 @@ if [ -f "$GATES_CONF" ]; then
       print val; exit }' "$GATES_CONF")"
 fi
 [ -n "$fb_file" ] || fb_file=".wiki-gates.local"
+fb_path="$(resolve_seam_file "$WIKI" "$fb_file")"
 
-if [ ! -f "$WIKI/$fb_file" ]; then
+if [ -z "$fb_path" ]; then
   echo "not armed: no $fb_file (declare foreign-boundary patterns there to enable)"
 else
   fb=0
-  pats="$(grep -v '^[ \t]*#' "$WIKI/$fb_file" | grep -v '^[ \t]*$' || true)"
+  pats="$(grep -v '^[ \t]*#' "$fb_path" | grep -v '^[ \t]*$' || true)"
   if [ -z "$pats" ]; then
     echo "not armed: $fb_file declares no patterns"
   else

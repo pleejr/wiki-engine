@@ -29,6 +29,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
 WIKI="${WIKI_PATH:-}"
 STRICT=0
 
@@ -47,9 +48,14 @@ done
 # --- the vault seam (optional; absent = engine defaults) -----------------------
 # Parsed, never sourced: a config file that can execute code is a config file that
 # can own the machine running the gate.
-GATES_CONF="$WIKI/.wiki-gates.conf"
+# Read through resolve_seam_file so a seam file the vault deliberately git-ignores
+# is still found when $WIKI is a linked worktree, which structurally cannot hold
+# one. See bin/wiki-root-lib.sh — the fallback is gated on `git check-ignore`, not
+# on mere absence, so a tracked file a branch legitimately deleted still reads as
+# deleted.
+GATES_CONF="$(resolve_seam_file "$WIKI" ".wiki-gates.conf")"
 conf_get() {
-  [ -f "$GATES_CONF" ] || return 0
+  [ -n "$GATES_CONF" ] && [ -f "$GATES_CONF" ] || return 0
   awk -F= -v k="$1" '
     /^[ \t]*#/ { next }
     {
@@ -64,7 +70,8 @@ conf_get() {
 EXT_FILE="$(conf_get external_refs)"
 [ -n "$EXT_FILE" ] || EXT_FILE=".wiki-gates-external-refs"
 EXTERNAL=""
-[ -f "$WIKI/$EXT_FILE" ] && EXTERNAL="$(grep -v '^[ \t]*#' "$WIKI/$EXT_FILE" | grep -v '^[ \t]*$' || true)"
+EXT_PATH="$(resolve_seam_file "$WIKI" "$EXT_FILE")"
+[ -n "$EXT_PATH" ] && EXTERNAL="$(grep -v '^[ \t]*#' "$EXT_PATH" | grep -v '^[ \t]*$' || true)"
 
 # --- resolvable targets: every page slug in the vault --------------------------
 SLUGS="$(find "$WIKI" \

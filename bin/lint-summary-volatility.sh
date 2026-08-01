@@ -41,6 +41,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
 WIKI="${WIKI_PATH:-}"
 SEED=0
 QUIET=0
@@ -61,9 +62,14 @@ done
 # --- the vault seam (optional; absent = engine defaults) -----------------------
 # Parsed, never sourced: a config file that can execute code is a config file that
 # can own the machine running the gate. Same shape as lint-links.sh.
-GATES_CONF="$WIKI/.wiki-gates.conf"
+# Read through resolve_seam_file so a seam file the vault deliberately git-ignores
+# is still found when $WIKI is a linked worktree, which structurally cannot hold
+# one. See bin/wiki-root-lib.sh — the fallback is gated on `git check-ignore`, not
+# on mere absence, so a tracked file a branch legitimately deleted still reads as
+# deleted.
+GATES_CONF="$(resolve_seam_file "$WIKI" ".wiki-gates.conf")"
 conf_get() {
-  [ -f "$GATES_CONF" ] || return 0
+  [ -n "$GATES_CONF" ] && [ -f "$GATES_CONF" ] || return 0
   awk -F= -v k="$1" '
     /^[ \t]*#/ { next }
     {
@@ -79,8 +85,10 @@ conf_get() {
 # tune which words are volatile without waiting for an engine release — that is a property
 # of how a vault writes, not of the engine.
 MARK_FILE="$(conf_get summary_volatility_markers)"
-if [ -n "$MARK_FILE" ] && [ -f "$WIKI/$MARK_FILE" ]; then
-  MARKERS_PATH="$WIKI/$MARK_FILE"
+MARK_PATH=""
+[ -n "$MARK_FILE" ] && MARK_PATH="$(resolve_seam_file "$WIKI" "$MARK_FILE")"
+if [ -n "$MARK_PATH" ]; then
+  MARKERS_PATH="$MARK_PATH"
 else
   MARKERS_PATH="$SCRIPT_DIR/../scaffold/summary-volatility-markers.txt"
 fi
@@ -96,6 +104,11 @@ MARKERS="$(grep -v '^[ \t]*#' "$MARKERS_PATH" | grep -v '^[ \t]*$' || true)"
 
 BASE_FILE="$(conf_get summary_baseline)"
 [ -n "$BASE_FILE" ] || BASE_FILE=".wiki-gates-summary-baseline"
+# DELIBERATELY NOT resolve_seam_file, unlike the two above: `--seed-baseline` WRITES
+# this file, and a write resolved to the canonical checkout would land outside the
+# branch being committed and dirty a tree other sessions share — the bug
+# resolve_wiki_root exists to fix. The baseline is tracked vault content anyway, so it
+# is present in every worktree and needs no fallback.
 BASELINE="$WIKI/$BASE_FILE"
 
 sha_of() {
