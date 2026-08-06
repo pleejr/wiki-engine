@@ -44,15 +44,21 @@ fi
 export RAG_WIKI="$WIKI" RAG_BINDIR="$SCRIPT_DIR" RAG_FORCE="$FORCE"
 
 "$PYBIN" - <<'PY'
-import os, sys, json, glob, hashlib, re
+import os, sys, json, glob, re
 sys.path.insert(0, os.environ["RAG_BINDIR"])
-from rag_embed import Embedder
+from rag_embed import Embedder, MAX_CHARS
+from rag_chunk import parse_file, CHUNKER_VERSION
 
 WIKI  = os.environ["RAG_WIKI"]
 FORCE = os.environ["RAG_FORCE"] == "1"
 RAGDIR = os.path.join(WIKI, ".rag")
 INDEX  = os.path.join(RAGDIR, "index.jsonl")
-SKIP_DIRS = {".git", "engine", ".obsidian", ".rag"}
+# `engine` is the submodule; everything else worth skipping is a dot-directory the
+# vault keeps untracked — and one of them, `.worktrees/`, holds a full checkout of
+# every page. Enumerating them missed it, so a build run while a session worktree
+# existed indexed the whole vault twice and left recall pointing at paths that
+# vanish when the worktree is retired. Skip the class, not a list.
+SKIP_NAMES = {"engine"}
 
 def current_model():
     m = os.environ.get("RAG_LOCAL_MODEL") or os.environ.get("RAG_EMBED_MODEL")
@@ -94,41 +100,9 @@ def vault_boundary():
     return None
 VBOUND = vault_boundary()
 
-def parse(path):
-    """Return (sha, boundary, [(heading, start_line, text), ...])."""
-    raw = open(path, encoding="utf-8", errors="replace").read()
-    sha = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-    lines = raw.splitlines()
-    i, boundary, title = 0, None, None
-    if lines and lines[0].strip() == "---":
-        i = 1
-        while i < len(lines) and lines[i].strip() != "---":
-            s = lines[i].strip()
-            if s.startswith("boundary:"):
-                boundary = s.split(":", 1)[1].strip()
-            i += 1
-        i += 1
-    body_start = i
-    chunks, cur, cur_head, cur_line = [], [], None, body_start + 1
-    def flush():
-        k = 0                                   # skip leading blank lines so the
-        while k < len(cur) and cur[k].strip() == "":  # recorded line points at real
-            k += 1                              # content (exact for ## sections)
-        txt = "\n".join(cur[k:]).strip()
-        if txt:
-            chunks.append((cur_head or (title or os.path.basename(path)), cur_line + k, txt))
-    for n in range(body_start, len(lines)):
-        ln = lines[n]
-        if title is None and ln.startswith("# "):
-            title = ln[2:].strip()
-        if ln.startswith("## "):
-            flush(); cur, cur_head, cur_line = [ln], ln[3:].strip(), n + 1
-        else:
-            cur.append(ln)
-    flush()
-    return sha, boundary, chunks
-
-# reuse vectors for unchanged files
+# reuse vectors for unchanged files. The chunker version participates: a page whose
+# text never changes is still re-chunked when the split itself changes shape, or the
+# fix ships inert on every existing vault.
 old = {}
 if os.path.isfile(INDEX) and not FORCE:
     for line in open(INDEX, encoding="utf-8"):
@@ -136,12 +110,13 @@ if os.path.isfile(INDEX) and not FORCE:
             rec = json.loads(line)
         except Exception:
             continue
-        old.setdefault(rec["file"], {"sha": rec.get("sha"), "model": rec.get("model"), "recs": []})["recs"].append(rec)
+        old.setdefault(rec["file"], {"sha": rec.get("sha"), "model": rec.get("model"),
+                                     "cv": rec.get("cv"), "recs": []})["recs"].append(rec)
 
 files = []
 for p in glob.glob(os.path.join(WIKI, "**", "*.md"), recursive=True):
     rel = os.path.relpath(p, WIKI)
-    if any(part in SKIP_DIRS for part in rel.split(os.sep)):
+    if any(part in SKIP_NAMES or part.startswith(".") for part in rel.split(os.sep)):
         continue
     files.append((rel, p))
 files.sort()
@@ -149,12 +124,13 @@ files.sort()
 emb = None  # lazily built only if something needs embedding
 records, embedded, reused, skipped = [], 0, 0, 0
 for rel, p in files:
-    sha, boundary, chunks = parse(p)
+    sha, boundary, chunks = parse_file(p)
     if VBOUND and boundary and boundary != VBOUND:
         skipped += 1
         print("  skip (boundary %s != %s): %s" % (boundary, VBOUND, rel))
         continue
-    if rel in old and old[rel]["sha"] == sha and old[rel]["model"] == CURMODEL:
+    if (rel in old and old[rel]["sha"] == sha and old[rel]["model"] == CURMODEL
+            and old[rel]["cv"] == CHUNKER_VERSION):
         records.extend(old[rel]["recs"]); reused += len(old[rel]["recs"]); continue
     if not chunks:
         continue
@@ -162,8 +138,12 @@ for rel, p in files:
         emb = Embedder(WIKI)
     vecs = emb.embed([c[2] for c in chunks])
     for (head, line, text), vec in zip(chunks, vecs):
+        # `chars` is what was actually embedded; `text` is only a display preview.
+        # Recording it makes "was this chunk complete?" greppable instead of a
+        # property nobody can see.
         records.append({"file": rel, "line": line, "heading": head,
-                        "sha": sha, "model": CURMODEL, "text": text[:600], "vector": vec})
+                        "sha": sha, "model": CURMODEL, "cv": CHUNKER_VERSION,
+                        "chars": len(text), "text": text[:600], "vector": vec})
         embedded += 1
 
 os.makedirs(RAGDIR, exist_ok=True)
@@ -175,6 +155,19 @@ os.replace(tmp, INDEX)
 print("rag-build: %d files, %d chunks (%d embedded, %d reused%s) -> %s"
       % (len(files) - skipped, len(records), embedded, reused,
          (", %d skipped" % skipped) if skipped else "", os.path.relpath(INDEX, WIKI)))
+
+# Report the largest chunk against the cap, always. A "0 truncated" line would be
+# constant and therefore unread; a high-water mark moves with the content, so a page
+# creeping toward the limit is visible before it is a problem. At-cap chunks are the
+# hard-slice case (a single line longer than the whole budget) and are named.
+if records:
+    biggest = max(r.get("chars", 0) for r in records)
+    at_cap = [r for r in records if r.get("chars", 0) >= MAX_CHARS]
+    print("rag-build: largest chunk %d/%d chars" % (biggest, MAX_CHARS))
+    for r in at_cap[:5]:
+        print("  at cap (unbroken line): %s:%d — %s" % (r["file"], r["line"], r["heading"]))
+    if len(at_cap) > 5:
+        print("  ... and %d more at cap" % (len(at_cap) - 5))
 
 # The cross-boundary filter reports ALWAYS, including zero. Its skip is correct but was
 # silent, so a page mis-stamped with another vault's boundary vanished from recall with
