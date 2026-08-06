@@ -140,3 +140,5 @@ Optional, `key = value`, **parsed and never sourced** — a config file that can
 - Embedding: `RAG_LOCAL_MODEL`, `RAG_PIP_PKG`, `RAG_REQUIREMENTS`, `RAG_MODEL_CACHE` (where weights live; default `${XDG_CACHE_HOME:-~/.cache}/wiki-engine/models`, machine-global — set it to `$WIKI/.rag/models` for vault-local); or an endpoint via `RAG_EMBED_API` (`ollama`|`openai`) + `RAG_EMBED_URL` / `RAG_API_KEY`.
 - Recall: `RAG_RAW_WEIGHT` (curated-over-raw penalty, default `0.80`).
 - Capture: `RAG_CAPTURE_TRANSCRIPT_PATH`, `RAG_CAPTURE_FILES`, `RAG_CAPTURE_COMMITS`, `RAG_CAPTURE_SINCE`.
+
+<!-- ci trigger control -->
