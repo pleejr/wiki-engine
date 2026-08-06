@@ -19,6 +19,13 @@ import os, sys, json, shutil, tempfile, urllib.request, urllib.error
 
 DEFAULT_MODEL = "BAAI/bge-base-en-v1.5"
 
+# Hard input cap, enforced as a backstop in embed(). Exported because the chunker
+# must split BELOW it: when the two limits lived in separate files, a page the
+# chunker could not split (no `##` headings) arrived here as one oversized chunk
+# and was silently truncated to this many characters — while the index record
+# still carried the whole file's sha. One definition, imported by rag_chunk.
+MAX_CHARS = 6000
+
 
 def default_cache_root():
     """Machine-global cache root for local model weights.
@@ -195,7 +202,10 @@ class Embedder:
                  % ("; ".join(errs), self.cache or self.cache_pin or default_cache_root()))
 
     def embed(self, texts):
-        texts = [t[:6000] for t in texts]
+        # Backstop only — rag_chunk guarantees nothing arrives over the cap. Kept
+        # so a caller that bypasses the chunker cannot blow up the model, but it
+        # must never be the thing that decides what gets indexed.
+        texts = [t[:MAX_CHARS] for t in texts]
         if self.backend == "local":
             if self.lib == "model2vec":
                 return [[float(x) for x in row] for row in self._m.encode(texts)]

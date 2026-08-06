@@ -6,7 +6,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+- **A page without `##` headings is now indexed whole instead of only its first 6,000 characters.** `rag-build.sh` chunked on `## ` alone and `rag_embed.embed()` truncated each chunk to a hardcoded 6000 — two reasonable behaviours composing into silent data loss. A page carrying no `##` became **one** chunk: in the reporting vault, `log.md` (one `# Log`, 233k characters of dated bullets) was **~2.5% embedded**, so the entire vault history was unreachable by recall. The failure was invisible exactly where it would have been caught — the record stored the *whole file's* sha, so the reuse check reported it current and every rebuild re-embedded the same stale prefix. Recall claimed coverage it did not have.
+  - The split is now recursive and bounded by the embedder's own cap: `## ` section → `### ` subsection → whole-line size packing → hard slice. Only the last can break mid-line, and only for a single line longer than the entire budget; every emitted chunk carries the real line it starts on.
+  - **The cap has one definition.** `rag_embed.MAX_CHARS` is exported and imported by the chunker, so the splitter is bounded by the same number the embedder enforces. The truncation in `embed()` stays as a backstop but can no longer be the thing that decides what gets indexed.
+  - **Extracted to `bin/rag_chunk.py`.** The split lived inline in `rag-build.sh`'s python heredoc, where no test could reach it — which is why a defect this size survived. CI now exercises it with plain `python3`: no model, no venv, no network.
+  - Records carry `chars` (what was actually embedded) and `cv` (`CHUNKER_VERSION`), making "is this chunk complete?" greppable rather than unobservable.
+  - Pages that *do* use `##` keep their exact previous shape — one chunk per section, preamble titled from the page — asserted in CI, since re-chunking every page in every vault is the easy accident here.
+- **`rag-build.sh` no longer indexes session worktrees.** The skip set enumerated names (`.git`, `engine`, `.obsidian`, `.rag`) and so missed `.worktrees/`, which holds a full checkout of every page — that being the entire point of per-session write isolation. A build run while any session worktree existed indexed the vault **twice** and left half the index pointing into a directory that `vault-worktree.sh gc` later deletes: dangling pointers that resolve fine until they don't. Now skips the class — `engine`, plus any dot-directory — rather than a list that a new untracked directory can outgrow.
+- **A chunker change is no longer inert on existing vaults.** The reuse predicate compared file sha and model, neither of which moves when the *split* changes, so a pre-fix index would have been kept until each file happened to change for some unrelated reason — the fix shipping as a claim rather than a behaviour. `CHUNKER_VERSION` now participates in reuse; an index without it is re-chunked on the next build, with no `--force` needed. CI strips `cv` from a built index and requires the rebuild to re-embed.
+
+### Changed
+- **The engine's `CLAUDE.md` router no longer tells every session that there are no embeddings.** Under *Working style* it still read "No embeddings — retrieval is the link graph + frontmatter," which has been false since the semantic-recall layer shipped and loads into every session as an always-on instruction *not* to use a facility `wiki-context` step 2 calls by default. Now states the actual relationship: the link graph and frontmatter are retrieval; recall is an optional, derived lens over the same markdown that points at which pages to open and never replaces the map.
 
 ## [1.54.5] — 2026-08-12
 
