@@ -65,6 +65,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `statusline-ctx-healthy-band-bold-green` | shipped | derived |
 | `submit-branches-from-head-not-main` | shipped | derived |
 | `submit-rejects-submodule-engine-checkout` | shipped | derived |
+| `update-writes-canonical-against-the-worktree-convention` | open | received 2026-08-11 |
 | `upkeep-sync-clones` | shipped | derived |
 | `upkeep-tolerate-describe-refs` | shipped | derived |
 | `upkeep-unresolvable-clone-skips-freshness-silently` | shipped | derived |
