@@ -1,8 +1,8 @@
 ---
 slug: ensure-fresh-cut-ignores-local-main
-outcome: open
+outcome: partially-accepted
 received: 2026-08-01
----
+reason: "defect reproduced at HEAD and fixed as the reporter's low-risk half — a fresh cut now names the commits canonical <main> holds that its base lacks, and the wording says READS are affected, since the collision wording that already existed describes the failure mode that does not apply here. Extended beyond the reported path to reattach and reuse, which are the same blind spot: both measure against origin/<main>, the ref that is behind by construction, and reattach makes the positive claim 'level with $base'. The larger option — cutting off local <main> when origin/<main> is an ancestor — is DECLINED, as the reporter flagged rather than recommended it: it would put never-pushed commits on every wt/* branch, changing what ensure promises and what gc's containment test and every wt/*-versus-remote assumption are reasoning about, to buy nothing the warning does not. integrate already reconciles local <main>, so committed work was never at risk; the loss was to reads, and a warning is the whole of that remedy"
 
 HANDOFF — engine defect report
 slug: ensure-fresh-cut-ignores-local-main
