@@ -244,6 +244,35 @@ jobs:
       - name: Usage docs cover all skills + no stale command refs
         run: ./bin/lint-docs.sh
 
+      - name: A worktree-taking skill cannot aim a step at git-ignored state
+        run: |
+          # The gate has to FAIL on the shape it exists for, or it is decoration. The shape:
+          # a skill that takes a worktree tells the agent to touch a git-ignored path
+          # without naming canonical. In the worktree that path is empty, so the step
+          # reports nothing to do and passes — fail-open, and unobservable afterwards
+          # because git-ignored growth shows up in no status, diff, or gate.
+          fail=0
+          T="$RUNNER_TEMP/lintdocs"; rm -rf "$T"; mkdir -p "$T"
+          cp -R bin scaffold skills USAGE.md "$T/"
+          # a step that names the tree it means: clean
+          "$T/bin/lint-docs.sh" >/dev/null 2>&1 \
+            && echo "  ok   the shipped skills pass" \
+            || { echo "  FAIL the shipped skills do not pass their own gate"; fail=1; }
+          # the same step with canonical stripped: caught
+          S="$T/skills/checkpoint/SKILL.md"
+          printf '%s\n' '- prune `raw/sessions/` blocks once promoted' >> "$S"
+          # `|| rc=$?`, not a bare assignment: this step runs under `bash -e`, where a
+          # command substitution that exits non-zero aborts the step at the assignment —
+          # so the failure this test is asserting would kill the test instead.
+          rc=0; out="$("$T/bin/lint-docs.sh" 2>&1)" || rc=$?
+          [ "$rc" -ne 0 ] \
+            && echo "  ok   a step aimed at git-ignored state without canonical fails the gate" \
+            || { echo "  FAIL the gate passed a step pointed at the wrong tree"; fail=1; }
+          printf '%s' "$out" | grep -q 'raw/sessions/' \
+            && echo "  ok   ...naming the path it caught" \
+            || { echo "  FAIL the finding does not say which path"; fail=1; }
+          exit "$fail"
+
       - name: Crossover fail-closed smoke test
         run: |
           # crossover's safety property is that a LOSSY PASTE CAN NEVER AUTHORIZE A DELETE:
