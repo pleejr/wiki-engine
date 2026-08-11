@@ -6,7 +6,11 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+- **`scaffold/rag-requirements.txt` bumps two pins**, one per commit so a bad bump stays bisectable: `numpy==2.5.2` (was `2.5.1`) and `huggingface_hub==1.27.0` (was `1.26.0`). `doctor.sh` reports these on every consumer session and nothing automates them — `dependabot.yml` declares only the github-actions ecosystem — so a standing advisory nobody acts on is how the whole freshness section learns to be ignored.
+  - **numpy is a compiled wheel, so the hazard this file's header names does apply and was checked rather than assumed:** cp312, cp313 and cp314 `macosx_14_0_arm64` wheels all exist, so no consumer in the supported 3.12–3.14 range falls back to building from source. `fastembed==0.8.0` asks for `numpy>=2.3.0` on 3.14, `>=2.1.0` on 3.13 and `>=1.26` on 3.12.
+  - **`huggingface_hub` is pure Python** (`py3-none-any`, `requires_python >=3.10.0`), so that hazard does not apply to it; `fastembed` asks for `huggingface-hub>=0.20,<2.0`.
+  - Verified on Python 3.14.6, each set in its own fresh venv: `pip check` clean both times, and a bge-base embed of known text returns the documented 768-dim unit vector — component-for-component identical to the pre-bump result, which is the check that says the *embeddings* did not move, not merely that the install succeeded.
 
 ## [1.51.0] — 2026-08-11
 
