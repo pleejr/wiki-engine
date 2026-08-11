@@ -8,6 +8,25 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.51.0] — 2026-08-11
+
+Minor — two fail-open defects fixed, both reported from a consumer vault, and both the same shape: a step that reads the **wrong tree** and reports success for finding nothing there. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
+
+The pair is worth reading together. v1.50.0's pair was about which tree a tool *writes*; this one is about what a session can *see*. Staleness that collides is loud — a conflict on an appended-to page, and the base gets questioned. Staleness that hides content is silent, because the search that misses it exits 0 with no output, and "nobody has written this yet" is an ordinary thing for a vault to be true about. Both defects below were invisible for weeks for exactly that reason.
+
+### Fixed
+- **`ensure` now says when the base it hands back omits work that only canonical `main` holds.** It cuts a session worktree off `origin/main`, and a vault whose `main` carries commits that were never pushed — the ordinary commit-now-push-later habit, which re-arms on every subsequent `ensure` — got a worktree missing that work, with `created … off origin/main`, exit 0, and genuine isolation. No fetch can surface it: the commits exist only locally. The damage lands on everything the session *reads* before it writes: a first-thing survey for prior coverage returns nothing, the session concludes the topic is new, and the duplicate it writes reconciles as **content** rather than as a conflict. `Proposal: ensure-fresh-cut-ignores-local-main`
+  - `warn_if_local_main_ahead` names the distance and the rebase command on all three paths that hand a worktree back — the fresh cut (reported), the reattach (whose `level with $base` is a positive claim about a ref that lags canonical `main` by construction), and the reuse (where no fetch age helps either). Silent when the count is zero or the ref cannot be resolved, so the warning stays worth reading.
+  - **The wording names reads.** The existing stale-base warning speaks of merge-time conflicts, which is the failure mode that does *not* apply here; a consumer told only about merges has no reason to rebase before surveying.
+  - **Base selection is deliberately unchanged.** Cutting off local `main` instead — the reporter flagged rather than recommended it — would put never-pushed commits on every `wt/*` branch, changing what `ensure` promises and what `gc`'s containment test reasons about, to buy nothing the warning does not. `integrate` already reconciles local `main`, so committed work was never at risk.
+  - CI asserts the warning, its read-facing wording, the remedy, that the base is *not* quietly re-pointed, and that a level base stays silent.
+- **`checkpoint`'s capture-buffer prune now names canonical, so it can actually reach the buffer.** `raw/sessions/*.md` has been git-ignored since v1.42.0 — correctly, since `rag-capture.sh` writes it at SessionEnd when the session worktree is already gone. But §0 says to make all edits against `$WORK` and §3 named no tree, so the prune inherited the worktree, where a git-ignored path cannot exist. It found `.gitkeep`, truthfully reported nothing to prune, and exited clean while the buffer grew for five weeks in one vault. Unobservable after the fact, too: git-ignored growth appears in no `git status`, no diff, and no gate. `Proposal: checkpoint-prune-reads-a-tree-that-cannot-hold-the-buffer`
+  - §3 now names canonical `$WIKI_PATH`, mirroring §5's `.rag/` wording, and states that an empty `raw/sessions` in `$WORK` is what the *wrong tree* looks like rather than evidence of an empty buffer. The prune needs no commit and no integrate: untracked content produces no git change, so it cannot dirty the tree or deadlock a peer.
+  - §0's blanket rule carries an explicit **carve-out** for git-ignored per-machine state, so the next step added to the skill does not inherit the same wrong default.
+
+### Added
+- **`lint-docs.sh` fails any worktree-taking skill that aims a step at git-ignored per-machine state without naming canonical `$WIKI_PATH`.** The class sweep behind the fix above came back narrow — `checkpoint` is the only skill that takes a worktree, and its `.rag/` step was already correct — so rather than leave the rule as prose it is made mechanical, derived from `scaffold/gitignore.tmpl` so a new ignored path is covered the day it is added. **No presence test could do this job**: "missing" is exactly what the wrong tree looks like, so whether the step *names* the tree it means is the only checkable signal. CI reinstates the defective shape and requires the gate to go red on it.
+
 ## [1.50.0] — 2026-08-01
 
 Minor — two fail-open defects fixed, both about a tool resolving the WRONG working tree, and in opposite directions. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
