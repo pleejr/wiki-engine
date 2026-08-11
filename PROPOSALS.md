@@ -56,6 +56,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `push-verb-omits-git-push` | shipped | derived |
 | `queue-cannot-see-unmerged-proposal-prs` | shipped | derived |
 | `rag-capture-dirties-canonical-blocks-integrate` | shipped | derived |
+| `rag-deps-remedy-tells-consumers-to-edit-the-pinned-submodule` | open | received 2026-08-11 |
 | `rag-model-cache-durable-path` | shipped | v1.26.0 |
 | `release-title-splitter-cuts-inside-code-spans` | shipped | derived |
 | `session-banner-pending-proposal-nudge` | alias | engine-proposal-file-queue |
