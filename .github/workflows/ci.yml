@@ -28,6 +28,56 @@ jobs:
       - name: Python syntax (py_compile)
         run: python3 -m py_compile bin/*.py
 
+      - name: The pinned-dep remedy addresses the reader who can act on it
+        run: |
+          # One report, two audiences. In an engine checkout `rag-requirements.txt` is an
+          # ordinary tracked file and "bump it" is the whole remedy. In a consumer vault
+          # the same path sits inside the PINNED submodule, where the edit has no durable
+          # home — so the tool would be steering the reader into the hazard that
+          # engine-proposal.sh's own comment calls "the time bomb the skill exists to warn
+          # against". Fail-open: every step of following it succeeds.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-remedy"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          git config --global protocol.file.allow always   # local-path submodule add, this repo only
+          T="$RUNNER_TEMP/remedy"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          PY="$GITHUB_WORKSPACE/bin/rag_deps_check.py"
+
+          # an engine checkout, and a vault that PINS it as a submodule
+          git init -q "$T/engine"; cp "$PY" "$T/engine/rag_deps_check.py"
+          printf 'x\n' > "$T/engine/seed"; git -C "$T/engine" add -A
+          git -C "$T/engine" commit -qm seed
+          git init -q "$T/vault"; printf 'v\n' > "$T/vault/seed"
+          git -C "$T/vault" add -A; git -C "$T/vault" commit -qm seed
+          git -C "$T/vault" submodule add -q "$T/engine" engine
+          git -C "$T/vault" commit -qm "pin engine"
+
+          probe() { python3 -c "
+          import sys; sys.path.insert(0, '$1')
+          import rag_deps_check as r
+          print(r.pinning_superproject('$2') or 'NONE')
+          "; }
+          # `|| echo PROBE-FAILED`: a missing predicate must read as a FAIL line, not as a
+          # traceback that kills the step at the assignment under `bash -e`.
+          out_engine="$(probe "$T/engine" "$T/engine/rag_deps_check.py" 2>/dev/null || echo PROBE-FAILED)"
+          out_vault="$(probe "$T/engine" "$T/vault/engine/rag_deps_check.py" 2>/dev/null || echo PROBE-FAILED)"
+          printf 'engine=%s vault=%s\n' "$out_engine" "$out_vault"
+
+          [ "$out_engine" = "NONE" ] \
+            && echo "  ok   an engine checkout keeps the bump-it-here remedy" \
+            || { echo "  FAIL an engine checkout was mistaken for a consumer vault"; fail=1; }
+          case "$out_vault" in
+            */vault) echo "  ok   a pinned submodule resolves to the vault that pins it" ;;
+            *) echo "  FAIL a consumer vault was told to edit its own pinned submodule"; fail=1 ;;
+          esac
+          # degrades to the generic wording rather than to no wording at all
+          [ "$(probe "$T/engine" "$RUNNER_TEMP/not-a-repo/reqs.txt" 2>/dev/null || echo PROBE-FAILED)" = "NONE" ] \
+            && echo "  ok   outside a repository it degrades to the generic remedy" \
+            || { echo "  FAIL a non-repository path claimed a superproject"; fail=1; }
+
+          exit "$fail"
+
       - name: Workflow steps must not write the real global git config
         run: |
           # These `run` blocks get extracted and executed locally to verify them — that is

@@ -8,8 +8,31 @@
 #
 # Exit: 0 healthy · 1 actionable · 2 could-not-check (offline / pip error).
 # Usage: python rag_deps_check.py --requirements PATH
-import argparse, json, re, subprocess, sys
+import argparse, json, os, re, subprocess, sys
 from importlib.metadata import version, PackageNotFoundError
+
+
+def pinning_superproject(req_path):
+    """The vault that PINS this engine, if the requirements file lives in a submodule.
+
+    Both callers print the same drift, and only one of them can act on it. In an engine
+    checkout `rag-requirements.txt` is an ordinary tracked file and "bump it" is the whole
+    remedy; in a consumer vault the same path is inside the pinned `engine/` submodule,
+    where an edit has no durable home — the vault does not commit it, another machine
+    never sees it, and it can make the next pin advance REFUSE. Detected rather than
+    configured, so the CI cron (an engine checkout, no superproject) keeps the wording
+    that is right for it without either caller passing a flag.
+
+    Returns the superproject path, or None (including when git is absent or unhappy —
+    the remedy then degrades to the generic wording rather than to no remedy).
+    """
+    d = os.path.dirname(os.path.abspath(req_path)) or "."
+    try:
+        out = subprocess.run(["git", "-C", d, "rev-parse", "--show-superproject-working-tree"],
+                             capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None
 
 
 def norm(n):
@@ -117,8 +140,21 @@ def main():
         (mine if norm(p["name"]) in pins else other).append(line)
     if mine:
         actionable = True
-        print("pinned deps with newer releases (bump rag-requirements.txt):")
-        print("\n".join(mine))
+        superproject = pinning_superproject(args.requirements)
+        if superproject:
+            print("pinned deps with newer releases (raise upstream — see below):")
+            print("\n".join(mine))
+            print("  rag-requirements.txt is inside the ENGINE SUBMODULE pinned by %s, so editing it"
+                  % superproject)
+            print("  here has no durable home: the vault does not commit it and no other machine gets it.")
+            print("  It is also not silently reverted — the next pin advance REFUSES (git will not")
+            print("  overwrite a locally modified file) when the new release touches this file, and")
+            print("  carries the edit forward when it does not, so your pins stop matching the engine's.")
+            print("  Route it upstream instead (the engine-proposal skill), or bump it in an engine")
+            print("  checkout and cut a release; then update.sh brings it here.")
+        else:
+            print("pinned deps with newer releases (bump rag-requirements.txt):")
+            print("\n".join(mine))
     else:
         print("pinned deps: current (no newer releases)")
     if other:

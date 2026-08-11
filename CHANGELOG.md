@@ -6,7 +6,11 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+- **The pinned-dep remedy now addresses the reader who can act on it.** `rag_deps_check.py` printed *"pinned deps with newer releases (bump rag-requirements.txt)"* to both of its callers, and only one of them can obey it: in an engine checkout that file is an ordinary tracked file, while in a consumer vault the same path is inside the **pinned `engine/` submodule**. So one tool instructed the edit that another tool's own comment calls "the time bomb the skill exists to warn against". Fail-open — every step of following it succeeds. Reported from a consumer vault. `Proposal: rag-deps-remedy-tells-consumers-to-edit-the-pinned-submodule`
+  - The remedy is now **detected, not configured**: `pinning_superproject()` asks git for the requirements file's `--show-superproject-working-tree`, so a pinned submodule gets the upstream route (raise it through `engine-proposal`, or bump it in an engine checkout and cut a release) and an engine checkout — including the `freshness.yml` cron — keeps the existing wording. No caller passes a flag, because two callers deciding separately is how the two readings drift apart again.
+  - **The reporter's open question is answered, and it moves the severity in both directions.** A local edit inside the pinned submodule is *not* silently reverted. Measured: when the new release **touches** the file, `git checkout` refuses (`local changes would be overwritten`) and `update.sh` aborts under `set -e`, so the edit **blocks the consumer's next engine update**; when the release does **not** touch it, the edit is carried across intact and the consumer's pins quietly disagree with the engine's. Both outcomes are named in the new wording, since "it will be reverted" would have been a false explanation of a real problem.
+  - Outside a repository, or with git unavailable, it degrades to the generic wording rather than to no remedy. CI reinstates the pre-fix state and requires all three assertions to go **red**.
 
 ## [1.51.1] — 2026-08-11
 
