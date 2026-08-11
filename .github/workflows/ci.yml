@@ -387,6 +387,85 @@ jobs:
             echo "a wikilink inside a code span was treated as a link"; exit 1
           fi
 
+      - name: The updater obeys the convention the engine mandates
+        run: |
+          # update.sh must touch canonical for the SUBMODULE (a gitlink cannot live in a
+          # worktree) and must not touch it for TRACKED PAGES (which is what worktrees
+          # exist to protect). It did both there, and printed a `commit -am` remedy that
+          # the engine's own guard refuses — so the documented route was unfollowable and
+          # its workaround, WIKI_WORKTREE=0, turns isolation off for the whole command.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-upd"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          git config --global protocol.file.allow always   # local-path submodule add
+          T="$RUNNER_TEMP/upd"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+
+          # (1) the guard judges the STAGED SET, not the tree
+          git init -q "$T/g"; G="$T/g"; export WIKI_PATH="$G"
+          git init -q "$T/sub"; printf 's\n' > "$T/sub/f"; git -C "$T/sub" add -A
+          git -C "$T/sub" commit -qm s
+          printf 'page\n' > "$G/page.md"; git -C "$G" add -A; git -C "$G" commit -qm seed
+          git -C "$G" submodule add -q "$T/sub" engine; git -C "$G" commit -qm pin
+          git -C "$T/sub" commit -q --allow-empty -m s2
+          git -C "$G/engine" fetch -q origin; git -C "$G/engine" reset -q --hard origin/main
+
+          git -C "$G" add engine
+          ( cd "$G" && "$VW" guard >/dev/null 2>&1 ) \
+            && echo "  ok   a submodule-pointer-only commit is allowed in canonical" \
+            || { echo "  FAIL the one commit a worktree cannot make was refused"; fail=1; }
+          printf 'peer edit\n' >> "$G/page.md"; git -C "$G" add page.md
+          ( cd "$G" && "$VW" guard >/dev/null 2>&1 ) \
+            && { echo "  FAIL a tracked file rode along with the pointer"; fail=1; } \
+            || echo "  ok   ...and anything else staged beside it still refuses"
+          git -C "$G" restore --staged page.md; git -C "$G" checkout -- page.md
+
+          # (2) update.sh does not write a tracked page into a shared checkout
+          git init -q "$T/e"; E="$T/e"
+          cp -R "$GITHUB_WORKSPACE/bin" "$GITHUB_WORKSPACE/adopt.d" "$GITHUB_WORKSPACE/scaffold" "$E/"
+          git -C "$E" add -A; git -C "$E" commit -qm v1; git -C "$E" tag v1.0.0
+          git -C "$E" commit -q --allow-empty -m v2; git -C "$E" tag v1.1.0
+          V="$T/v"; git init -q "$V"; mkdir -p "$V/repos"
+          printf -- '---\ntype: repo\nsources:\n  - repo: e\n    ref: v1.0.0\n    sha: 0000000\n    ingested: 2026-01-01\nboundary: personal\n---\n' > "$V/repos/e.md"
+          git -C "$V" add -A; git -C "$V" commit -qm seed
+          git -C "$V" submodule add -q "$E" engine; git -C "$V" commit -qm pin
+          git -C "$V/engine" checkout -q v1.0.0; git -C "$V" add engine
+          git -C "$V" commit -qm "pin v1.0.0" --no-verify
+          before="$(git -C "$V" rev-parse HEAD:repos/e.md)"
+
+          WIKI_PATH="$V" "$VW" ensure >/dev/null 2>&1        # a live session worktree
+          out="$(WIKI_PATH="$V" "$V/engine/bin/update.sh" 2>&1 || true)"
+          printf '%s\n' "$out" | tail -14
+          [ "$(git -C "$V" hash-object repos/e.md)" = "$before" ] \
+            && echo "  ok   the tracked page is untouched in the shared checkout" \
+            || { echo "  FAIL update.sh wrote tracked content into canonical"; fail=1; }
+          git -C "$V" diff --cached --name-only | grep -qx 'repos/e.md' \
+            && { echo "  FAIL update.sh staged a tracked page in canonical"; fail=1; } \
+            || echo "  ok   ...and nothing but the pointer is staged"
+          printf '%s' "$out" | grep -q 'ref: v1.1.0' \
+            && echo "  ok   the deferred edit is printed so it can be applied in the worktree" \
+            || { echo "  FAIL the operator is not told what to apply"; fail=1; }
+          printf '%s' "$out" | grep -q 'commit engine -m' \
+            && echo "  ok   the remedy commits the pointer by path" \
+            || { echo "  FAIL the remedy does not name the path"; fail=1; }
+          # every surface that prints this instruction, not just the one that was reported:
+          # update.sh, engine-version.sh, and the session banner all said `commit -am`.
+          grep -rn "commit -am ['\"]*Bump engine" "$GITHUB_WORKSPACE/bin" \
+            && { echo "  FAIL a remedy still says -am, which sweeps a peer's work"; fail=1; } \
+            || echo "  ok   no tool prints a -am pin-bump remedy"
+
+          # (3) NO REGRESSION for a vault without worktrees: canonical IS its working tree
+          W="$(WIKI_PATH="$V" "$VW" ensure 2>/dev/null)"
+          WIKI_PATH="$V" "$VW" gc "$W" >/dev/null 2>&1 || true
+          git -C "$V/engine" checkout -q v1.0.0
+          out2="$(WIKI_PATH="$V" WIKI_WORKTREE=0 "$V/engine/bin/update.sh" 2>&1 || true)"
+          [ "$(git -C "$V" hash-object repos/e.md)" != "$before" ] \
+            && echo "  ok   with no worktrees in play the page is written as before" \
+            || { echo "  FAIL isolation-off lost the provenance bump"; fail=1; }
+
+          exit "$fail"
+
       - name: Concurrency model (isolation, guard, serialization)
         run: |
           # Two sessions writing one vault. The property under test is that BOTH sets of

@@ -13,6 +13,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_WIKI="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd || true)"   # engine is $WIKI/engine
+# The submodule work below is canonical-only by necessity; this resolves the separate
+# question of which tree a TRACKED page edit belongs in (see the provenance block).
+. "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
 WIKI="${WIKI_PATH:-$DEFAULT_WIKI}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -68,6 +71,25 @@ git -C "$WIKI" add engine 2>/dev/null || true
 # repo and confirmed the page; writing it mechanically would fabricate the one signal the
 # vault refuses to fabricate, and would convert an honest "unconfirmed" into a false
 # "confirmed". The content pass stays manual, and stays queued until someone does it.
+#
+# WHICH TREE THE PAGE IS WRITTEN IN is a separate question from where the submodule lives.
+# The pin is a gitlink and exists only in canonical; a repo page is ordinary TRACKED vault
+# content, and writing it into the shared checkout is the exact thing worktrees exist to
+# prevent — last-writer-wins on disk against a concurrent session, before git sees it, and
+# a staged change appearing in a tree whose session did not author it.
+#
+# So: write it in the caller's own worktree when it is in one; otherwise, if the vault has
+# live linked worktrees, do not write at all — print the intended values so the operator
+# applies them in the branch that should carry them. A vault with no worktrees (or
+# WIKI_WORKTREE=0) is unaffected: canonical IS its working tree, and today's behaviour is
+# correct there. Evidence, not policy — the deferral is keyed on worktrees actually
+# existing, so the common single-session case never has to read an explanation.
+PAGE_TREE="$(resolve_wiki_root "$WIKI")" || PAGE_TREE="$WIKI"
+linked_worktrees="$(git -C "$WIKI" worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)"
+defer_page=0
+if [ "$PAGE_TREE" = "$WIKI" ] && [ "${WIKI_WORKTREE:-1}" != "0" ] && [ "${linked_worktrees:-1}" -gt 1 ] 2>/dev/null; then
+  defer_page=1
+fi
 engine_repo="$(basename -s .git "$(git -C "$ENGINE" config --get remote.origin.url 2>/dev/null || echo)" 2>/dev/null || true)"
 [ -n "$engine_repo" ] || engine_repo="$(basename "$(cd "$ENGINE" && pwd)")"
 new_sha="$(git -C "$ENGINE" rev-parse --short HEAD 2>/dev/null || true)"
@@ -84,6 +106,11 @@ if [ -n "$engine_repo" ] && [ -n "$new_sha" ] && [ -d "$WIKI/repos" ]; then
       infm && blk && /^[ \t]+(- )?repo:/ { sub(/^[^:]*:[ \t]*/,""); gsub(/[" \t]/,""); print; exit }
     ' "$page")"
     [ "$page_repo" = "$engine_repo" ] || continue
+    if [ "$defer_page" = "1" ]; then deferred="${page#$WIKI/}"; continue; fi
+    # The page is written in PAGE_TREE, which is canonical unless the caller is standing
+    # in a worktree of this same vault — the tree they will actually commit from.
+    page="$PAGE_TREE/${page#$WIKI/}"
+    [ -f "$page" ] || continue
     tmp="$(mktemp)"
     awk -v newref="$latest" -v newsha="$new_sha" -v today="$(date +%Y-%m-%d)" '
       NR==1 && $0=="---" { infm=1; print; next }
@@ -97,23 +124,41 @@ if [ -n "$engine_repo" ] && [ -n "$new_sha" ] && [ -d "$WIKI/repos" ]; then
       infm && blk=="sources" && /^[ \t]+(- )?ingested:/ { sub(/ingested:.*/, "ingested: " today); print; next }
       { print }
     ' "$page" > "$tmp" && mv "$tmp" "$page"
-    git -C "$WIKI" add "${page#$WIKI/}" 2>/dev/null || true
-    bumped="${page#$WIKI/}"
+    git -C "$PAGE_TREE" add "${page#$PAGE_TREE/}" 2>/dev/null || true
+    bumped="${page#$PAGE_TREE/}"
   done
 fi
 
+# The remedy names the PATH, never `-am`. In a shared checkout `-am` stages every modified
+# tracked file, including a concurrent session's — the precise clobber the guard exists to
+# refuse, printed as an instruction. `commit engine` cannot do that, and the guard now
+# permits it because a gitlink-only commit is the one commit no worktree can make.
 cat <<EOF
 
-Staged: engine -> $latest. Review the CHANGELOG, then commit:
-  git -C "$WIKI" commit -am "Bump engine to $latest"
+Staged: engine -> $latest. Review the CHANGELOG, then commit the POINTER ONLY:
+  git -C "$WIKI" commit engine -m "Bump engine to $latest"
 EOF
 
 if [ -n "$bumped" ]; then
   cat <<EOF
-Also staged: $bumped provenance -> $latest ($new_sha).
+Also staged: $bumped provenance -> $latest ($new_sha), in $PAGE_TREE.
   Its verified: stamp was left alone on purpose, so the page now reads VERIFIED-STALE and
   \`upkeep scan\` will queue a verify pass. That is the honest state: the pointer is current,
   the CONTENT has not been re-read against this release. Run the verify pass before
   checkpoint — do not stamp it without actually reading the repo.
+EOF
+fi
+
+if [ -n "${deferred:-}" ]; then
+  cat <<EOF
+NOT written: $deferred provenance. This vault has live session worktrees, and that page is
+  tracked content — writing it here would put an edit in the shared checkout that the
+  session committing it did not make. Apply it in your worktree instead:
+      ref: $latest
+      sha: $new_sha
+      ingested: $(date +%Y-%m-%d)
+  Leave \`verified:\` alone; the page then reads VERIFIED-STALE, which is the honest state
+  until someone re-reads the repo. Running update.sh from inside your worktree writes it
+  there for you.
 EOF
 fi
