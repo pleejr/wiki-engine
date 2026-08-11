@@ -2528,6 +2528,65 @@ jobs:
 
           exit "$fail"
 
+      - name: A fresh cut says when canonical holds work the base lacks
+        run: |
+          # The reported staleness above is a COLLISION — loud, and the base gets
+          # questioned. This is the quiet half: a worktree cut off origin/main omits
+          # commits that live only in local main, so a SEARCH for that work prints
+          # nothing and exits 0, which is indistinguishable from "nobody wrote it yet".
+          # The session then duplicates work that already exists, and it lands as
+          # content rather than as a conflict. No fetch can surface it — the commits
+          # were never pushed — so the only remedy is saying so at cut time.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-freshcut"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/freshcut"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+
+          git init -q --bare "$T/origin.git"
+          git clone -q "$T/origin.git" "$T/vault" 2>/dev/null
+          V="$T/vault"; printf 'log\n' > "$V/log.md"
+          git -C "$V" add -A; git -C "$V" commit -qm seed; git -C "$V" push -q -u origin main
+          export WIKI_PATH="$V"
+
+          # (1) the ordinary habit: an earlier session committed and left the push for later
+          printf 'prior coverage of the topic\n' > "$V/note.md"
+          git -C "$V" add -A; git -C "$V" commit -qm "committed, not pushed"
+
+          out="$(WIKI_WT_SESSION=f1 "$VW" ensure 2>&1 >/dev/null)"
+          W="$(WIKI_WT_SESSION=f1 "$VW" ensure 2>/dev/null)"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'main holds 1 commit(s) origin/main lacks' \
+            && echo "  ok   the fresh cut reports the work its base omits" \
+            || { echo "  FAIL a base omitting local work was reported as plain success"; fail=1; }
+          printf '%s' "$out" | grep -qi 'search' \
+            && echo "  ok   ...naming READS, the failure mode that actually applies" \
+            || { echo "  FAIL the warning speaks only of merge-time conflicts"; fail=1; }
+          printf '%s' "$out" | grep -q 'rebase main' \
+            && echo "  ok   ...and offers the remedy against local main" \
+            || { echo "  FAIL no remedy offered"; fail=1; }
+
+          # the base is still origin/main: this warns, it must never silently re-base
+          [ "$(git -C "$W" rev-parse HEAD)" = "$(git -C "$V" rev-parse origin/main)" ] \
+            && echo "  ok   the promise ('off origin/main') is kept, not quietly changed" \
+            || { echo "  FAIL ensure changed its base selection"; fail=1; }
+
+          # (2) reuse is the same blind spot: a peer can integrate without pushing mid-session
+          out2="$(WIKI_WT_SESSION=f1 "$VW" ensure 2>&1 >/dev/null)"
+          printf '%s' "$out2" | grep -q 'origin/main lacks' \
+            && echo "  ok   reuse reports it too — no fetch can surface a local-only commit" \
+            || { echo "  FAIL a reused worktree hid work committed since the cut"; fail=1; }
+
+          # (3) SILENCE when there is nothing to say — a warning on every cut is no warning
+          git -C "$V" push -q origin main
+          out3="$(WIKI_WT_SESSION=f2 "$VW" ensure 2>&1 >/dev/null)"
+          printf '%s' "$out3" | grep -q 'lacks' \
+            && { echo "  FAIL warned about a base that omits nothing"; fail=1; } \
+            || echo "  ok   a level base is not warned about"
+
+          exit "$fail"
+
       - name: A project claim is visible presence, and never a lock
         run: |
           # Two collision classes are already covered — vault edits collide as merge

@@ -236,6 +236,37 @@ branch_contained() {
 # worktree would be editing behind. Empty if it cannot be computed.
 behind_count() { git -C "$WIKI" rev-list --count "$1..$2" 2>/dev/null || true; }
 
+# The base a worktree is handed is `origin/<main>`, but canonical <main> routinely holds
+# commits that were never pushed — the ordinary "commit now, push at the end" habit leaves
+# it ahead after every session. A worktree cut off the remote ref then omits that work and
+# reports plain success, because no fetch can surface a commit that exists only locally.
+#
+# That gap is the DANGEROUS half of staleness. The staleness the tool already reports is a
+# COLLISION: a conflict on an appended-to page, loud, and the base gets questioned. A base
+# that omits local work corrupts READS the opposite way — a search for the missing content
+# exits 0 and prints nothing, and "nobody has written this yet" is an entirely ordinary
+# thing for a vault to be true about. So nothing looks wrong, the session writes a
+# duplicate of work that already exists, and it lands as content rather than as a conflict.
+#
+# Warn, never re-base: cutting off local <main> instead would put never-pushed commits on
+# every wt/* branch and change what `ensure` promises. The remedy is one rebase away, and
+# the caller cannot ask for it if nobody tells them. `integrate` already reconciles local
+# <main> before rebasing, so committed work is not at risk either way.
+warn_if_local_main_ahead() {
+  local wt="$1" branch="$2" base="$3" mainref n
+  mainref="$(git -C "$WIKI" symbolic-ref --short HEAD 2>/dev/null || echo main)"
+  # Same ref (a fetch failed, so the base already IS local <main>) — nothing to compare.
+  if [ "$mainref" = "$base" ]; then return 0; fi
+  # Silent when the count is empty (no such ref) or zero: a warning printed on every cut
+  # is a warning nobody reads, and this one has to survive being read for a whole session.
+  n="$(behind_count "$branch" "$mainref")"
+  case "$n" in 0|''|*[!0-9]*) return 0 ;; esac
+  log "vault-worktree: $mainref holds $n commit(s) $base lacks — committed locally, never pushed."
+  log "  This worktree CANNOT SEE that work: a search for it returns nothing and exits 0,"
+  log "  which reads as 'never written' — so a survey done here can miss what already exists."
+  log "  Rebase before surveying or writing:  git -C $wt rebase $mainref"
+}
+
 retire_branch() {
   local br="$1"
   case "$br" in wt/*) ;; *) return 0 ;; esac
@@ -314,6 +345,8 @@ case "$CMD" in
       if [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
         log "vault-worktree: reusing $wt — $behind commit(s) behind origin/main as last fetched; rebase before editing appended-to pages"
       fi
+      # Local-only work is invisible to the line above at any fetch age, so ask separately.
+      warn_if_local_main_ahead "$wt" "$branch" origin/main
       printf '%s\n' "$wt"; exit 0
     fi
     exclude_default_root
@@ -378,11 +411,16 @@ case "$CMD" in
         else
           log "vault-worktree: reattached $wt to existing $branch (level with $base)"
         fi
+        # Same blind spot, one path over: "level with $base" is a positive claim about a
+        # ref that itself lags canonical <main> whenever a session committed without
+        # pushing. Ask the local question too, before the caller trusts that sentence.
+        warn_if_local_main_ahead "$wt" "$branch" "$base"
         write_lease "$wt" "$branch"
         printf '%s\n' "$wt"; exit 0
       fi
     elif git -C "$WIKI" worktree add -q "$wt" -b "$branch" "$base" 2>/dev/null; then
       log "vault-worktree: created $wt (branch $branch off $base)"
+      warn_if_local_main_ahead "$wt" "$branch" "$base"
       write_lease "$wt" "$branch"
       printf '%s\n' "$wt"; exit 0
     fi
