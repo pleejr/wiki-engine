@@ -261,7 +261,10 @@ jobs:
           # the same step with canonical stripped: caught
           S="$T/skills/checkpoint/SKILL.md"
           printf '%s\n' '- prune `raw/sessions/` blocks once promoted' >> "$S"
-          out="$("$T/bin/lint-docs.sh" 2>&1)"; rc=$?
+          # `|| rc=$?`, not a bare assignment: this step runs under `bash -e`, where a
+          # command substitution that exits non-zero aborts the step at the assignment —
+          # so the failure this test is asserting would kill the test instead.
+          rc=0; out="$("$T/bin/lint-docs.sh" 2>&1)" || rc=$?
           [ "$rc" -ne 0 ] \
             && echo "  ok   a step aimed at git-ignored state without canonical fails the gate" \
             || { echo "  FAIL the gate passed a step pointed at the wrong tree"; fail=1; }
