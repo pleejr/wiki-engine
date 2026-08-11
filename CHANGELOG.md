@@ -6,6 +6,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [1.52.0] — 2026-08-11
+
+Minor — two fail-open defects fixed, both reported from a consumer vault, and both the same shape one layer up from v1.51.0's: a tool that gives the reader an instruction only *someone else* can carry out. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
+
+`guard` gains a permitted case and `update.sh` changes which tree it writes, which is why this is minor rather than patch. The pair is worth reading together: in both, the engine already knew the right answer somewhere in its own source — `vault-worktree.sh` mandates the convention `update.sh` broke, and `engine-proposal.sh`'s comment calls the edit `rag_deps_check.py` was prescribing "the time bomb the skill exists to warn against". Neither defect needed new knowledge, only for one tool to consult what another already documented.
+
 ### Fixed
 - **`update.sh` no longer writes tracked vault content into the shared checkout, and its printed remedy is one the engine's own gate accepts.** Two defects in one tool, reported together from a consumer vault. It staged the pin in canonical and printed `git commit -am "Bump engine to <tag>"` — which `vault-worktree.sh guard` refuses, so the documented route was unfollowable and its only workaround was `WIKI_WORKTREE=0`, i.e. turning isolation off for the whole command to land one legitimate commit. Separately, for every `repos/*.md` documenting the engine, it **rewrote and staged tracked content in canonical** while a session worktree was live: fail-open, and visible only to a *different* session, later, as content it did not author appearing in its staging area. `Proposal: update-writes-canonical-against-the-worktree-convention`
   - **The two halves want different trees, and the fix says so.** A submodule pointer is a gitlink and `git worktree add` never populates a submodule, so the pin can only be committed in canonical. A repo page is ordinary tracked content, which is exactly what worktrees protect.
