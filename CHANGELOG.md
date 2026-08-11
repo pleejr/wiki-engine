@@ -6,6 +6,12 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [1.51.1] — 2026-08-11
+
+Patch — two pinned embedder dependencies move, nothing else. Adopt with `bin/adopt.sh` or `update.sh`; `rag-setup.sh` re-syncs the venv, and no re-index is needed because the vectors are unchanged.
+
 ### Changed
 - **`scaffold/rag-requirements.txt` bumps two pins**, one per commit so a bad bump stays bisectable: `numpy==2.5.2` (was `2.5.1`) and `huggingface_hub==1.27.0` (was `1.26.0`). `doctor.sh` reports these on every consumer session and nothing automates them — `dependabot.yml` declares only the github-actions ecosystem — so a standing advisory nobody acts on is how the whole freshness section learns to be ignored.
   - **numpy is a compiled wheel, so the hazard this file's header names does apply and was checked rather than assumed:** cp312, cp313 and cp314 `macosx_14_0_arm64` wheels all exist, so no consumer in the supported 3.12–3.14 range falls back to building from source. `fastembed==0.8.0` asks for `numpy>=2.3.0` on 3.14, `>=2.1.0` on 3.13 and `>=1.26` on 3.12.
