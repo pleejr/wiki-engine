@@ -59,7 +59,37 @@ done < <(cd "$ROOT" && grep -rnE '(^|[^a-zA-Z-])boundary:[[:space:]]*`?[a-z][a-z
          | grep -vE 'boundary:[[:space:]]*generic' \
          | grep -vE '^bin/(vault-boundary|lint-docs|lint)\.sh:' || true)
 
+# 4. a worktree-taking skill must name CANONICAL where it touches git-ignored state ------
+# A worktree checks out TRACKED files only. So a step aimed at git-ignored per-machine
+# state from inside `$WORK` finds an empty directory, correctly reports nothing to do, and
+# exits clean — fail-open, and invisible: the state is git-ignored, so its growth never
+# appears in `git status`, a diff, or any gate. checkpoint's `raw/sessions` prune ran that
+# way for five weeks after the buffer was untracked, pruning nothing, while the section
+# one below it (`.rag/`) named canonical explicitly and stayed correct.
+#
+# "Missing" is exactly what the wrong tree looks like, so no presence test can catch this;
+# the only mechanical signal is whether the step NAMES the tree it means. Scoped to skills
+# that actually take a worktree — elsewhere there is no second tree to be wrong about.
+ignored_tokens="$(grep -vE '^[[:space:]]*(#|$)' "$ROOT/scaffold/gitignore.tmpl" 2>/dev/null \
+  | sed 's#/\*\.md$#/#' \
+  | grep -vE '^(\.worktrees/?|\.DS_Store)$' || true)"
+for f in "$ROOT"/skills/*/SKILL.md; do
+  [ -f "$f" ] || continue
+  grep -q 'vault-worktree\.sh ensure' "$f" || continue
+  while IFS= read -r tok; do
+    [ -n "$tok" ] || continue
+    while IFS= read -r hit; do
+      [ -n "$hit" ] || continue
+      case "$hit" in *'$WIKI_PATH'*) continue ;; esac
+      echo "lint-docs: skills/$(basename "$(dirname "$f")")/SKILL.md:${hit%%:*} names '$tok' without naming canonical \$WIKI_PATH" >&2
+      echo "lint-docs:   that path is git-ignored, so it exists ONLY in canonical — a step" >&2
+      echo "lint-docs:   pointed at \$WORK finds it empty and reports success having done nothing." >&2
+      fail=1
+    done < <(grep -nF -- "$tok" "$f" || true)
+  done <<< "$ignored_tokens"
+done
+
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values"
+  echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values; worktree skills name canonical for ignored state"
 fi
 exit "$fail"
