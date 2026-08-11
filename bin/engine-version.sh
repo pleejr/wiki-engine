@@ -70,5 +70,10 @@ if [ "$level" = "MAJOR" ]; then
 else
   echo "engine: pinned $pinned_ver, latest $latest_tag — $level update ($behind commit(s) behind); safe to adopt"
 fi
-echo "  to update: git -C <vault> submodule update --remote engine && <vault>/engine/bin/adopt.sh && git -C <vault> commit -am 'Bump engine'"
+# `commit engine`, never `commit -am`: in a shared canonical checkout `-am` stages every
+# modified tracked file, including a concurrent session's, which is the clobber
+# vault-worktree.sh's guard refuses — so the printed instruction was one the engine's own
+# gate rejects. A gitlink-only commit is the one commit no worktree can make, and the
+# guard allows exactly that.
+echo "  to update: git -C <vault> submodule update --remote engine && <vault>/engine/bin/adopt.sh && git -C <vault> commit engine -m 'Bump engine'"
 exit 1

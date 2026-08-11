@@ -38,9 +38,9 @@ else
     case "$ev_out" in *MAJOR*) eng_frag="$eng_frag MAJOR";; esac
     summary="${summary:+$summary · }$eng_frag"
     if [ -n "$WIKI" ]; then
-      upd="WIKI_PATH=$WIKI $SCRIPT_DIR/update.sh"; commit="git -C $WIKI commit -am 'Bump engine'"
+      upd="WIKI_PATH=$WIKI $SCRIPT_DIR/update.sh"; commit="git -C $WIKI commit engine -m 'Bump engine'"
     else
-      upd="$SCRIPT_DIR/update.sh --wiki <vault>"; commit="git -C <vault> commit -am 'Bump engine'"
+      upd="$SCRIPT_DIR/update.sh --wiki <vault>"; commit="git -C <vault> commit engine -m 'Bump engine'"
     fi
     action="${action}
 ACTION REQUIRED — wiki-engine is out of date (see line above).

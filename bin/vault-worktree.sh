@@ -452,6 +452,28 @@ case "$CMD" in
     gd="$(git -C "$PWD" rev-parse --absolute-git-dir 2>/dev/null)" || exit 0
     gcd="$(cd "$(git -C "$PWD" rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd)" || exit 0
     if [ "$gd" != "$gcd" ]; then exit 0; fi        # in a linked worktree — fine
+
+    # THE ONE COMMIT THAT CANNOT BE MADE ANYWHERE ELSE: a submodule pointer. `git worktree
+    # add` never populates submodules, so the `engine/` gitlink exists only in canonical —
+    # and advancing the pin is the documented, routine way a vault adopts a release. A
+    # blanket refusal therefore made the engine's own instructions unfollowable, whose
+    # remedy was `WIKI_WORKTREE=0` — turning isolation off for the whole command to land
+    # one legitimate commit, which is how a gate trains its user to bypass it.
+    #
+    # So judge the STAGED SET, not the tree, exactly as `integrate`'s dirty-check was made
+    # path-precise for the same reason. A commit staging only gitlinks (mode 160000)
+    # cannot sweep up a peer's file work — that is the whole harm this guard exists to
+    # prevent — while `commit -am` in a shared tree stages their modified files too, so
+    # the moment anything else appears the refusal stands. Narrower, and not less safe.
+    staged="$(git -C "$PWD" diff --cached --raw 2>/dev/null || true)"
+    if [ -n "$staged" ]; then
+      nongitlink="$(printf '%s\n' "$staged" | awk '$2 != "160000" && $1 !~ /^:160000/ { c++ } END { print c+0 }')"
+      if [ "$nongitlink" = "0" ]; then
+        log "vault-worktree: allowing a submodule-pointer-only commit in canonical (a worktree cannot hold one)."
+        exit 0
+      fi
+    fi
+
     log "vault-worktree: refusing a commit in the CANONICAL checkout ($WIKI)."
     log "  Another session may be editing here, and staging in a shared tree sweeps up"
     log "  its work. Take an isolated worktree first:"
