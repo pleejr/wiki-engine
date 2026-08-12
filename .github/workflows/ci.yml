@@ -431,6 +431,81 @@ jobs:
 
           exit "$fail"
 
+      - name: The run that adopts a release applies with THAT release's updater
+        run: |
+          # REGRESSION: update.sh checks out the new tag from the checkout it is executing
+          # from, then runs another ~250 lines — adopt, the RAG re-sync, the repo page,
+          # every printed remedy — as the PRE-UPDATE text. `git checkout` renames a temp
+          # file over the path, so the path gets a new inode while the running shell keeps
+          # its descriptor on the old one. Nothing is garbled (an in-place rewrite WOULD
+          # splice; a rename does not), which is exactly why it went unnoticed: the run
+          # reports the new version and behaves as the old one.
+          #
+          # The class it hides is self-referential and was met in the field — a defect in
+          # update.sh is not exercised by the run that installs its fix, so the operator
+          # meets the bug one more time with the release notes in hand saying it was fixed.
+          #
+          # The fixture puts a marker in ONLY the newer tag's update.sh, which is the one
+          # assertion that cannot be satisfied by the old copy.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-reexec"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          git config --global protocol.file.allow always
+          T="$RUNNER_TEMP/reexec"; rm -rf "$T"; mkdir -p "$T"; fail=0
+
+          git init -q "$T/e"; E="$T/e"
+          cp -R "$GITHUB_WORKSPACE/bin" "$GITHUB_WORKSPACE/adopt.d" "$GITHUB_WORKSPACE/scaffold" "$E/"
+          git -C "$E" add -A; git -C "$E" commit -qm v1; git -C "$E" tag v1.0.0
+          printf 'echo "APPLY-PHASE-MARKER: v1.1.0 copy did the applying"\n' >> "$E/bin/update.sh"
+          git -C "$E" add -A; git -C "$E" commit -qm v2; git -C "$E" tag v1.1.0
+
+          V="$T/v"; git init -q "$V"; mkdir -p "$V/repos"
+          printf -- '---\ntype: repo\nsources:\n  - repo: e\n    ref: v1.0.0\n    sha: 0000000\n    ingested: 2026-01-01\nboundary: personal\n---\n' > "$V/repos/e.md"
+          git -C "$V" add -A; git -C "$V" commit -qm seed
+          git -C "$V" submodule add -q "$E" engine; git -C "$V" commit -qm pin
+          git -C "$V/engine" checkout -q v1.0.0; git -C "$V" add engine
+          git -C "$V" commit -qm "pin v1.0.0" --no-verify
+
+          # 1. the default: the adopted copy applies, once, and says so
+          out="$(WIKI_PATH="$V" "$V/engine/bin/update.sh" 2>&1)"
+          printf '%s\n' "$out" | grep -q 'APPLY-PHASE-MARKER' \
+            && echo "  ok   the newly checked-out copy ran the apply phase" \
+            || { echo "  FAIL the pre-update copy applied"; fail=1; }
+          printf '%s\n' "$out" | grep -q "applying with v1.1.0's own tools" \
+            && echo "  ok   ...and the hand-off is stated, not silent" \
+            || { echo "  FAIL the hand-off is silent"; fail=1; }
+          [ "$(printf '%s\n' "$out" | grep -c 'APPLY-PHASE-MARKER')" = "1" ] \
+            && echo "  ok   ...exactly once — the sentinel stops a second re-exec" \
+            || { echo "  FAIL the apply phase ran more than once"; fail=1; }
+
+          # 2. the escape hatch preserves the old behaviour, and says which copy acted
+          git -C "$V/engine" checkout -q v1.0.0
+          out2="$(WIKI_PATH="$V" UPDATE_REEXEC=0 "$V/engine/bin/update.sh" 2>&1)"
+          printf '%s\n' "$out2" | grep -q 'APPLY-PHASE-MARKER' \
+            && { echo "  FAIL UPDATE_REEXEC=0 still re-exec'd"; fail=1; } \
+            || echo "  ok   UPDATE_REEXEC=0 applies with the pre-update copy"
+          printf '%s\n' "$out2" | grep -q "NOTE — the steps below ran from v1.0.0's copy" \
+            && echo "  ok   ...and a stale applier is never silent again" \
+            || { echo "  FAIL the run does not say which copy acted"; fail=1; }
+
+          # 3. a release whose updater does not parse must not strand a half-updated vault:
+          #    the pin is ALREADY advanced by then, so refusing to apply at all is worse
+          #    than applying with the old text. Fall through, loudly.
+          git -C "$E" checkout -q main
+          printf 'if [ unterminated\n' >> "$E/bin/update.sh"
+          git -C "$E" add -A; git -C "$E" commit -qm broken; git -C "$E" tag v1.2.0
+          git -C "$V/engine" fetch -q origin --tags; git -C "$V/engine" checkout -q v1.0.0
+          out3="$(WIKI_PATH="$V" "$V/engine/bin/update.sh" 2>&1)"
+          printf '%s\n' "$out3" | grep -q 'does not parse' \
+            && echo "  ok   an unparseable release is refused, loudly" \
+            || { echo "  FAIL it was exec'd, or skipped in silence"; fail=1; }
+          printf '%s\n' "$out3" | grep -q 'Staged: engine -> v1.2.0' \
+            && echo "  ok   ...and the apply phase still ran from the old copy" \
+            || { echo "  FAIL the vault was left mid-update"; fail=1; }
+
+          exit "$fail"
+
       - name: The updater obeys the convention the engine mandates
         run: |
           # update.sh must touch canonical for the SUBMODULE (a gitlink cannot live in a

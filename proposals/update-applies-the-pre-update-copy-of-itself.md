@@ -1,6 +1,6 @@
 ---
 slug: update-applies-the-pre-update-copy-of-itself
-outcome: open
+outcome: accepted
 received: 2026-08-12
 ---
 

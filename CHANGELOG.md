@@ -6,7 +6,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+- **`update.sh` advanced the pin and then kept running its own pre-update text, so a change to `update.sh` never applied to the run that adopted it.** The checkout happens in the very checkout the script is executing from: `git checkout` renames a temporary file over the path, so the path gets a new inode while the running shell keeps its descriptor on the old one, and the whole apply half — adopt, the RAG re-sync, the repo-page provenance, every printed remedy — ran the previous version's code. `Proposal: update-applies-the-pre-update-copy-of-itself`
+  - **Fail-open, and self-referential.** Nothing was corrupted and the exit status was 0, but the run reported adopting a version whose behaviour it did not use. What that hides is specific: a defect *in `update.sh`* is not exercised by the run that installs its fix, so the operator meets the bug one more time with the release notes in hand saying it was fixed. v1.54.1 was exactly that — its own repo-page fix did not apply to the run that adopted it.
+  - **The script now runs in two phases**: ADVANCE checks out the new tag, then hands the rest to the copy it just checked out, through a single re-exec guarded by `UPDATE_CONTINUE_FROM`. The child does no fetch, no comparison, no checkout and no further re-exec, so the depth is 1 by construction and there is no event a child can re-trigger — a bounded hand-off, not the shape the hard safety rule forbids.
+  - **It is `bash -n`-checked first, and falls through rather than exec'ing on failure.** The pin is already advanced by that point, so a release whose `update.sh` does not parse would otherwise strand a half-updated vault with no apply phase at all; the old text is a worse applier than the new one and a far better one than none. It says so loudly when that happens.
+  - **A stale applier is never silent again.** `UPDATE_REEXEC=0` keeps the pre-v1.55 behaviour for anyone who needs it, and any run whose apply phase came from the older copy now prints which copy acted.
+  - **Not a mid-run splice**, which is what this looked like and is not: an in-place rewrite of a running script *does* splice — a control fixture died with `unexpected EOF while looking for matching '"'` — but a rename does not, so no statement was ever skipped or garbled. The two cases are indistinguishable from the output, which is why both directions were measured before anything was designed.
+  - **One last time**: the release carrying this fix is itself adopted by the *old* `update.sh`, which cannot re-exec. The hand-off starts working from the release after it.
 
 ## [1.54.1] — 2026-08-12
 
