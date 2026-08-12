@@ -1,6 +1,6 @@
 ---
 slug: ensure-hook-duplicates-across-matcher-groups
-outcome: open
+outcome: accepted
 received: 2026-08-12
 ---
 
