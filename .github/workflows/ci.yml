@@ -3074,6 +3074,58 @@ jobs:
 
           exit "$fail"
 
+      - name: The capture hook cannot hang on an stdin nobody closes
+        run: |
+          # REGRESSION: the hook payload was read from stdin with no bound. `[ -t 0 ]`
+          # guards the TERMINAL case, and a closed pipe reaches EOF on its own — but an
+          # OPEN pipe with no writer that ever closes it fails the tty test exactly as a
+          # genuine payload does, and the read never returns. No output, no exit status,
+          # nothing written; a hook that hangs also holds up whatever waits on it, and a
+          # stall has no status to attribute it to.
+          #
+          # THIS IS THE ENVIRONMENT THAT CANNOT SHOW THE BUG, which is why it needs a
+          # fixture: a runner hands each step an stdin that reaches EOF, so every existing
+          # capture step passes without redirecting. The fifo below supplies the state a
+          # supervisor, a cron wrapper, or a surrounding pipeline supplies in the field.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-ragstdin"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/ragstdin"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          V="$T/vault"; mkdir -p "$V/raw/sessions"
+          printf -- '---\nboundary: personal\n---\n\n# v\n' > "$V/CLAUDE.md"
+          R="$T/payload-repo"; mkdir -p "$R"; git -C "$R" init -q .
+          git -C "$R" commit -q --allow-empty -m seed
+
+          # 1. an open pipe nobody closes: must fall back to the no-payload path, promptly
+          mkfifo "$T/p"
+          ( exec sleep 60 > "$T/p" ) & holder=$!
+          start=$SECONDS; rc=0
+          ( cd "$R" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" ) < "$T/p" >/dev/null 2>&1 || rc=$?
+          elapsed=$((SECONDS - start))
+          kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true
+          [ "$elapsed" -lt 20 ] \
+            && echo "  ok   returned in ${elapsed}s instead of waiting forever" \
+            || { echo "  FAIL still blocked on an open pipe (${elapsed}s)"; fail=1; }
+          [ "$rc" = "0" ] \
+            && echo "  ok   ...with a status the caller can read" \
+            || { echo "  FAIL exit=$rc — a timeout must mean 'no payload', not failure"; fail=1; }
+          grep -rq 'repo: payload-repo' "$V/raw/sessions" \
+            && echo "  ok   ...and captured through the \$PWD fallback that already existed" \
+            || { echo "  FAIL nothing was captured after the bounded read"; fail=1; }
+
+          # 2. a real payload must still be READ — a bound that discards the hook JSON
+          #    would pass case 1 and break the wired path
+          rm -f "$V/raw/sessions"/*.md
+          printf '{"cwd":"%s"}' "$R" | ( cd "$GITHUB_WORKSPACE" && WIKI_PATH="$V" ./bin/rag-capture.sh ) >/dev/null 2>&1 \
+            && echo "  ok   a payload that arrives and closes is still captured" \
+            || { echo "  FAIL the wired hook path broke"; fail=1; }
+          grep -rq 'repo: payload-repo' "$V/raw/sessions" \
+            && echo "  ok   ...and the repo came from the payload, not from \$PWD" \
+            || { echo "  FAIL the hook JSON was discarded by the bounded read"; fail=1; }
+
+          exit "$fail"
+
       - name: Workspace capture selects repos on session activity, not on being dirty
         run: |
           # REGRESSION: the workspace-root scan selected a child repo on a PERSISTENT

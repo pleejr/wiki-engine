@@ -50,6 +50,9 @@
 #   rag-capture.sh --wiki DIR --repo DIR   explicit targets
 #   rag-capture.sh --note "text"           add an explicit note line
 #   <hook-json> | rag-capture.sh           reads {"cwd":...} from a SessionEnd hook
+#
+# The stdin read is bounded (RAG_CAPTURE_STDIN_TIMEOUT, default 2 seconds), so a caller
+# whose stdin is an open pipe nobody closes gets the no-payload path instead of a hang.
 set -euo pipefail
 
 WIKI="${WIKI_PATH:-}"
@@ -70,14 +73,33 @@ done
 # SessionEnd hooks pass JSON on stdin. Read it once, pull cwd (repo) and
 # transcript_path. We record only the transcript PATH (a pointer), never content,
 # and only when RAG_CAPTURE_TRANSCRIPT_PATH=1.
+#
+# THE READ IS BOUNDED, and that is the whole point of doing it in the shell rather than
+# handing the descriptor straight to python. `[ -t 0 ]` alone is NOT enough: the case
+# that hangs is an OPEN PIPE with no writer that ever closes it — a supervisor, a cron
+# wrapper, a surrounding script that pipes something unrelated into a block containing
+# this call — and a pipe fails the tty test exactly as a genuine hook payload does. An
+# unbounded read there never returns: no output, no exit status, nothing written, and a
+# hook that hangs holds up whatever waits on it. That is worse than either succeeding or
+# failing, because there is no status to attribute the stall to. CI cannot see it either
+# — a runner hands each step an stdin that reaches EOF, so the environment the tests run
+# in is the one environment where the bug cannot appear.
+#
+# A timeout is therefore treated as "no payload", falling through to the --repo/$PWD path
+# that already exists for the no-stdin case. Truncated JSON lands in the same place: the
+# parse fails, `d={}`, and the fallback applies — the behaviour when a hook sends nothing.
 if [ ! -t 0 ] && command -v python3 >/dev/null 2>&1; then
-  hook_vals="$(python3 -c 'import sys,json
+  hook_json=""
+  IFS= read -r -d '' -t "${RAG_CAPTURE_STDIN_TIMEOUT:-2}" hook_json || true
+  if [ -n "$hook_json" ]; then
+    hook_vals="$(printf '%s' "$hook_json" | python3 -c 'import sys,json
 try: d=json.load(sys.stdin)
 except Exception: d={}
 print(d.get("cwd",""))
 print(d.get("transcript_path",""))' 2>/dev/null || true)"
-  [ -z "$REPO" ] && REPO="$(printf '%s\n' "$hook_vals" | sed -n 1p)"
-  [ -z "$TRANSCRIPT" ] && TRANSCRIPT="$(printf '%s\n' "$hook_vals" | sed -n 2p)"
+    [ -z "$REPO" ] && REPO="$(printf '%s\n' "$hook_vals" | sed -n 1p)"
+    [ -z "$TRANSCRIPT" ] && TRANSCRIPT="$(printf '%s\n' "$hook_vals" | sed -n 2p)"
+  fi
 fi
 
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
