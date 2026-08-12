@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # lint-docs.sh — keep the usage docs honest so new users adopt with the lowest friction.
-# Two cheap, deterministic checks (no LLM, never `claude`):
+# Four cheap, deterministic checks (no LLM, never `claude`):
 #   1. every skill (skills/*/) is mentioned in USAGE.md  — nothing user-facing goes undocumented
 #   2. every `bin/<name>.sh` USAGE.md references actually exists — no stale pointers to deleted tools
 #   3. no shipped skill or tool STAMPS a specific boundary value — the engine is
 #      boundary-agnostic (SCHEMA.md), so it must ask the vault, never name one
+#   4. a worktree-taking skill must name CANONICAL where it touches git-ignored state (v1.51.0)
+#      — see the section comment below; the count above and this list have both been wrong
+#      before, so keep all three in step: this header, the numbered sections, and the
+#      success line at the bottom that names each check to the reader.
 # Run in CI (engine-ci) and before cutting a release. Exit 1 on any gap.
 set -uo pipefail
 
