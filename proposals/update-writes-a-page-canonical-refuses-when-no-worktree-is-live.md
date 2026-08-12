@@ -1,6 +1,6 @@
 ---
 slug: update-writes-a-page-canonical-refuses-when-no-worktree-is-live
-outcome: open
+outcome: accepted
 received: 2026-08-12
 ---
 

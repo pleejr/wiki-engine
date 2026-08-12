@@ -125,6 +125,44 @@ resolve_seam_file() {
   return 0
 }
 
+# canonical_commit_gated ROOT — echo "1" when an ordinary TRACKED-CONTENT commit made in
+# ROOT would be refused by this vault's write-time gate; empty when it would be allowed.
+#
+# THE QUESTION A WRITER MUST ASK is not "does some other session have a worktree open?"
+# but "will the caller be able to commit what I am about to write?" Those differ in the
+# ordinary between-sessions state: isolation stays configured while the worktree count
+# drops to zero. Keying a deferral on the worktree count therefore wrote tracked content
+# into canonical and left the guard — correctly — refusing the only commit that would
+# land it, with `WIKI_WORKTREE=0` printed as the remedy: a tool creating the state its
+# own gate exists to refuse, then recommending the gate be turned off.
+#
+# Two conditions, matching what `vault-worktree.sh guard` actually does:
+#   1. isolation is on — WIKI_WORKTREE=0 is the documented single-session opt-out, and
+#      the guard's own first line honours it, so honour it identically here.
+#   2. a gate is ARMED for ROOT — resolved the way GIT resolves it, per checkout, because
+#      git treats a `core.hooksPath` pointing at a missing directory as "no hooks" and
+#      commits without a word. A vault that never wired the gate, or whose gate is inert,
+#      can commit in canonical, and nothing should be deferred away from it.
+# It reports on the gate's PRESENCE, not on which checks a vault's own hook runs — a
+# vault may edit its pre-commit (adoption never overwrites one). Presence is the honest
+# test: erring toward deferral costs a printed instruction, erring the other way stages
+# a change in a tree that cannot commit it.
+canonical_commit_gated() {
+  local root="${1:-}" hp resolved
+  [ -n "$root" ] || return 0
+  [ "${WIKI_WORKTREE:-1}" = "0" ] && return 0
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  hp="$(git -C "$root" config core.hooksPath 2>/dev/null || true)"
+  if [ -z "$hp" ]; then
+    resolved="$(git -C "$root" rev-parse --git-path hooks 2>/dev/null)" || return 0
+    case "$resolved" in /*) ;; *) resolved="$root/$resolved" ;; esac
+  else
+    case "$hp" in /*) resolved="$hp" ;; *) resolved="$root/$hp" ;; esac
+  fi
+  [ -x "$resolved/pre-commit" ] && printf '1\n'
+  return 0
+}
+
 # resolve_wiki_root [EXPLICIT_WIKI] — echo the working tree to operate on.
 # Exits non-zero (with the historical message) when there is nothing to resolve, so
 # a caller that could previously rely on `[ -n "$WIKI" ] || error` keeps that gate.

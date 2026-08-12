@@ -499,6 +499,63 @@ jobs:
             && { echo "  FAIL a remedy still says -am, which sweeps a peer's work"; fail=1; } \
             || echo "  ok   no tool prints a -am pin-bump remedy"
 
+          # (2b) THE SAME VAULT WITH NOTHING OPEN must behave identically. The deferral was
+          # keyed on linked worktrees EXISTING, but isolation being configured and a
+          # worktree being open are different states — and between sessions the second is
+          # false while the first stays true. In that ordinary state the page was written
+          # and staged in canonical, where the guard then refused the only commit that
+          # would land it, and the printed remedy was WIKI_WORKTREE=0: the workaround
+          # v1.52.0 removed for the pin, reappearing one component over for the page. The
+          # two runs must differ in nothing the caller did not ask about.
+          for w in $(git -C "$V" worktree list --porcelain | awk '/^worktree /{print substr($0,10)}' | tail -n +2); do
+            git -C "$V" worktree remove --force "$w" >/dev/null 2>&1 || true
+          done
+          git -C "$V" worktree prune >/dev/null 2>&1 || true
+          [ "$(git -C "$V" worktree list --porcelain | grep -c '^worktree ')" = "1" ] \
+            && echo "  ok   fixture now has no linked worktrees" \
+            || { echo "  FAIL could not clear the fixture's worktrees"; fail=1; }
+          [ -x "$V/.githooks/pre-commit" ] \
+            && echo "  ok   ...and its gate is armed, as adoption leaves it" \
+            || { echo "  FAIL fixture gate is not wired; the case under test cannot arise"; fail=1; }
+          git -C "$V/engine" checkout -q v1.0.0
+          before2="$(git -C "$V" hash-object repos/e.md)"
+          out3="$(WIKI_PATH="$V" "$V/engine/bin/update.sh" 2>&1 || true)"
+          [ "$(git -C "$V" hash-object repos/e.md)" = "$before2" ] \
+            && echo "  ok   with isolation on and NO worktree open, the page is still deferred" \
+            || { echo "  FAIL update.sh wrote into canonical because no worktree happened to be open"; fail=1; }
+          git -C "$V" diff --cached --name-only | grep -qx 'repos/e.md' \
+            && { echo "  FAIL ...and staged it in the tree whose gate refuses to commit it"; fail=1; } \
+            || echo "  ok   ...and staged nothing but the pointer"
+          printf '%s' "$out3" | grep -q 'ref: v1.1.0' \
+            && echo "  ok   ...and told the operator what to apply" \
+            || { echo "  FAIL the deferred values are not printed"; fail=1; }
+          printf '%s' "$out3" | grep -q 'WIKI_WORKTREE=0' \
+            && { echo "  FAIL the remedy tells the operator to turn the gate off"; fail=1; } \
+            || echo "  ok   ...without recommending that isolation be disabled"
+
+          # (2c) the deferral predicate itself, at both ends. It must follow the GATE, not
+          # the worktree count: a vault that never wired one, or whose core.hooksPath
+          # resolves to a missing directory (git treats that as "no hooks" and commits
+          # without a word), can commit in canonical and must not have writes deferred
+          # away from it.
+          (
+            . "$GITHUB_WORKSPACE/bin/wiki-root-lib.sh"
+            g_armed="$(canonical_commit_gated "$V")"
+            # a subshell, not a `VAR=x func` prefix: bash keeps such an assignment in
+            # effect after a FUNCTION returns, which would silently disarm the next case
+            g_off="$(WIKI_WORKTREE=0; canonical_commit_gated "$V")"
+            hp_was="$(git -C "$V" config --local core.hooksPath)"
+            git -C "$V" config --local core.hooksPath "$V/.nonexistent-hooks"
+            g_inert="$(canonical_commit_gated "$V")"
+            git -C "$V" config --local core.hooksPath "$hp_was"
+            rc=0
+            [ "$g_armed" = "1" ] || { echo "  FAIL an armed gate reads as ungated"; rc=1; }
+            [ -z "$g_off" ]      || { echo "  FAIL WIKI_WORKTREE=0 still reads as gated"; rc=1; }
+            [ -z "$g_inert" ]    || { echo "  FAIL an INERT hooksPath reads as gated"; rc=1; }
+            [ "$rc" = "0" ] && echo "  ok   the predicate follows the gate: armed / opted-out / inert"
+            exit "$rc"
+          ) || fail=1
+
           # (3) NO REGRESSION for a vault without worktrees: canonical IS its working tree
           W="$(WIKI_PATH="$V" "$VW" ensure 2>/dev/null)"
           WIKI_PATH="$V" "$VW" gc "$W" >/dev/null 2>&1 || true

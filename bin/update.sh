@@ -78,16 +78,22 @@ git -C "$WIKI" add engine 2>/dev/null || true
 # prevent — last-writer-wins on disk against a concurrent session, before git sees it, and
 # a staged change appearing in a tree whose session did not author it.
 #
-# So: write it in the caller's own worktree when it is in one; otherwise, if the vault has
-# live linked worktrees, do not write at all — print the intended values so the operator
-# applies them in the branch that should carry them. A vault with no worktrees (or
-# WIKI_WORKTREE=0) is unaffected: canonical IS its working tree, and today's behaviour is
-# correct there. Evidence, not policy — the deferral is keyed on worktrees actually
-# existing, so the common single-session case never has to read an explanation.
+# So: write it in the caller's own worktree when it is in one; otherwise, if a commit in
+# canonical would be REFUSED, do not write at all — print the intended values so the
+# operator applies them in the branch that should carry them. A vault that can commit in
+# canonical (no gate wired, or WIKI_WORKTREE=0) is unaffected: canonical IS its working
+# tree, and today's behaviour is correct there.
+#
+# The test was once "does the vault have live linked worktrees?", and that was the wrong
+# question. Isolation being CONFIGURED and a worktree being OPEN are different states, and
+# between sessions the second is false while the first stays true — so an ordinary vault
+# with nothing open got the page written and staged in canonical, where the guard then
+# refused the commit that would land it. Ask instead whether the caller can commit what is
+# written; canonical_commit_gated answers exactly that, and the two runs (worktree open,
+# none open) stop differing on something the caller never asked about.
 PAGE_TREE="$(resolve_wiki_root "$WIKI")" || PAGE_TREE="$WIKI"
-linked_worktrees="$(git -C "$WIKI" worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)"
 defer_page=0
-if [ "$PAGE_TREE" = "$WIKI" ] && [ "${WIKI_WORKTREE:-1}" != "0" ] && [ "${linked_worktrees:-1}" -gt 1 ] 2>/dev/null; then
+if [ "$PAGE_TREE" = "$WIKI" ] && [ -n "$(canonical_commit_gated "$WIKI")" ]; then
   defer_page=1
 fi
 engine_repo="$(basename -s .git "$(git -C "$ENGINE" config --get remote.origin.url 2>/dev/null || echo)" 2>/dev/null || true)"
@@ -151,9 +157,10 @@ fi
 
 if [ -n "${deferred:-}" ]; then
   cat <<EOF
-NOT written: $deferred provenance. This vault has live session worktrees, and that page is
-  tracked content — writing it here would put an edit in the shared checkout that the
-  session committing it did not make. Apply it in your worktree instead:
+NOT written: $deferred provenance. This vault gates commits in the canonical checkout, and
+  that page is tracked content — writing it here would put an edit in the shared checkout
+  that the session committing it did not make, and the gate would refuse the commit that
+  lands it. Apply it in a worktree instead (\`vault-worktree.sh ensure\`):
       ref: $latest
       sha: $new_sha
       ingested: $(date +%Y-%m-%d)
