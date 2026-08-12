@@ -13,12 +13,26 @@
 # the inverse — an existing matcher NARROWER than the request — without editing the
 # user's hook, so that partial-overlap case still appends; broaden the request instead.)
 #
+# Exactly ONE entry receives the command: the FIRST whose matcher equals the request. An
+# event may legitimately hold several entries sharing a matcher (that is one hook group
+# each), and appending to all of them wires the command — and so runs it — once per group.
+#
+# Duplicate report: if the command is ALREADY present in more than one entry covering the
+# request, every one of them fires, so the hook runs N times per event. That is reported
+# on stderr, in --check and in write mode alike. Add-only cannot repair it — removing an
+# entry is the one thing this tool must never do — so the report is the whole remedy and
+# a human resolves it by hand. Disjoint matchers (`startup` and `resume`) are NOT a
+# duplicate: no single event instance matches both, so the command still runs once. The
+# partial-overlap append above IS one when later queried with the narrower matcher — a
+# `startup` entry beside a `startup|resume` entry really does run twice on startup — so
+# that report is correct, not a false positive, and broadening the request is the fix.
+#
 # Deterministic — plain jq + file writes, NEVER runs `claude` (safe from a hook per the
 # engine's hard rule). Exits 0 whether it changed anything or not, so it can't block a
 # session start; a genuine error (bad JSON, unwritable file) exits non-zero instead.
 #
 # On a change it prints one line to stdout:   wired <event>[<matcher>] -> <command>
-# On a no-op it prints nothing.
+# On a no-op it prints nothing (bar a duplicate report, which is not a no-op finding).
 #
 # Usage:
 #   ensure-hook.sh --event SessionStart --matcher 'startup|resume' \
@@ -61,33 +75,68 @@ else
   current="$(cat "$SETTINGS")"
 fi
 
-updated="$(
-  printf '%s' "$current" | jq --arg ev "$EVENT" --arg m "$MATCHER" --arg cmd "$COMMAND" --arg sm "$STATUS" '
-    def newhook: {type:"command", command:$cmd} + (if $sm == "" then {} else {statusMessage:$sm} end);
+# Shared jq prelude. `covering` is applied to ONE event's entry list and returns every
+# entry that would fire for the requested matcher AND already carries the exact command.
+# It is defined once and used by both the already-wired guard and the duplicate count on
+# purpose: the guard asking one question while the writer answered a different one is
+# precisely the defect this file shipped with.
+JQ_LIB='
     # matcher -> token set; null means "match all" (empty/absent matcher)
     def toks($x): (($x // "") | if . == "" then null else split("|") end);
+    def covering($want; $cmd): [ .[] | select(
+        ( toks(.matcher) as $et
+          | if $et == null then true             # entry matches all events
+            elif $want == null then false        # want=all but entry is specific
+            else ($want - $et) == [] end )       # want tokens ⊆ entry tokens
+        and any((.hooks // [])[]; .command == $cmd) ) ];
+'
+
+# How many entries already run this command for the requested matcher? Two or more means
+# the hook fires that many times per event — the state this tool used to create silently
+# and then report as correctly wired. Read from the PRE-write file, because the writer
+# below can no longer produce it: what remains is a hand edit, a second tool, a script
+# from before the fix, or the documented partial-overlap append seen through a narrower
+# matcher — all four genuinely double-fire, so all four are worth saying out loud.
+dupes="$(
+  printf '%s' "$current" | jq --arg ev "$EVENT" --arg m "$MATCHER" --arg cmd "$COMMAND" "$JQ_LIB"'
+    ($m | if . == "" then null else split("|") end) as $want
+    | ((.hooks // {})[$ev] // []) | covering($want; $cmd) | length
+  '
+)" || { echo "ensure-hook: jq duplicate scan failed on $SETTINGS" >&2; exit 2; }
+case "$dupes" in ''|*[!0-9]*) dupes=0;; esac
+if [ "$dupes" -gt 1 ]; then
+  # Reported, never repaired: removing an entry is the one thing an add-only tool must not
+  # do, and guessing which of the user's two entries is the redundant one is exactly the
+  # edit it promises never to make. So say it plainly and leave the file alone.
+  printf 'ensure-hook: duplicate — %s[%s] runs this command %s times per event: %s\n' \
+    "$EVENT" "$MATCHER" "$dupes" "$COMMAND" >&2
+  printf 'ensure-hook: add-only cannot remove one; edit %s so a single entry carries it\n' \
+    "$SETTINGS" >&2
+fi
+
+updated="$(
+  printf '%s' "$current" | jq --arg ev "$EVENT" --arg m "$MATCHER" --arg cmd "$COMMAND" --arg sm "$STATUS" "$JQ_LIB"'
+    def newhook: {type:"command", command:$cmd} + (if $sm == "" then {} else {statusMessage:$sm} end);
     ($m | if . == "" then null else split("|") end) as $want
     | .hooks = (.hooks // {})
     | .hooks[$ev] = (.hooks[$ev] // [])
     # Already satisfied? Exact command present under a matcher that COVERS $want
     # (its token set is a superset, or it is match-all). If so, leave the file untouched.
-    | if any(.hooks[$ev][];
-          ( toks(.matcher) as $et
-            | if $et == null then true            # entry matches all events
-              elif $want == null then false        # want=all but entry is specific
-              else ($want - $et) == [] end )       # want tokens ⊆ entry tokens
-          and any((.hooks // [])[]; .command == $cmd) )
+    | if (.hooks[$ev] | covering($want; $cmd) | length) > 0
       then .
       else
         # ensure a matcher entry exists ("" matches an entry that omits .matcher too)
         (if any(.hooks[$ev][]; (.matcher // "") == $m) then .
          else .hooks[$ev] += [ (if $m == "" then {hooks:[]} else {matcher:$m, hooks:[]} end) ] end)
-        # add the command into that matcher entry if not already present (by exact command)
-        | .hooks[$ev] |= map(
-            if (.matcher // "") == $m then
-              .hooks = (.hooks // [])
-              | (if any(.hooks[]; .command == $cmd) then . else .hooks += [newhook] end)
-            else . end)
+        # Add the command to exactly ONE entry — the first whose matcher equals the request.
+        # A `map` here appended to EVERY matching entry, so an event holding two entries
+        # that share the matcher (two hook groups, an ordinary shape) got the command twice
+        # and ran it twice per event. Resolve the index, then modify only that index.
+        | ( [ .hooks[$ev] | to_entries[] | select((.value.matcher // "") == $m) | .key ]
+            | first ) as $i
+        | .hooks[$ev][$i] |= (
+            .hooks = (.hooks // [])
+            | if any(.hooks[]; .command == $cmd) then . else .hooks += [newhook] end)
       end
   '
 )" || { echo "ensure-hook: jq transform failed on $SETTINGS" >&2; exit 2; }

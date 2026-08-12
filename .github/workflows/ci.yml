@@ -2858,3 +2858,79 @@ jobs:
             || { echo "  FAIL the empty message still describes only the outbox"; fail=1; }
 
           exit "$fail"
+
+      - name: A hook wired into an event with two same-matcher entries lands once
+        run: |
+          # The writer used `map`, which visits EVERY entry, so an event already holding two
+          # entries that share the requested matcher received the command TWICE — the hook
+          # then ran twice per event, doubling every side effect it has. Fail-open in the
+          # worst way: the write printed one success line, a `--check` afterwards printed
+          # nothing, and re-running — the natural way to confirm wiring — was a silent no-op
+          # that read as confirmation. Nothing the tool printed ever said "two".
+          T="$RUNNER_TEMP/ensure-hook-dupes"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          cmds()  { jq -c '[.hooks.TestEvent[].hooks[].command]' "$1"; }
+          n_new() { jq '[.hooks.TestEvent[].hooks[] | select(.command == "echo NEW")] | length' "$1"; }
+
+          # two matcher-LESS entries: the ordinary shape for an event that takes no matcher
+          printf '%s' '{"hooks":{"TestEvent":[{"hooks":[{"type":"command","command":"echo group-one"}]},{"hooks":[{"type":"command","command":"echo group-two"}]}]}}' > "$T/a.json"
+          ./bin/ensure-hook.sh --event TestEvent --command 'echo NEW' --settings "$T/a.json"
+          cmds "$T/a.json"
+          [ "$(n_new "$T/a.json")" = "1" ] \
+            && echo "  ok   matcher-less: the command landed in exactly one entry" \
+            || { echo "  FAIL wired $(n_new "$T/a.json") times across matcher-less entries"; fail=1; }
+
+          # ...and it is still ADD-ONLY: neither pre-existing command may be disturbed
+          [ "$(cmds "$T/a.json")" = '["echo group-one","echo NEW","echo group-two"]' ] \
+            && echo "  ok   ...appended to the FIRST matching entry, nothing else touched" \
+            || { echo "  FAIL add-only violated: $(cmds "$T/a.json")"; fail=1; }
+
+          # not specific to matcher-less events — two entries carrying the same matcher token
+          printf '%s' '{"hooks":{"TestEvent":[{"matcher":"startup","hooks":[{"type":"command","command":"echo g1"}]},{"matcher":"startup","hooks":[{"type":"command","command":"echo g2"}]}]}}' > "$T/b.json"
+          ./bin/ensure-hook.sh --event TestEvent --matcher startup --command 'echo NEW' --settings "$T/b.json"
+          [ "$(n_new "$T/b.json")" = "1" ] \
+            && echo "  ok   same-matcher entries: wired once" \
+            || { echo "  FAIL wired $(n_new "$T/b.json") times across same-matcher entries"; fail=1; }
+
+          # re-running stays the documented no-op, and does not drift the file
+          before="$(cat "$T/a.json")"
+          out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo NEW' --settings "$T/a.json" 2>&1)"
+          { [ -z "$out" ] && [ "$before" = "$(cat "$T/a.json")" ]; } \
+            && echo "  ok   re-running is still a silent no-op" \
+            || { echo "  FAIL re-run was not a no-op: $out"; fail=1; }
+
+          # --check must now SAY something about a doubled hook, whatever created it: this
+          # defect, a hand edit, or two tools wiring the same command. Silence here is what
+          # let the duplicate above pass for correct wiring.
+          printf '%s' '{"hooks":{"TestEvent":[{"hooks":[{"type":"command","command":"echo NEW"}]},{"hooks":[{"type":"command","command":"echo NEW"}]}]}}' > "$T/dupe.json"
+          keep="$(cat "$T/dupe.json")"
+          chk="$(./bin/ensure-hook.sh --event TestEvent --command 'echo NEW' --settings "$T/dupe.json" --check 2>&1)"; rc=$?
+          printf '%s\n' "$chk"
+          printf '%s' "$chk" | grep -q 'duplicate' \
+            && echo "  ok   --check reports the count greater than one" \
+            || { echo "  FAIL --check is silent about a doubled hook"; fail=1; }
+          [ "$rc" = "0" ] \
+            && echo "  ok   ...and still exits 0, so it can never block a session start" \
+            || { echo "  FAIL --check exited $rc"; fail=1; }
+          [ "$keep" = "$(cat "$T/dupe.json")" ] \
+            && echo "  ok   ...and reports without writing: add-only never removes a hook" \
+            || { echo "  FAIL --check mutated the settings file"; fail=1; }
+
+          # a command under two DISJOINT matchers is legitimate and never double-fires —
+          # flagging it would make the new report noise the day it shipped
+          printf '%s' '{"hooks":{"TestEvent":[{"matcher":"startup","hooks":[{"type":"command","command":"echo NEW"}]},{"matcher":"resume","hooks":[{"type":"command","command":"echo NEW"}]}]}}' > "$T/disjoint.json"
+          d="$(./bin/ensure-hook.sh --event TestEvent --matcher startup --command 'echo NEW' --settings "$T/disjoint.json" --check 2>&1)"
+          [ -z "$d" ] \
+            && echo "  ok   disjoint matchers are not reported as duplicates" \
+            || { echo "  FAIL false duplicate on disjoint matchers: $d"; fail=1; }
+
+          # ...but OVERLAPPING ones are, and that is not a false positive: this is the
+          # partial-overlap append the tool documents (add-only cannot collapse an existing
+          # NARROWER matcher), and on a startup event both entries really do fire. Pinned so
+          # a later reader does not "fix" the report by silencing this case.
+          printf '%s' '{"hooks":{"TestEvent":[{"matcher":"startup","hooks":[{"type":"command","command":"echo NEW"}]},{"matcher":"startup|resume","hooks":[{"type":"command","command":"echo NEW"}]}]}}' > "$T/overlap.json"
+          v="$(./bin/ensure-hook.sh --event TestEvent --matcher startup --command 'echo NEW' --settings "$T/overlap.json" --check 2>&1)"
+          printf '%s' "$v" | grep -q '2 times per event' \
+            && echo "  ok   overlapping matchers that really do double-fire are reported" \
+            || { echo "  FAIL overlap went unreported: $v"; fail=1; }
+
+          exit "$fail"
