@@ -14,7 +14,7 @@
 # to the run that adopts it, instead of one run later.
 #
 # Usage: update.sh [--wiki DIR]
-#   UPDATE_REEXEC=0          apply with the pre-update copy, the pre-v1.55 behaviour
+#   UPDATE_REEXEC=0          apply with the pre-update copy, the pre-v1.54.2 behaviour
 #   UPDATE_CONTINUE_FROM=X   internal: marks the apply phase; do not set by hand
 set -euo pipefail
 
