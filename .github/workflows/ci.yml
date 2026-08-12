@@ -387,6 +387,50 @@ jobs:
             echo "a wikilink inside a code span was treated as a link"; exit 1
           fi
 
+      - name: A lint reports every note, and cannot end quietly short of its summary
+        run: |
+          # REGRESSION, and the SECOND instance of one pattern: an assignment from a
+          # pipeline whose first command may legitimately match nothing, under `set -euo
+          # pipefail`. `grep` exits 1 on no-match, pipefail carries it out, -e aborts the
+          # assignment, and the loop stops there — so the FIRST note with no wikilinks
+          # ended the run and every note sorting after it went unchecked.
+          #
+          # It is fail-OPEN despite exiting non-zero, because a lint already exits 1
+          # whenever it finds an error: the status carries no news. What the abort takes
+          # away is the summary line — the only statement of how many notes were checked —
+          # so a truncated report reads exactly like a vault that got cleaner. And the note
+          # that silences the linter is itself a note the linter wanted to complain about.
+          #
+          # Two properties are pinned here: zero wikilinks is REPORTED (not refused, not
+          # fatal), and a run that dies mid-loop for any other reason says so on stderr
+          # rather than ending with a shorter, clean-looking report.
+          V="$RUNNER_TEMP/lm"; rm -rf "$V"; mkdir -p "$V/memory"; fail=0
+          mk() { printf -- '---\ntitle: %s\ntype: memory\nboundary: personal\nupdated: 2026-01-01\n---\n%s\n' "$1" "$2" > "$V/memory/$1.md"; }
+          mk aaa-linkless 'no links at all in this note'
+          mk zzz-linked   'see [[aaa-linkless]] and [[some-stub]]'
+
+          out="$(./bin/lint-memory.sh --wiki "$V" 2>&1 || true)"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'only 0 outbound' \
+            && echo "  ok   a linkless note is REPORTED, not fatal" \
+            || { echo "  FAIL the linkless note produced no finding"; fail=1; }
+          printf '%s' "$out" | grep -q '^zzz-linked$' \
+            && echo "  ok   ...and the note sorting after it is still checked" \
+            || { echo "  FAIL the run stopped at the linkless note"; fail=1; }
+          printf '%s' "$out" | grep -q 'memory lint: 2 notes' \
+            && echo "  ok   ...and the summary states the count that was checked" \
+            || { echo "  FAIL no summary line — a truncated report reads as a clean one"; fail=1; }
+
+          # the class, not the instance: force an abort mid-loop and require it to announce
+          # itself. Without this, the next `set -e` abort in this family is silent again.
+          sed 's@^  # valid type$@  [ "$slug" != aaa-linkless ] || false@' ./bin/lint-memory.sh > "$V/aborting.sh"
+          aout="$(bash "$V/aborting.sh" --wiki "$V" 2>&1 || true)"
+          printf '%s' "$aout" | grep -qi 'ABORTED' \
+            && echo "  ok   a run that dies mid-loop says the report is incomplete" \
+            || { echo "  FAIL a truncated run ended quietly: [$aout]"; fail=1; }
+
+          exit "$fail"
+
       - name: The updater obeys the convention the engine mandates
         run: |
           # update.sh must touch canonical for the SUBMODULE (a gitlink cannot live in a
@@ -454,6 +498,63 @@ jobs:
           grep -rn "commit -am ['\"]*Bump engine" "$GITHUB_WORKSPACE/bin" \
             && { echo "  FAIL a remedy still says -am, which sweeps a peer's work"; fail=1; } \
             || echo "  ok   no tool prints a -am pin-bump remedy"
+
+          # (2b) THE SAME VAULT WITH NOTHING OPEN must behave identically. The deferral was
+          # keyed on linked worktrees EXISTING, but isolation being configured and a
+          # worktree being open are different states — and between sessions the second is
+          # false while the first stays true. In that ordinary state the page was written
+          # and staged in canonical, where the guard then refused the only commit that
+          # would land it, and the printed remedy was WIKI_WORKTREE=0: the workaround
+          # v1.52.0 removed for the pin, reappearing one component over for the page. The
+          # two runs must differ in nothing the caller did not ask about.
+          for w in $(git -C "$V" worktree list --porcelain | awk '/^worktree /{print substr($0,10)}' | tail -n +2); do
+            git -C "$V" worktree remove --force "$w" >/dev/null 2>&1 || true
+          done
+          git -C "$V" worktree prune >/dev/null 2>&1 || true
+          [ "$(git -C "$V" worktree list --porcelain | grep -c '^worktree ')" = "1" ] \
+            && echo "  ok   fixture now has no linked worktrees" \
+            || { echo "  FAIL could not clear the fixture's worktrees"; fail=1; }
+          [ -x "$V/.githooks/pre-commit" ] \
+            && echo "  ok   ...and its gate is armed, as adoption leaves it" \
+            || { echo "  FAIL fixture gate is not wired; the case under test cannot arise"; fail=1; }
+          git -C "$V/engine" checkout -q v1.0.0
+          before2="$(git -C "$V" hash-object repos/e.md)"
+          out3="$(WIKI_PATH="$V" "$V/engine/bin/update.sh" 2>&1 || true)"
+          [ "$(git -C "$V" hash-object repos/e.md)" = "$before2" ] \
+            && echo "  ok   with isolation on and NO worktree open, the page is still deferred" \
+            || { echo "  FAIL update.sh wrote into canonical because no worktree happened to be open"; fail=1; }
+          git -C "$V" diff --cached --name-only | grep -qx 'repos/e.md' \
+            && { echo "  FAIL ...and staged it in the tree whose gate refuses to commit it"; fail=1; } \
+            || echo "  ok   ...and staged nothing but the pointer"
+          printf '%s' "$out3" | grep -q 'ref: v1.1.0' \
+            && echo "  ok   ...and told the operator what to apply" \
+            || { echo "  FAIL the deferred values are not printed"; fail=1; }
+          printf '%s' "$out3" | grep -q 'WIKI_WORKTREE=0' \
+            && { echo "  FAIL the remedy tells the operator to turn the gate off"; fail=1; } \
+            || echo "  ok   ...without recommending that isolation be disabled"
+
+          # (2c) the deferral predicate itself, at both ends. It must follow the GATE, not
+          # the worktree count: a vault that never wired one, or whose core.hooksPath
+          # resolves to a missing directory (git treats that as "no hooks" and commits
+          # without a word), can commit in canonical and must not have writes deferred
+          # away from it.
+          (
+            . "$GITHUB_WORKSPACE/bin/wiki-root-lib.sh"
+            g_armed="$(canonical_commit_gated "$V")"
+            # a subshell, not a `VAR=x func` prefix: bash keeps such an assignment in
+            # effect after a FUNCTION returns, which would silently disarm the next case
+            g_off="$(WIKI_WORKTREE=0; canonical_commit_gated "$V")"
+            hp_was="$(git -C "$V" config --local core.hooksPath)"
+            git -C "$V" config --local core.hooksPath "$V/.nonexistent-hooks"
+            g_inert="$(canonical_commit_gated "$V")"
+            git -C "$V" config --local core.hooksPath "$hp_was"
+            rc=0
+            [ "$g_armed" = "1" ] || { echo "  FAIL an armed gate reads as ungated"; rc=1; }
+            [ -z "$g_off" ]      || { echo "  FAIL WIKI_WORKTREE=0 still reads as gated"; rc=1; }
+            [ -z "$g_inert" ]    || { echo "  FAIL an INERT hooksPath reads as gated"; rc=1; }
+            [ "$rc" = "0" ] && echo "  ok   the predicate follows the gate: armed / opted-out / inert"
+            exit "$rc"
+          ) || fail=1
 
           # (3) NO REGRESSION for a vault without worktrees: canonical IS its working tree
           W="$(WIKI_PATH="$V" "$VW" ensure 2>/dev/null)"
@@ -3027,6 +3128,58 @@ jobs:
           grep -rq 'boundary: research' "$V/raw/sessions" \
             && echo "  ok   ...stamped with the boundary the vault declares, not a literal" \
             || { echo "  FAIL capture file missing or stamped with the wrong boundary"; fail=1; }
+
+          exit "$fail"
+
+      - name: The capture hook cannot hang on an stdin nobody closes
+        run: |
+          # REGRESSION: the hook payload was read from stdin with no bound. `[ -t 0 ]`
+          # guards the TERMINAL case, and a closed pipe reaches EOF on its own — but an
+          # OPEN pipe with no writer that ever closes it fails the tty test exactly as a
+          # genuine payload does, and the read never returns. No output, no exit status,
+          # nothing written; a hook that hangs also holds up whatever waits on it, and a
+          # stall has no status to attribute it to.
+          #
+          # THIS IS THE ENVIRONMENT THAT CANNOT SHOW THE BUG, which is why it needs a
+          # fixture: a runner hands each step an stdin that reaches EOF, so every existing
+          # capture step passes without redirecting. The fifo below supplies the state a
+          # supervisor, a cron wrapper, or a surrounding pipeline supplies in the field.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-ragstdin"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/ragstdin"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          V="$T/vault"; mkdir -p "$V/raw/sessions"
+          printf -- '---\nboundary: personal\n---\n\n# v\n' > "$V/CLAUDE.md"
+          R="$T/payload-repo"; mkdir -p "$R"; git -C "$R" init -q .
+          git -C "$R" commit -q --allow-empty -m seed
+
+          # 1. an open pipe nobody closes: must fall back to the no-payload path, promptly
+          mkfifo "$T/p"
+          ( exec sleep 60 > "$T/p" ) & holder=$!
+          start=$SECONDS; rc=0
+          ( cd "$R" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" ) < "$T/p" >/dev/null 2>&1 || rc=$?
+          elapsed=$((SECONDS - start))
+          kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true
+          [ "$elapsed" -lt 20 ] \
+            && echo "  ok   returned in ${elapsed}s instead of waiting forever" \
+            || { echo "  FAIL still blocked on an open pipe (${elapsed}s)"; fail=1; }
+          [ "$rc" = "0" ] \
+            && echo "  ok   ...with a status the caller can read" \
+            || { echo "  FAIL exit=$rc — a timeout must mean 'no payload', not failure"; fail=1; }
+          grep -rq 'repo: payload-repo' "$V/raw/sessions" \
+            && echo "  ok   ...and captured through the \$PWD fallback that already existed" \
+            || { echo "  FAIL nothing was captured after the bounded read"; fail=1; }
+
+          # 2. a real payload must still be READ — a bound that discards the hook JSON
+          #    would pass case 1 and break the wired path
+          rm -f "$V/raw/sessions"/*.md
+          printf '{"cwd":"%s"}' "$R" | ( cd "$GITHUB_WORKSPACE" && WIKI_PATH="$V" ./bin/rag-capture.sh ) >/dev/null 2>&1 \
+            && echo "  ok   a payload that arrives and closes is still captured" \
+            || { echo "  FAIL the wired hook path broke"; fail=1; }
+          grep -rq 'repo: payload-repo' "$V/raw/sessions" \
+            && echo "  ok   ...and the repo came from the payload, not from \$PWD" \
+            || { echo "  FAIL the hook JSON was discarded by the bounded read"; fail=1; }
 
           exit "$fail"
 

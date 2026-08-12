@@ -1,6 +1,6 @@
 ---
 slug: rag-capture-blocks-forever-when-stdin-is-an-open-pipe
-outcome: open
+outcome: accepted
 received: 2026-08-12
 ---
 
