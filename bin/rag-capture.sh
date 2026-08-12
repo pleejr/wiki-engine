@@ -23,10 +23,18 @@
 #
 # Two modes, auto-selected:
 #   - cwd IS a git repo        -> capture that one repo.
-#   - cwd is a WORKSPACE ROOT  -> scan immediate child dirs and capture each repo you
-#     (parent of many repos)      TOUCHED this session (dirty tree, or a commit within
-#                                 RAG_CAPTURE_SINCE hours, default 12). Untouched repos
-#                                 are skipped, so it stays signal not noise.
+#   - cwd is a WORKSPACE ROOT  -> scan immediate child dirs and capture each repo with
+#     (parent of many repos)      activity inside the window (RAG_CAPTURE_SINCE hours,
+#                                 default 12): a commit, a working-tree change made in
+#                                 the window, or a fetch/checkout. Every clause is
+#                                 time-bounded on purpose — "the tree is dirty" is a
+#                                 state a repo can sit in indefinitely, so it selected
+#                                 repos nobody had opened, on every run, forever.
+#                                 What it CANNOT see: work that only reads (`git log`,
+#                                 `git diff`, browsing files) writes nothing, so a
+#                                 read-only session in a clean repo with old commits is
+#                                 still missed. Pass --note, or capture from inside the
+#                                 repo, when that session is the one worth keeping.
 # Note: it captures the repo(s) you were in; point WIKI_PATH at the boundary-appropriate
 # vault and don't enable the hook where even filenames/commit subjects are sensitive —
 # especially at a parent that mixes personal + work repos.
@@ -130,11 +138,82 @@ $commits"
   printf '\n## %s — %s@%s (%s)\n\n```\n%s\n```\n' "$TS" "$name" "$branch" "$head" "$body"
 }
 
-# touched DIR — 0 if the repo has uncommitted changes or a commit within the window
-# (RAG_CAPTURE_SINCE hours, default 12) — i.e. worth capturing this session.
+# ── the touch test — every clause must be bounded by the window ────────────────
+# WINDOW_REF: a file whose mtime is the START of the window, so working-tree dirt can be
+# age-tested with `find -newer` (portable — stat(1)'s mtime flag is not). Empty means this
+# platform's date(1) does neither arithmetic form; the age test is then skipped and any
+# dirt counts, i.e. the old behaviour. That fallback direction is deliberate: over-capture
+# is noise, under-capture loses the session the user just had.
+WINDOW_REF=""
+WINDOW_TRIED=""
+window_ref() {
+  if [ -z "$WINDOW_TRIED" ]; then
+    WINDOW_TRIED=1
+    local h="${RAG_CAPTURE_SINCE:-12}" stamp f
+    stamp="$(date -v-"${h}"H +%Y%m%d%H%M 2>/dev/null || date -d "$h hours ago" +%Y%m%d%H%M 2>/dev/null || true)"
+    if [ -n "$stamp" ]; then
+      f="${TMPDIR:-/tmp}/rag-capture-window.$$"
+      if touch -t "$stamp" "$f" 2>/dev/null; then
+        WINDOW_REF="$f"; trap 'rm -f "$WINDOW_REF"' EXIT
+      fi
+    fi
+  fi
+  [ -n "$WINDOW_REF" ]
+}
+
+# recent PATH [find-opts] — 0 if anything at PATH was modified inside the window. A
+# directory is judged by its newest entry, so an untracked DIR is aged by its contents.
+recent() { [ -n "$(find "$@" -newer "$WINDOW_REF" -print -quit 2>/dev/null)" ]; }
+
+# dirt_recent DIR — 0 if the working tree holds a change made inside the window.
+# The mere EXISTENCE of dirt is not a session signal: an untracked directory some tool
+# creates and nobody commits leaves the repo dirty indefinitely, so it selected that repo
+# on every run from then on — the same block forever, and unbounded in time rather than
+# incidental. Age the dirt rather than ignoring untracked dirt wholesale: a brand-new
+# project's first session is all untracked and has no commit to be selected by instead.
+dirt_recent() {
+  local d="$1" rec p
+  # streamed, not captured: a NUL-separated list cannot survive a shell variable
+  while IFS= read -r -d '' rec; do
+    p="${rec:3}"                       # -z records are "XY <path>", unquoted
+    [ -n "$p" ] || continue
+    window_ref || return 0             # dirt exists and cannot be aged -> it counts
+    if [ -e "$d/$p" ]; then
+      if recent "$d/$p"; then return 0; fi
+    # a deleted path has nothing to stat, but removing it bumped its parent directory
+    elif recent "$(dirname "$d/$p")" -maxdepth 0; then
+      return 0
+    fi
+  done < <(git -C "$d" status --porcelain -z 2>/dev/null)
+  return 1
+}
+
+# access_recent DIR — 0 if the repo shows a git operation from inside the window that
+# leaves the tree clean and adds no commit: a fetch (FETCH_HEAD) or a HEAD reflog entry
+# (checkout/switch/reset/pull). Without this, a session spent reading a repo — fetch, read
+# the diff, review — captured nothing at all when its tree was clean and its commits old.
+# Measured, not assumed: `log`, `show`, `diff`, `status` and `cat-file` write NEITHER file,
+# so purely-read work stays invisible; SCHEMA.md says so rather than implying otherwise.
+# The index is deliberately NOT used, though `git diff`-shaped work refreshes it: this
+# script runs `status --porcelain` on every child repo, which rewrites a stale index —
+# so the first capture would stamp every repo in the workspace as just-accessed.
+access_recent() {
+  local d="$1" gd f
+  window_ref || return 1
+  gd="$(git -C "$d" rev-parse --absolute-git-dir 2>/dev/null || true)"
+  [ -n "$gd" ] || return 1
+  for f in FETCH_HEAD logs/HEAD; do
+    if [ -e "$gd/$f" ] && recent "$gd/$f"; then return 0; fi
+  done
+  return 1
+}
+
+# touched DIR — 0 if the repo saw work inside the window (RAG_CAPTURE_SINCE hours,
+# default 12): a commit, a change to the working tree, or a fetch/checkout.
 touched() {
-  [ -n "$(git -C "$1" status --porcelain 2>/dev/null)" ] && return 0
   [ -n "$(git -C "$1" log -1 --since="${RAG_CAPTURE_SINCE:-12} hours ago" --pretty=%h 2>/dev/null)" ] && return 0
+  dirt_recent "$1" && return 0
+  access_recent "$1" && return 0
   return 1
 }
 
@@ -150,7 +229,9 @@ else
     if touched "$d"; then entries="$entries$(emit_repo "$d")"; found=$((found + 1)); fi
   done
   if [ "$found" -eq 0 ]; then
-    entries="$(printf '\n## %s — workspace: %s (no touched repos)\n\n```\ndir: %s\nno child repos with changes or commits in the last %s h\n```\n' \
+    # A read-only session lands here too — nothing it did is visible in repo state — so
+    # the message names the criteria rather than asserting no repo was worked in.
+    entries="$(printf '\n## %s — workspace: %s (no repo activity found)\n\n```\ndir: %s\nno child repo was changed, committed to, fetched or checked out in the last %s h\n(work that only READ a repo leaves no trace this scan can see)\n```\n' \
       "$TS" "$(basename "$REPO")" "$REPO" "${RAG_CAPTURE_SINCE:-12}")"
   fi
 fi

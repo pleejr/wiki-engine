@@ -3029,3 +3029,105 @@ jobs:
             || { echo "  FAIL capture file missing or stamped with the wrong boundary"; fail=1; }
 
           exit "$fail"
+
+      - name: Workspace capture selects repos on session activity, not on being dirty
+        run: |
+          # REGRESSION: the workspace-root scan selected a child repo on a PERSISTENT
+          # property — "the working tree is dirty" — not a session-scoped one. An untracked
+          # directory some tool creates and nobody commits made its repo touched on EVERY
+          # run from then on, while the repo the session was actually about (read-only work:
+          # fetches, a diff, a review) had a clean tree and old commits and was skipped.
+          # Fail-open: the capture succeeds and looks correct, and the block it indexes for
+          # recall says the work happened somewhere it did not.
+          #
+          # Both directions are pinned here because a fix for either one alone is wrong:
+          # dropping untracked-only dirt (the report's cheap option) would also stop
+          # capturing a brand-new project whose first session has no commits yet.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-ragtouch"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          CAP="$GITHUB_WORKSPACE/bin/rag-capture.sh"
+          T="$RUNNER_TEMP/ragtouch"; rm -rf "$T"; mkdir -p "$T/ws"; fail=0
+          V="$T/vault"; mkdir -p "$V"
+          printf -- '---\nboundary: personal\n---\n# v\n' > "$V/CLAUDE.md"
+          OLD=202001010000            # fixed, so the fixture never drifts with the clock
+          ODATE='2020-01-01T00:00:00+0000'
+
+          mkrepo() {                 # a child repo whose only commit is far outside the window
+            d="$T/ws/$1"; mkdir -p "$d"; git -C "$d" init -q .
+            printf 'seed\n' > "$d/f.txt"; git -C "$d" add f.txt
+            GIT_AUTHOR_DATE="$ODATE" GIT_COMMITTER_DATE="$ODATE" git -C "$d" commit -qm "old $1"
+          }
+          age() { find "$T/ws/$1" -exec touch -t "$OLD" {} + ; }   # nothing here was touched
+
+          # ── must NOT be captured: dirt that has sat there indefinitely ──────────────
+          mkrepo stale-untracked
+          mkdir -p "$T/ws/stale-untracked/.some-tool-dir"
+          printf 'x\n' > "$T/ws/stale-untracked/.some-tool-dir/cfg"
+          age stale-untracked
+          mkrepo stale-modified                       # the tracked half of the same problem:
+          printf 'edit\n' >> "$T/ws/stale-modified/f.txt"   # dirty for months, untouched today
+          age stale-modified
+          mkrepo untouched-clean
+          age untouched-clean
+
+          # ── must BE captured: work that happened inside the window ──────────────────
+          mkrepo edited-now; age edited-now
+          printf 'edit\n' >> "$T/ws/edited-now/f.txt"        # tracked file edited this session
+          mkrepo created-now; age created-now
+          printf 'new\n' > "$T/ws/created-now/brand-new.txt" # new file, nothing committed yet
+          mkrepo fetched-now                                 # read-only work, tree stays clean
+          git clone -q "$T/ws/fetched-now" "$T/origin" 2>/dev/null
+          git -C "$T/ws/fetched-now" remote add origin "$T/origin"
+          age fetched-now
+          git -C "$T/ws/fetched-now" fetch -q origin         # writes FETCH_HEAD, touches no file
+          mkrepo switched-now
+          git -C "$T/ws/switched-now" branch probe
+          age switched-now
+          git -C "$T/ws/switched-now" checkout -q probe      # writes the HEAD reflog only
+          [ -n "$(git -C "$T/ws/switched-now" status --porcelain)" ] \
+            && { echo "  FAIL fixture: the branch switch dirtied the tree"; fail=1; }
+          [ -z "$(git -C "$T/ws/fetched-now" status --porcelain)" ] \
+            && [ -z "$(git -C "$T/ws/untouched-clean" status --porcelain)" ] \
+            || { echo "  FAIL fixture: a repo meant to be clean is dirty"; fail=1; }
+          [ -n "$(git -C "$T/ws/stale-untracked" status --porcelain)" ] \
+            || { echo "  FAIL fixture: the stale repo is not dirty, so this proves nothing"; fail=1; }
+
+          # </dev/null on every run: the script reads hook JSON from stdin, so it blocks
+          # forever on an stdin that is an open pipe rather than at EOF. Whether a runner's
+          # stdin is one or the other is not this gate's business to depend on.
+          WIKI_PATH="$V" "$CAP" --repo "$T/ws" </dev/null >/dev/null
+          got="$(grep -ho 'repo: [a-z-]*' "$V/raw/sessions/"*.md | sed 's/repo: //' | sort -u | tr '\n' ' ')"
+          echo "  captured: $got"
+          for r in edited-now created-now fetched-now switched-now; do
+            case " $got " in *" $r "*) echo "  ok   $r captured";;
+              *) echo "  FAIL $r was worked in inside the window and was not captured"; fail=1;; esac
+          done
+          for r in stale-untracked stale-modified untouched-clean; do
+            case " $got " in *" $r "*)
+              echo "  FAIL $r was not touched this session and was captured"; fail=1;;
+              *) echo "  ok   $r skipped";; esac
+          done
+
+          # and it must stay skipped on every later run, which is the unbounded-in-time half
+          rm -f "$V/raw/sessions/"*.md
+          WIKI_PATH="$V" "$CAP" --repo "$T/ws" </dev/null >/dev/null
+          grep -q 'repo: stale-untracked' "$V/raw/sessions/"*.md \
+            && { echo "  FAIL the same untouched repo is re-captured every run, forever"; fail=1; } \
+            || echo "  ok   a permanently-dirty repo does not reappear on the next run"
+
+          # The age test must never be what silences capture. On a platform whose date(1)
+          # does neither form of the arithmetic, dirt has to count again — over-capturing is
+          # noise, under-capturing loses the session — so this pins the fallback direction.
+          N="$RUNNER_TEMP/nodate"; mkdir -p "$N"
+          printf '#!/bin/sh\nfor a in "$@"; do case "$a" in -v*|-d*) exit 1;; esac; done\nexec %s "$@"\n' \
+            "$(command -v date)" > "$N/date"
+          chmod +x "$N/date"
+          rm -f "$V/raw/sessions/"*.md
+          PATH="$N:$PATH" WIKI_PATH="$V" "$CAP" --repo "$T/ws" </dev/null >/dev/null
+          grep -q 'repo: stale-untracked' "$V/raw/sessions/"*.md \
+            && echo "  ok   with no window arithmetic available it captures any dirt again" \
+            || { echo "  FAIL a date(1) without either form makes the scan capture less, silently"; fail=1; }
+
+          exit "$fail"
