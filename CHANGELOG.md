@@ -6,7 +6,8 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+- **`lint-docs.sh`'s own header undercounted its checks** — it said "Two cheap, deterministic checks", listed three, and ran four; the fourth (v1.51.0's worktree-names-canonical gate) existed only as a numbered section in the body and in the success line. Comment-only, so untagged. Found by a `verify` pass on a consumer's engine page, which had the count right at four and was checked *against* this header — the direction that catches a source defect rather than propagating it.
 
 ## [1.53.0] — 2026-08-11
 
