@@ -31,6 +31,12 @@
 # vault and don't enable the hook where even filenames/commit subjects are sensitive —
 # especially at a parent that mixes personal + work repos.
 #
+# WIKI_PATH must be a VAULT, not merely a directory that exists. The boundary stamped on
+# each capture file is read from the vault's own CLAUDE.md (bin/vault-boundary.sh) and is
+# never defaulted, so a target with no readable `boundary:` declaration is refused by name
+# rather than captured under a guess. Refusing is deliberate: a mis-stamped page is dropped
+# from recall silently by rag-build's cross-boundary filter, which is worse than no page.
+#
 # Usage:
 #   rag-capture.sh                         capture cwd's git state to $WIKI_PATH
 #   rag-capture.sh --wiki DIR --repo DIR   explicit targets
@@ -70,8 +76,26 @@ fi
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
 [ -n "$REPO" ] || REPO="$PWD"
 
-BOUND="$(grep -m1 'boundary:' "$WIKI/CLAUDE.md" 2>/dev/null | sed -E 's/.*boundary:[[:space:]]*//; s/[^a-z].*//')"
-[ -n "$BOUND" ] || BOUND="personal"
+# The vault's boundary stamps every capture file, so it is ASKED of the vault
+# (vault-boundary.sh — the engine names no value) and never guessed. A directory that
+# exists but declares none is not a vault, and is refused here exactly as a missing one
+# is one line above: the likely misconfiguration is a hook carrying an absolute
+# WIKI_PATH that now points at a moved, renamed or stale copy, and a hook's exit status
+# is read by nobody, so a quiet refusal is indistinguishable from a quiet session.
+# `|| true` is load-bearing: vault-boundary exits 1 when there is no declaration, and
+# under `set -e` + `pipefail` that aborted the assignment with no output on EITHER
+# stream — the defect this refusal replaces. Do not restore a default: stamping a
+# guessed boundary is worse than refusing, because rag-build's cross-boundary filter
+# drops a mis-stamped page from recall silently.
+VB="$(dirname "${BASH_SOURCE[0]}")/vault-boundary.sh"
+[ -x "$VB" ] || { echo "error: missing $VB — broken engine checkout" >&2; exit 1; }
+BOUND="$("$VB" --wiki "$WIKI" 2>/dev/null || true)"
+[ -n "$BOUND" ] || {
+  echo "error: no readable 'boundary:' declaration in $WIKI/CLAUDE.md — not a vault" >&2
+  echo "       rag-capture stamps each capture file with the vault's own boundary and will not guess one." >&2
+  echo "       Point \$WIKI_PATH at a vault, or restore the declaration in that file." >&2
+  exit 1
+}
 
 SESS_DIR="$WIKI/raw/sessions"
 mkdir -p "$SESS_DIR"

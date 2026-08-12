@@ -2934,3 +2934,87 @@ jobs:
             || { echo "  FAIL overlap went unreported: $v"; fail=1; }
 
           exit "$fail"
+
+      - name: rag-capture refuses a non-vault out loud, and never guesses a boundary
+        run: |
+          # The boundary read was a bare `grep ... 2>/dev/null` under `set -euo pipefail`.
+          # grep exits 1 on no-match and 2 on a missing file; pipefail propagated that out
+          # of the command substitution and -e aborted the assignment — so a WIKI_PATH
+          # pointing at a directory that EXISTS but is not a vault exited non-zero with
+          # NOTHING on stdout or stderr, while the missing-directory case one line above
+          # printed "error: no vault at <path>". The documented caller is a SessionEnd hook
+          # whose exit status and stderr nobody reads, so the observable was identical to a
+          # correctly-wired capture on a quiet session: an operator who moved, renamed or
+          # re-cloned their vault lost capture permanently with no signal anywhere.
+          #
+          # The naive repair would have been WORSE than the bug. A dead `BOUND="personal"`
+          # fallback sat on the next line, unreachable only because -e killed the script
+          # first; merely silencing the abort would have stamped a GUESSED boundary onto
+          # every capture file, and rag-build's cross-boundary filter drops a mis-stamped
+          # page from recall silently. So this gate asserts the MESSAGE and the absence of
+          # a guess, not just the exit status — a silent non-zero exit is the state fixed.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-ragvault"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/ragvault"; rm -rf "$T"; mkdir -p "$T"; fail=0
+
+          # the cwd a SessionEnd hook would report — a real repo, so nothing downstream
+          # of the boundary read is what refuses
+          R="$T/repo"; mkdir -p "$R"; git -C "$R" init -q .
+          git -C "$R" commit -q --allow-empty -m seed
+          HOOK="{\"cwd\":\"$R\"}"
+
+          # run WIKI -> sets rc/out/err
+          run() { out="$(printf '%s' "$HOOK" | WIKI_PATH="$1" ./bin/rag-capture.sh 2>"$T/err")"; rc=$?; err="$(cat "$T/err")"; }
+
+          # 1. a directory that exists, has the capture tree, and has NO CLAUDE.md at all
+          mkdir -p "$T/nocm/raw/sessions"
+          run "$T/nocm"
+          [ "$rc" != "0" ] \
+            && echo "  ok   a directory with no CLAUDE.md is refused" \
+            || { echo "  FAIL captured into a directory that is not a vault"; fail=1; }
+          printf '%s' "$err" | grep -q "$T/nocm/CLAUDE.md" \
+            && echo "  ok   ...and the refusal names the file it looked in" \
+            || { echo "  FAIL refusal is silent or does not name the file (stderr: [$err])"; fail=1; }
+          printf '%s' "$err" | grep -q "boundary:" \
+            && echo "  ok   ...and names the declaration it wanted" \
+            || { echo "  FAIL refusal does not name the missing declaration (stderr: [$err])"; fail=1; }
+          [ -z "$(ls -A "$T/nocm/raw/sessions")" ] \
+            && echo "  ok   ...and wrote nothing" \
+            || { echo "  FAIL a capture file was written into a non-vault"; fail=1; }
+
+          # 2. a CLAUDE.md that exists but carries no declaration — the hand-edited case
+          mkdir -p "$T/nobnd/raw/sessions"
+          printf '# notes\n\nno declaration here\n' > "$T/nobnd/CLAUDE.md"
+          run "$T/nobnd"
+          [ "$rc" != "0" ] && [ -n "$err" ] \
+            && echo "  ok   a CLAUDE.md with no declaration is refused, loudly" \
+            || { echo "  FAIL exit=$rc stderr=[$err] — silent non-zero exit is the defect"; fail=1; }
+          [ -z "$(ls -A "$T/nobnd/raw/sessions")" ] \
+            && echo "  ok   ...and wrote nothing" \
+            || { echo "  FAIL a capture file was written with a guessed boundary"; fail=1; }
+          grep -q 'boundary: personal' "$T/nobnd/raw/sessions"/*.md 2>/dev/null \
+            && { echo "  FAIL the boundary was GUESSED rather than read"; fail=1; } \
+            || echo "  ok   ...and did not guess a boundary to stamp it with"
+
+          # 3. the neighbouring missing-directory case must still refuse the same way —
+          #    the two must not diverge again
+          run "$T/does-not-exist"
+          [ "$rc" != "0" ] && printf '%s' "$err" | grep -q "$T/does-not-exist" \
+            && echo "  ok   a missing directory still refuses by name" \
+            || { echo "  FAIL exit=$rc stderr=[$err]"; fail=1; }
+
+          # 4. a real vault must still CAPTURE, stamped with the boundary it DECLARES —
+          #    a gate that only proves refusal would pass on a script that refuses always
+          V="$T/vault"; mkdir -p "$V/raw/sessions"
+          printf -- '---\nboundary: research\n---\n\n# v\n' > "$V/CLAUDE.md"
+          run "$V"
+          [ "$rc" = "0" ] \
+            && echo "  ok   a real vault still captures" \
+            || { echo "  FAIL a valid vault was refused: exit=$rc stderr=[$err]"; fail=1; }
+          grep -rq 'boundary: research' "$V/raw/sessions" \
+            && echo "  ok   ...stamped with the boundary the vault declares, not a literal" \
+            || { echo "  FAIL capture file missing or stamped with the wrong boundary"; fail=1; }
+
+          exit "$fail"

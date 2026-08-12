@@ -1,8 +1,12 @@
 ---
 slug: rag-capture-aborts-silently-when-wiki-path-is-not-a-vault
-outcome: open
+outcome: accepted
 received: 2026-08-12
 ---
+
+**Intake note (engine-dev).** Reproduced at HEAD; all five cases behaved exactly as reported. Shipped the refusal as asked, and honoured the hard constraint against defaulting — the engine already has a gate (`lint-docs.sh`) built on the same reasoning, because a guessed boundary produces a page that `rag-build`'s cross-boundary filter drops from recall silently. That constraint turned out to be load-bearing in a way the report could not see: a dead `BOUND="personal"` fallback sat on the next line, unreachable only because `set -e` killed the script first, so the minimal repair (just silence the abort) would have *activated* the mis-stamp instead of fixing anything.
+
+Implemented slightly wider than the suggested fix and for a reason worth knowing: the boundary is now read via `bin/vault-boundary.sh`, the engine's single place for asking a vault its boundary, rather than by a fourth private `grep`. Two corrections to the report: the sweep of `bin/` was not clean — `bin/lint-memory.sh` has the same shape (a possibly-no-match `grep` in a command substitution under `set -euo pipefail`), and a memory note with zero `[[wikilinks]]` aborts that linter silently mid-run; it is a separate defect with a different remedy and is being filed on its own. And the operator-visibility half of the failure shape — that a SessionEnd hook's stderr reaches nobody — is real but out of scope here; refusing loudly is its prerequisite, and the surfacing belongs at *session start*, in `doctor.sh`, as its own proposal.
 
 HANDOFF — engine defect report
 slug: rag-capture-aborts-silently-when-wiki-path-is-not-a-vault

@@ -43,7 +43,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 | `recall.sh "query"` | Semantic search → `file:line` pointers into the real pages (`--json` for tools). |
 | `rag-build.sh` | (Re)build the `.rag` index from the markdown. Incremental; run after big edits (`checkpoint` does it). |
 | `rag-setup.sh` | Provision the self-contained `.rag/venv` CPU embedder (once per vault). `--force` to rebuild/change model. |
-| `rag-capture.sh` | Deterministic session auto-capture → `raw/sessions/`. Safe to run from a SessionEnd hook. |
+| `rag-capture.sh` | Deterministic session auto-capture → `raw/sessions/`. Safe to run from a SessionEnd hook. `WIKI_PATH` must be a **vault**, not just a directory that exists: the boundary stamped on each capture file is read from the vault's own `CLAUDE.md` and never defaulted, so a target with no readable declaration is **refused by name** rather than captured under a guess. |
 | `doctor.sh` | Freshness/health report: engine + RAG deps (+ security) + model. Reports only. |
 | `update.sh` | One-step apply: bump engine to latest tag (same-MAJOR), adopt, re-sync deps. Refuses MAJOR; stages, no commit. **Two trees, deliberately:** the pin is a gitlink and can only be staged in canonical, while a repo page is ordinary tracked content — so the page is written in the caller's worktree when they are in one, and when they are in canonical with live worktrees around it is **not written at all**, only printed for them to apply on their branch. The remedy commits the pointer **by path**, never `-am`, which in a shared checkout stages a concurrent session's modified files too. |
 | `engine-version.sh` | Pinned vs latest engine tag (run by `wiki-context`). |
