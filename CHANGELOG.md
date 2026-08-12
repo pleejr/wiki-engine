@@ -8,6 +8,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.53.0] — 2026-08-11
+
+Minor — `checkpoint` §3's confirm clause is scoped to the case it protects. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
+
+### Changed
+- **The prune confirm now attaches to *discarding*, not to pruning.** §3 mandated pruning promoted `raw/sessions` blocks and then closed with "confirm before removing", so a consumer following it literally ended every checkpoint asking permission to delete a block whose keeper was already in `log.md` — a question with no decision in it, since promotion is where the judgement happened and the spent copy decides nothing. §3 now names three states and confirms only the third: already promoted (prune unasked), worth keeping but unpromoted (promote it, which makes it the first case), and not worth keeping at all (a discard — unrecoverable, so confirm). `Proposal: checkpoint-prune-confirm-scope`
+  - **The invariant is untouched.** "Never delete content you haven't first promoted" reads exactly as before; what changed is which case the confirm covers. The intake review caught the draft getting this backwards — it had attached the confirm to unpromoted content, which reads as a confirm-gated route to deleting uncaptured work and would have *weakened* the rule above it while appearing to tighten it.
+  - **The two prune targets now get different defaults, because they differ in how mechanically "promoted" can be told.** A `raw/sessions` block is promoted when its keeper is visibly in a tracked page — near a lookup, so decide it in-session. A native memory note is promoted when its *content* is captured, which is a judgement about equivalence: unasked when you wrote both texts this session, confirmed when relying on an earlier session's claim.
+  - **A backlog is now a reportable symptom rather than a bigger confirmation.** Many blocks, or blocks spanning sessions, means the prune stopped running — the observable the v1.42.0–v1.51.0 wrong-tree defect never produced while it reported success for nine releases. A prompt answered the same way every time is camouflage for that, because "nothing to prune" and "the prune is broken" both end the turn quietly.
+  - The prune marker is now specified rather than assumed: a one-line `_(pruned <date>: …)_` in place of the removed block, so a buffer records its own history and a consumer with no such convention is not told to follow one.
+
 ## [1.52.0] — 2026-08-11
 
 Minor — two fail-open defects fixed, both reported from a consumer vault, and both the same shape one layer up from v1.51.0's: a tool that gives the reader an instruction only *someone else* can carry out. Adopt with `bin/adopt.sh` or `update.sh`; no migration.

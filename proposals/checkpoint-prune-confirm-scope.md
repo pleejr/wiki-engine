@@ -1,6 +1,6 @@
 ---
 slug: checkpoint-prune-confirm-scope
-outcome: open
+outcome: accepted
 received: 2026-08-11
 ---
 
