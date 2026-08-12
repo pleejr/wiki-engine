@@ -6,6 +6,26 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [1.54.0] — 2026-08-12
+
+Minor — three fail-open defects in the hook-wiring and auto-capture path, all reported from a consumer vault and all intaken together. Adopt with `bin/adopt.sh` or `update.sh`; no migration.
+
+Minor rather than patch because two consumed components change what they *do*, not just what they get right: `ensure-hook.sh` gains a duplicate report it never had, and `rag-capture.sh` changes which repos a workspace scan selects. Nothing needs migrating, but a consumer will see both.
+
+The three share a shape worth reading together. Every one of them **succeeded and printed success** while doing the wrong thing — a hook wired twice, a capture that stopped forever, a capture that recorded the wrong repos — so none was discoverable from the tool's own output, and each surfaced only as a downstream symptom that looked like something else. Duplicated wiring read as duplicated *content*; a permanently-dead capture read as a run of quiet sessions; a mis-selected repo read as a memory of work happening somewhere it did not.
+
+**In two of the three, the obvious repair would have been worse than the defect**, which is the argument for reproducing before designing rather than implementing the report:
+
+- Silencing `rag-capture.sh`'s abort would have reached a dead `BOUND="personal"` fallback on the next line and stamped a *guessed* boundary onto every capture file — dropped from recall silently by the cross-boundary filter. Refusing loudly is the fix; defaulting is the trap.
+- Dropping untracked-only dirt from the touch test — the cheap option the report offered first — would have stopped capturing a brand-new project's first session, which is all untracked and has no commit to be selected by instead.
+- The index mtime looks like the better access signal and was rejected **on measurement**: the scan runs `status --porcelain` on every child repo, which rewrites a stale index, so the first capture would stamp every repo as just-accessed — the reported symptom again with a new cause.
+
+The reporter's suggested fix was adopted as written in one case of three; in the others the observation held and the prescription did not.
+
+**Two things to check by hand after adopting**, because neither fix can repair state it did not create. Existing duplicate hook entries stay until a human removes them — the new report is what will surface them, and it will appear on machines that look fine today. And if your vault has ever moved, been renamed, or been re-cloned to a different path, verify the wired capture hook: the refusal only helps from the next session end onward, and a capture that died months ago left no artifact to notice missing.
+
 ### Fixed
 - **`lint-docs.sh`'s own header undercounted its checks** — it said "Two cheap, deterministic checks", listed three, and ran four; the fourth (v1.51.0's worktree-names-canonical gate) existed only as a numbered section in the body and in the success line. Comment-only, so untagged. Found by a `verify` pass on a consumer's engine page, which had the count right at four and was checked *against* this header — the direction that catches a source defect rather than propagating it.
 - **`ensure-hook.sh` wired the command into EVERY matching entry, so an event holding two entries that share the matcher ran the hook twice.** The guard asked `any(…)` — does one entry already have it — and the writer answered with `map(…)`, which visits all of them; with an empty matcher that is every entry omitting `.matcher`, the ordinary shape for an event that takes no matcher. Reported from a consumer vault, reproduced at HEAD. `Proposal: ensure-hook-duplicates-across-matcher-groups`
