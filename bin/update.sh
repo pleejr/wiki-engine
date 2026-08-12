@@ -8,7 +8,14 @@
 # submodule bump STAGED for you to review + commit; never auto-commits (adoption is a
 # human gate). Deterministic; no `claude`. doctor.sh reports; this applies.
 #
+# It runs in TWO PHASES because step 1 replaces this very file: ADVANCE checks out the new
+# tag, then hands the rest to the copy it just checked out (one bounded re-exec, guarded by
+# UPDATE_CONTINUE_FROM, which the child refuses to re-enter). So a fix to update.sh applies
+# to the run that adopts it, instead of one run later.
+#
 # Usage: update.sh [--wiki DIR]
+#   UPDATE_REEXEC=0          apply with the pre-update copy, the pre-v1.55 behaviour
+#   UPDATE_CONTINUE_FROM=X   internal: marks the apply phase; do not set by hand
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,27 +37,73 @@ ENGINE="$WIKI/engine"
 
 core_major() { printf '%s' "$1" | sed -E 's/^v//; s/[.-].*$//'; }
 
-git -C "$ENGINE" fetch -q origin main --tags 2>/dev/null || { echo "update: could not reach origin (offline?)" >&2; exit 2; }
+# --- TWO PHASES, because this script replaces itself halfway through --------------------
+# ADVANCE (fetch, compare, check out the new tag) and APPLY (adopt, RAG re-sync, the repo
+# page, every printed remedy). They are split because the checkout in between rewrites THIS
+# FILE: `git checkout` renames a temporary file over the path, so the path gets a new inode
+# while this shell keeps its descriptor on the old one, and the apply half therefore ran the
+# PRE-UPDATE text to the end. Nothing was garbled — an in-place rewrite would splice, a
+# rename does not — but the run reported adopting a version whose behaviour it did not use.
+#
+# The class that hides is self-referential and was met in the field: a defect IN THIS FILE
+# is not exercised by the run that installs its fix, so an operator adopting the fix meets
+# the bug one more time, release notes in hand. The fix is to hand the apply phase to the
+# copy that was just checked out.
+#
+# ONE re-exec, never a loop: the child sees UPDATE_CONTINUE_FROM set and does no fetch, no
+# comparison, no checkout, and no further re-exec. That sentinel is the whole recursion
+# guard, and it is why this is a bounded hand-off rather than the shape the engine's hard
+# safety rule forbids — there is no event a child can re-trigger, and the depth is 1.
+#
+# `bash -n` FIRST, and fall through rather than exec on failure. The pin is already
+# advanced at that point, so a release whose update.sh does not parse would otherwise strand
+# the vault mid-update with no apply phase at all. The old text is a worse applier than the
+# new one and a far better one than none.
+CONTINUING="${UPDATE_CONTINUE_FROM:-}"
+if [ -z "$CONTINUING" ]; then
+  git -C "$ENGINE" fetch -q origin main --tags 2>/dev/null || { echo "update: could not reach origin (offline?)" >&2; exit 2; }
 
-pinned="$(git -C "$ENGINE" describe --tags --always 2>/dev/null)"
-latest="$(git -C "$ENGINE" tag -l 'v*' | sort -V | tail -1)"
-[ -n "$latest" ] || { echo "update: engine has no version tags; nothing to advance to" >&2; exit 1; }
+  pinned="$(git -C "$ENGINE" describe --tags --always 2>/dev/null)"
+  latest="$(git -C "$ENGINE" tag -l 'v*' | sort -V | tail -1)"
+  [ -n "$latest" ] || { echo "update: engine has no version tags; nothing to advance to" >&2; exit 1; }
 
-if [ "$pinned" = "$latest" ]; then
-  echo "update: already at $latest"
-  # still re-sync RAG deps in case the pin didn't move but requirements did
-  [ -x "$WIKI/.rag/venv/bin/python" ] && "$ENGINE/bin/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
-  exit 0
+  if [ "$pinned" = "$latest" ]; then
+    echo "update: already at $latest"
+    # still re-sync RAG deps in case the pin didn't move but requirements did
+    [ -x "$WIKI/.rag/venv/bin/python" ] && "$ENGINE/bin/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
+    exit 0
+  fi
+
+  pmaj="$(core_major "$pinned")"; lmaj="$(core_major "$latest")"
+  if [ -n "$pmaj" ] && [ -n "$lmaj" ] && [ "$lmaj" -gt "$pmaj" ] 2>/dev/null; then
+    echo "update: ⚠ $latest is a MAJOR bump over $pinned — breaking; review CHANGELOG + migration and adopt manually. Not applied." >&2
+    exit 1
+  fi
+
+  echo "update: $pinned -> $latest"
+  git -C "$ENGINE" checkout -q "$latest"
+
+  # Hand the apply phase to the version that was just checked out. UPDATE_REEXEC=0 keeps the
+  # old behaviour for anyone who needs it; it is an escape hatch, not a default, because the
+  # default has to be the honest one.
+  if [ "${UPDATE_REEXEC:-1}" != "0" ]; then
+    if bash -n "$ENGINE/bin/update.sh" 2>/dev/null; then
+      echo "update: applying with $latest's own tools (this script was replaced by the checkout)"
+      UPDATE_CONTINUE_FROM="$pinned" exec bash "$ENGINE/bin/update.sh" --wiki "$WIKI"
+    fi
+    echo "update: ⚠ $latest's update.sh does not parse — applying with $pinned's copy instead." >&2
+    echo "update:   The pin is already advanced; report this, it is an engine packaging bug." >&2
+  fi
+  applier="$pinned"
+else
+  # APPLY PHASE, re-exec'd by the copy that ran before the checkout. Everything below is the
+  # new version's text acting on the new pin — which is the point of the split.
+  pinned="$CONTINUING"
+  latest="$(git -C "$ENGINE" describe --tags --always 2>/dev/null)"
+  applier="$latest"
 fi
 
-pmaj="$(core_major "$pinned")"; lmaj="$(core_major "$latest")"
-if [ -n "$pmaj" ] && [ -n "$lmaj" ] && [ "$lmaj" -gt "$pmaj" ] 2>/dev/null; then
-  echo "update: ⚠ $latest is a MAJOR bump over $pinned — breaking; review CHANGELOG + migration and adopt manually. Not applied." >&2
-  exit 1
-fi
-
-echo "update: $pinned -> $latest"
-git -C "$ENGINE" checkout -q "$latest"
+[ "$applier" = "$latest" ] || echo "update: NOTE — the steps below ran from $applier's copy of update.sh, not $latest's."
 "$ENGINE/bin/adopt.sh" --wiki "$WIKI"
 if [ -x "$WIKI/.rag/venv/bin/python" ]; then
   echo "update: re-syncing RAG deps to the pinned set"
