@@ -2965,8 +2965,19 @@ jobs:
           git -C "$R" commit -q --allow-empty -m seed
           HOOK="{\"cwd\":\"$R\"}"
 
-          # run WIKI -> sets rc/out/err
-          run() { out="$(printf '%s' "$HOOK" | WIKI_PATH="$1" ./bin/rag-capture.sh 2>"$T/err")"; rc=$?; err="$(cat "$T/err")"; }
+          # run WIKI -> sets rc/out/err. `|| rc=$?` is not decoration: GitHub runs this
+          # step as `bash -e {0}`, every case below expects a NON-ZERO exit, and a bare
+          # `out="$(...)"` is a plain assignment — so -e would kill the step at the first
+          # refusal, before rc=$? ran, and the gate would abort with no assertion output
+          # at all. That is this step's own subject matter, so it is worth stating: a test
+          # for a silent `set -e` abort is exactly the thing that can die of one. Guarding
+          # with `||` rather than toggling `set +e` keeps the helper correct whether or not
+          # the caller has -e on, so running the body by hand measures what CI measures.
+          run() {
+            rc=0
+            out="$(printf '%s' "$HOOK" | WIKI_PATH="$1" ./bin/rag-capture.sh 2>"$T/err")" || rc=$?
+            err="$(cat "$T/err" 2>/dev/null || true)"
+          }
 
           # 1. a directory that exists, has the capture tree, and has NO CLAUDE.md at all
           mkdir -p "$T/nocm/raw/sessions"
