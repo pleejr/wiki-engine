@@ -1,6 +1,6 @@
 ---
 slug: lint-memory-aborts-silently-on-a-note-with-no-wikilinks
-outcome: open
+outcome: accepted
 received: 2026-08-12
 ---
 

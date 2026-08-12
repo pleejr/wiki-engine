@@ -66,7 +66,26 @@ shopt -s nullglob
 notes=("$MEMDIR"/*.md)
 [ ${#notes[@]} -gt 0 ] || { echo "no memory notes in $MEMDIR"; exit 0; }
 
+# A TRUNCATED RUN MUST NOT READ AS A CLEAN ONE — the class, not just the instance above.
+# Twice now a script in this family died mid-loop under `set -e` + `pipefail` while every
+# printed line said success, and the exit status carried no news because a lint already
+# exits 1 whenever it finds an error. The summary is the only statement of how many notes
+# were checked, so its ABSENCE is the signal, and this says so on stderr.
+checked=0
+finished=0
+on_exit() {
+  local rc=$?
+  [ "$finished" = "1" ] && return 0
+  echo >&2
+  echo "memory lint: ABORTED (rc=$rc) after $checked of ${#notes[@]} note(s) — no summary was" >&2
+  echo "  printed, so THIS REPORT IS INCOMPLETE and the notes after '${last_note:-?}' went" >&2
+  echo "  unchecked. This is an engine bug, not vault state: please report it." >&2
+}
+trap on_exit EXIT
+
 for f in "${notes[@]}"; do
+  checked=$((checked+1))
+  last_note="$(basename "$f" .md)"
   slug="$(basename "$f" .md)"
   printf '%s\n' "$slug"
 
@@ -88,8 +107,14 @@ for f in "${notes[@]}"; do
   fi
 
   # outbound wikilinks (unique, alias/heading suffixes stripped)
+  # `|| true` is load-bearing. A note with NO wikilinks is a valid state this script
+  # already knows how to report — the next two lines count zero and raise the error —
+  # but `grep` exits 1 on no match, `pipefail` carries that out of the pipeline, and
+  # `set -e` then aborted the whole assignment. The loop stopped at the FIRST linkless
+  # note, so every note sorting after it went unchecked and the summary line never
+  # printed. Zero links is a finding here, not a refusal: do not turn this into one.
   links="$(grep -oE '\[\[[^]]+\]\]' "$f" 2>/dev/null \
-    | sed -e 's/^\[\[//' -e 's/\]\]$//' -e 's/[|#].*//' | LC_ALL=C sort -u)"
+    | sed -e 's/^\[\[//' -e 's/\]\]$//' -e 's/[|#].*//' | LC_ALL=C sort -u || true)"
   nlinks="$(printf '%s' "$links" | grep -c . || true)"
   [ "$nlinks" -ge 2 ] || err "only $nlinks outbound [[wikilink]](s) (need >=2)"
 
@@ -109,6 +134,7 @@ EOF
   fi
 done
 
+finished=1
 echo
 echo "memory lint: ${#notes[@]} notes, $errors error(s), $warnings warning(s)"
 if [ "$errors" -gt 0 ] || { [ "$STRICT" -eq 1 ] && [ "$warnings" -gt 0 ]; }; then

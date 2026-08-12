@@ -387,6 +387,50 @@ jobs:
             echo "a wikilink inside a code span was treated as a link"; exit 1
           fi
 
+      - name: A lint reports every note, and cannot end quietly short of its summary
+        run: |
+          # REGRESSION, and the SECOND instance of one pattern: an assignment from a
+          # pipeline whose first command may legitimately match nothing, under `set -euo
+          # pipefail`. `grep` exits 1 on no-match, pipefail carries it out, -e aborts the
+          # assignment, and the loop stops there — so the FIRST note with no wikilinks
+          # ended the run and every note sorting after it went unchecked.
+          #
+          # It is fail-OPEN despite exiting non-zero, because a lint already exits 1
+          # whenever it finds an error: the status carries no news. What the abort takes
+          # away is the summary line — the only statement of how many notes were checked —
+          # so a truncated report reads exactly like a vault that got cleaner. And the note
+          # that silences the linter is itself a note the linter wanted to complain about.
+          #
+          # Two properties are pinned here: zero wikilinks is REPORTED (not refused, not
+          # fatal), and a run that dies mid-loop for any other reason says so on stderr
+          # rather than ending with a shorter, clean-looking report.
+          V="$RUNNER_TEMP/lm"; rm -rf "$V"; mkdir -p "$V/memory"; fail=0
+          mk() { printf -- '---\ntitle: %s\ntype: memory\nboundary: personal\nupdated: 2026-01-01\n---\n%s\n' "$1" "$2" > "$V/memory/$1.md"; }
+          mk aaa-linkless 'no links at all in this note'
+          mk zzz-linked   'see [[aaa-linkless]] and [[some-stub]]'
+
+          out="$(./bin/lint-memory.sh --wiki "$V" 2>&1 || true)"
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'only 0 outbound' \
+            && echo "  ok   a linkless note is REPORTED, not fatal" \
+            || { echo "  FAIL the linkless note produced no finding"; fail=1; }
+          printf '%s' "$out" | grep -q '^zzz-linked$' \
+            && echo "  ok   ...and the note sorting after it is still checked" \
+            || { echo "  FAIL the run stopped at the linkless note"; fail=1; }
+          printf '%s' "$out" | grep -q 'memory lint: 2 notes' \
+            && echo "  ok   ...and the summary states the count that was checked" \
+            || { echo "  FAIL no summary line — a truncated report reads as a clean one"; fail=1; }
+
+          # the class, not the instance: force an abort mid-loop and require it to announce
+          # itself. Without this, the next `set -e` abort in this family is silent again.
+          sed 's@^  # valid type$@  [ "$slug" != aaa-linkless ] || false@' ./bin/lint-memory.sh > "$V/aborting.sh"
+          aout="$(bash "$V/aborting.sh" --wiki "$V" 2>&1 || true)"
+          printf '%s' "$aout" | grep -qi 'ABORTED' \
+            && echo "  ok   a run that dies mid-loop says the report is incomplete" \
+            || { echo "  FAIL a truncated run ended quietly: [$aout]"; fail=1; }
+
+          exit "$fail"
+
       - name: The updater obeys the convention the engine mandates
         run: |
           # update.sh must touch canonical for the SUBMODULE (a gitlink cannot live in a
