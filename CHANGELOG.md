@@ -6,7 +6,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-Three defects intaken together, all reported from a consumer vault running v1.53.0/v1.54.0, all reproduced at HEAD before anything was designed. Two of them are the *same* defect in different scripts — an assignment from a pipeline that may legitimately match nothing, under `set -euo pipefail` — which is now the third and fourth instance of that shape in this engine. The third is a tool creating the state its own gate exists to refuse.
+_Nothing yet._
+
+## [1.54.1] — 2026-08-12
+
+Patch — three defects intaken together, all reported from a consumer vault running v1.53.0/v1.54.0, all reproduced at HEAD before anything was designed. Backwards-compatible: nothing to migrate and no adoption step, though `update.sh` now *defers* a repo-page write in a state where it used to write one, which a vault with isolation on and no worktree open will see.
+
+Two of them are the *same* defect in different scripts — an assignment from a pipeline that may legitimately match nothing, under `set -euo pipefail` — which is now the third and fourth instance of that shape in this engine. The third is a tool creating the state its own gate exists to refuse, then printing "turn the gate off" as the remedy.
 
 ### Fixed
 - **`lint-memory.sh` stopped at the first note with no wikilinks, so every note sorting after it went unchecked and the truncated report read as a clean one.** `grep` exits 1 on no-match, `pipefail` carried that out of the pipeline, and `-e` aborted the assignment mid-loop. Zero wikilinks is a state the script already knows how to report — the next line counts zero and raises the error — so the fix lets the assignment survive rather than turning a valid finding into a refusal. `Proposal: lint-memory-aborts-silently-on-a-note-with-no-wikilinks`
