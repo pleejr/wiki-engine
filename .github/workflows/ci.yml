@@ -3486,6 +3486,104 @@ jobs:
 
           exit "$fail"
 
+      - name: A hook can state its own timeout, and one wired without a big enough timeout is reported
+        run: |
+          # A hook that names no `timeout` inherits the HOST's window. That window is short
+          # at SessionEnd — a hook was observed cancelled at about one second — and
+          # `rag-capture.sh` at a workspace root takes seconds, because `touched()` runs git
+          # in every sibling repo. The engine documented that wiring with no timeout, so the
+          # capture was cancelled on exactly the machines with the most to capture, and the
+          # failure is invisible: the hook is still wired, the script never reaches its own
+          # output line, and an empty buffer reads as a quiet month. The tool could not even
+          # express the field. It can now — and, because add-only must not edit a hook the
+          # user already has, the pre-timeout wiring is REPORTED rather than repaired.
+          T="$RUNNER_TEMP/ensure-hook-timeout"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          to() { jq -c '[.hooks.TestEvent[].hooks[] | select(.command == "echo SLOW") | .timeout]' "$1"; }
+
+          printf '%s' '{}' > "$T/new.json"
+          ./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout 30 --settings "$T/new.json" >/dev/null
+          [ "$(to "$T/new.json")" = "[30]" ] \
+            && echo "  ok   --timeout is written into the hook object" \
+            || { echo "  FAIL timeout absent from a newly wired hook: $(to "$T/new.json")"; fail=1; }
+
+          # ...and omitting it still writes NO timeout key, so every existing caller and
+          # every already-wired settings.json is byte-for-byte unaffected.
+          printf '%s' '{}' > "$T/bare.json"
+          ./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --settings "$T/bare.json" >/dev/null
+          [ "$(to "$T/bare.json")" = "[null]" ] \
+            && echo "  ok   no --timeout still writes no timeout key" \
+            || { echo "  FAIL a timeout appeared with no --timeout: $(to "$T/bare.json")"; fail=1; }
+
+          # A malformed value is refused BEFORE any write. `"timeout": "30"` or `0` is worse
+          # than none: the field is present, so it reads as handled while the host falls back
+          # to its default or cancels at once. The message must name the VALUE — asserting
+          # only "exit 2" would pass on a build where --timeout was never implemented.
+          for bad in 0 -5 abc 1.5 ''; do
+            printf '%s' '{}' > "$T/bad.json"; keep="$(cat "$T/bad.json")"
+            out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout "$bad" --settings "$T/bad.json" 2>&1)"; rc=$?
+            { [ "$rc" = "2" ] && [ "$keep" = "$(cat "$T/bad.json")" ] \
+                && printf '%s' "$out" | grep -q 'timeout must be'; } \
+              && echo "  ok   --timeout '$bad' refused (exit 2), file untouched" \
+              || { echo "  FAIL --timeout '$bad' exited $rc: $out"; fail=1; }
+          done
+
+          # THE REPORTED CASE: already wired, timeout-less — the state of every vault that
+          # copied the old snippet. No write, exit 0, and it must SAY so.
+          printf '%s' '{"hooks":{"TestEvent":[{"hooks":[{"type":"command","command":"echo SLOW"}]}]}}' > "$T/stale.json"
+          keep="$(cat "$T/stale.json")"
+          out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout 30 --settings "$T/stale.json" 2>&1)"; rc=$?
+          printf '%s\n' "$out"
+          printf '%s' "$out" | grep -q 'wired without a timeout' \
+            && echo "  ok   an already-wired timeout-less hook is reported" \
+            || { echo "  FAIL wired-without-timeout went unreported: $out"; fail=1; }
+          [ "$keep" = "$(cat "$T/stale.json")" ] \
+            && echo "  ok   ...without editing the user's hook (still add-only)" \
+            || { echo "  FAIL the report came with a write"; fail=1; }
+          [ "$rc" = "0" ] \
+            && echo "  ok   ...and exits 0, so it can never block a session" \
+            || { echo "  FAIL exited $rc"; fail=1; }
+
+          # A user who already chose a LARGER timeout has solved it. Reporting that would
+          # make the new message noise on exactly the vaults that got it right.
+          printf '%s' '{"hooks":{"TestEvent":[{"hooks":[{"type":"command","command":"echo SLOW","timeout":60}]}]}}' > "$T/big.json"
+          out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout 30 --settings "$T/big.json" 2>&1)"
+          [ -z "$out" ] \
+            && echo "  ok   a larger existing timeout is left alone, silently" \
+            || { echo "  FAIL false report against a sufficient timeout: $out"; fail=1; }
+
+          exit "$fail"
+
+      - name: lint-docs catches a documented hook snippet that states no timeout
+        run: |
+          # The gate is only worth having if it can go red. Its first version could not: it
+          # toggled on ANY line containing a fence, and USAGE.md quotes one mid-sentence
+          # inside a table cell — an odd fence count, so the real hook snippet was read as
+          # prose and a doc with no timeout at all passed. Prove the red directly.
+          fail=0
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   the live docs pass as they stand" \
+            || { echo "  FAIL lint-docs is red before the fixture is applied"; fail=1; }
+
+          cp USAGE.md "$RUNNER_TEMP/USAGE.keep"
+          perl -0pi -e 's/",\n      "timeout": 30\n/"\n/' USAGE.md
+          grep -q '"timeout": 30' USAGE.md \
+            && { echo "  FAIL the fixture did not remove the timeout — the red below proves nothing"; fail=1; } \
+            || echo "  ok   fixture applied: the snippet now states no timeout"
+
+          out="$(./bin/lint-docs.sh 2>&1)"; rc=$?
+          cp "$RUNNER_TEMP/USAGE.keep" USAGE.md
+          printf '%s\n' "$out" | grep -q 'no "timeout"' \
+            && echo "  ok   ...and lint-docs names the file and line" \
+            || { echo "  FAIL lint-docs said nothing about the missing timeout: $out"; fail=1; }
+          [ "$rc" != "0" ] \
+            && echo "  ok   ...and exits non-zero, so CI fails on it" \
+            || { echo "  FAIL lint-docs exited 0 with a timeout-less snippet"; fail=1; }
+
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   docs restored, gate green again" \
+            || { echo "  FAIL the restore did not put USAGE.md back"; fail=1; }
+          exit "$fail"
+
       - name: rag-capture refuses a non-vault out loud, and never guesses a boundary
         run: |
           # The boundary read was a bare `grep ... 2>/dev/null` under `set -euo pipefail`.

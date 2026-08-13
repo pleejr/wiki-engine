@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # lint-docs.sh — keep the usage docs honest so new users adopt with the lowest friction.
-# Five cheap, deterministic checks (no LLM, never `claude`):
+# Six cheap, deterministic checks (no LLM, never `claude`):
 #   1. every skill (skills/*/) is mentioned in USAGE.md  — nothing user-facing goes undocumented
 #   2. every `bin/<name>.sh` USAGE.md references actually exists — no stale pointers to deleted tools
 #   3. no shipped skill or tool STAMPS a specific boundary value — the engine is
 #      boundary-agnostic (SCHEMA.md), so it must ask the vault, never name one
 #   4. a worktree-taking skill must name CANONICAL where it touches git-ignored state (v1.51.0)
 #   5. every vault WALK goes through the shared exclusion, never its own prune list (v1.54.3)
+#   6. every documented hook SNIPPET states a `timeout` — a hook the host cancels is silent,
+#      and the snippet is what people copy into a real settings.json
 #      — see the section comments below; the count above and this list have both been wrong
 #      before, so keep all three in step: this header, the numbered sections, and the
 #      success line at the bottom that names each check to the reader.
@@ -155,7 +157,46 @@ case " $VAULT_SCAN_SKIP_DIRS " in
   *) echo "lint-docs: VAULT_SCAN_SKIP_DIRS no longer names 'engine'; the two walks have diverged" >&2; fail=1;;
 esac
 
+# 6. every documented hook snippet states a timeout -------------------------------------
+# A hook that names no `timeout` inherits the HOST's window, which the engine does not
+# choose and does not learn about: a SessionEnd hook was observed cancelled at about one
+# second, and `rag-capture.sh` at a workspace root takes seconds. The failure is fail-open
+# and silent — the hook stays wired, the script never reaches its own output, and the empty
+# buffer reads as a quiet month. Copy-paste is how a snippet becomes a machine's real
+# wiring, so the snippet is the artifact that has to be right.
+#
+# Scoped to the LIVE docs only: CHANGELOG.md is history and must never be rewritten to suit
+# a later rule, and proposals/ quote a reporter's observed settings verbatim, which is
+# evidence rather than a recommendation.
+timeout_hits="$(
+  for f in "$ROOT"/*.md "$ROOT"/skills/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    # Leading `(` on purpose: a case pattern's bare `)` is unbalanced to bash's parser
+    # INSIDE a `$( )`, which makes everything after it read as unquoted — the fence
+    # backticks below then look like a command substitution nobody closed.
+    case "$(basename "$f")" in (CHANGELOG.md) continue;; esac
+    # A fence must START the line. USAGE.md quotes a fence mid-sentence inside a table
+    # cell, and counting that one flips the open/closed state for the whole rest of the
+    # file — which is how the first version of this gate read the real hook snippet as
+    # prose and passed a doc that had no timeout at all.
+    awk -v file="${f#$ROOT/}" '
+      /^[[:space:]]*```/ {
+        if (inblk && blk ~ /"type"[[:space:]]*:[[:space:]]*"command"/ && blk !~ /"timeout"/) print file ":" start
+        inblk = !inblk; blk = ""; if (inblk) start = NR + 1; next }
+      inblk { blk = blk $0 "\n" }
+    ' "$f"
+  done
+)"
+while IFS= read -r hit; do
+  [ -n "$hit" ] || continue
+  echo "lint-docs: $hit documents a hook command with no \"timeout\"" >&2
+  echo "lint-docs:   the host cancels a hook that outruns its own default window, and a" >&2
+  echo "lint-docs:   cancelled hook is silent — an empty capture buffer looks like a quiet" >&2
+  echo "lint-docs:   month. State the budget in the snippet people copy." >&2
+  fail=1
+done <<< "$timeout_hits"
+
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion"
+  echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout"
 fi
 exit "$fail"

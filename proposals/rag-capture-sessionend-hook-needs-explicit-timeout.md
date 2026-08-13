@@ -1,6 +1,6 @@
 ---
 slug: rag-capture-sessionend-hook-needs-explicit-timeout
-outcome: open
+outcome: accepted
 received: 2026-08-13
 ---
 

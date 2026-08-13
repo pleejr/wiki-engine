@@ -126,9 +126,12 @@ The monthly files are **git-ignored, per-machine scratch** (`raw/sessions/*.md`;
   ```json
   { "hooks": { "SessionEnd": [ { "hooks": [ {
       "type": "command",
-      "command": "WIKI_PATH=/path/to/vault /path/to/vault/engine/bin/rag-capture.sh"
+      "command": "WIKI_PATH=/path/to/vault /path/to/vault/engine/bin/rag-capture.sh",
+      "timeout": 30
   } ] } ] } }
   ```
+
+- **The `timeout` is load-bearing, not decoration.** A hook that states no timeout inherits the host's window, and the host's SessionEnd window is short — a hook was observed cancelled at about one second, which a workspace-root scan exceeds as soon as the directory holds enough sibling repos (~70 took 3.1s). The append happens in a single block at the END of the run, so a cancellation loses the whole capture rather than truncating it. That failure is **fail-open and invisible**: the wiring still reports itself wired, the script reports nothing because it never reached its own output, and an empty buffer is indistinguishable from a quiet month — the same ambiguity the boundary refusal is written to avoid, arriving through a different door. The cost scales with the *number of sibling repos*, because `touched()` runs git in each, so the vault that needs the timeout most is the one whose session sits at a workspace root. `ensure-hook.sh --timeout N` writes the field for a tool-wired hook, and reports (never edits) an existing entry wired without one.
 
 - **Boundary caveat:** it records the repo you were in (names/subjects, not contents). Point `WIKI_PATH` at the boundary-appropriate vault, and don't enable the hook where even filenames/commit subjects are sensitive. Disable pieces with `RAG_CAPTURE_FILES=0` / `RAG_CAPTURE_COMMITS=0`.
 

@@ -8,6 +8,25 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.58.0] — 2026-08-13
+
+Minor — `ensure-hook.sh` gains a knob it could not express, and the hook the engine documents finally states the budget it needs. Adopt with `bin/adopt.sh` or `update.sh`. **Anything already wired from the old snippet keeps the old behaviour** — add-only never edits a hook you have — so see **Migration**.
+
+### Fixed
+- **The documented SessionEnd wiring for `rag-capture.sh` carried no `timeout`, so the host cancelled it and every capture from a workspace root was lost.** A hook that names no timeout inherits the *host's* window, which the engine neither chooses nor hears about — and at SessionEnd that window is about a second, while the capture takes seconds as soon as the session's directory holds many sibling repos, because `touched()` runs git in each one. The script appends in a single block at the very END of its run, so a cancellation discarded the whole capture rather than truncating it. `Proposal: rag-capture-sessionend-hook-needs-explicit-timeout`
+  - **Fail-open, and invisible from every surface the engine owns.** The wiring still reported itself wired, the script reported nothing because it never reached its own output line, and an empty buffer is indistinguishable from a quiet month — the same ambiguity `rag-capture.sh`'s boundary refusal is written to avoid, arriving through a different door. The one signal was a host message at process exit, which is the moment nobody is reading. A session in a *single* repo took the fast path and captured normally, so the buffer kept gaining entries and only the workspace-root ones went missing. Reported from a consumer vault: ~70 child repos, 3.14s direct, cancelled as a hook; the grace window bracketed at `sleep 1.0` completing and `sleep 1.5` cancelled.
+  - **The snippet is the artifact, so the snippet is what was wrong.** `USAGE.md` and `SCHEMA.md` now carry `"timeout": 30` and say why the number is there — the cost scales with sibling-repo count, so the vault that most needs the timeout is the one whose session sits at a workspace root.
+
+### Added
+- **`ensure-hook.sh --timeout N`** writes `"timeout": N` beside `type`/`command`, so a slow deterministic hook can state its own budget instead of inheriting the host's. Without the flag the output is byte-identical to before — no key appears — so no existing caller changes. A value that is not a positive whole number is refused *before* any write: `"timeout": "30"` or `0` is worse than none, because the field is present and so reads as handled.
+  - **An existing hook wired without a big enough timeout is REPORTED, never edited.** Add-only is the tool's contract, and editing the user's entry to insert a field is the one thing it promises not to do — but silence there would leave every vault that adopted the old snippet with a hook the host keeps cancelling and no signal anywhere. So it names the entry and the value to add, and exits 0. A *larger* existing timeout is the operator having already solved it, and is passed over silently rather than made into noise on the vaults that got it right.
+
+- **`lint-docs.sh` check 6: a documented hook snippet must state a `timeout`.** Copy-paste is how a snippet becomes a machine's real wiring, so a snippet missing the field ships the defect to every reader. Scoped to the live docs — `CHANGELOG.md` is history and is never rewritten to suit a later rule, and `proposals/` quote a reporter's observed settings as evidence rather than as a recommendation.
+  - **Its first version could not go red, and CI now proves it can.** The fence detector toggled on *any* line containing a triple backtick, and `USAGE.md` quotes one mid-sentence inside a table cell — an odd fence count, so the real hook snippet was read as prose and a doc with no timeout at all passed. A fence must now start its line, and a CI step removes the timeout from `USAGE.md`, asserts the fixture actually took, and requires the gate to fail on it.
+
+### Migration
+None required, and nothing breaks if you skip it — but a vault that wired auto-capture from the pre-1.58.0 snippet is still losing workspace-root captures. Add `"timeout": 30` to that hook entry in `~/.claude/settings.json`, beside its `"command"`. Adoption cannot do it for you: `ensure-hook.sh` is add-only and will report the gap rather than edit an entry you own.
+
 ## [1.57.0] — 2026-08-12
 
 Minor — a new skill, `drain`, and a fix to the gate that was supposed to notice it.

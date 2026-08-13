@@ -81,9 +81,18 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
   ```json
   { "hooks": { "SessionEnd": [ { "hooks": [ {
       "type": "command",
-      "command": "WIKI_PATH=/path/to/vault RAG_CAPTURE_TRANSCRIPT_PATH=1 /path/to/vault/engine/bin/rag-capture.sh"
+      "command": "WIKI_PATH=/path/to/vault RAG_CAPTURE_TRANSCRIPT_PATH=1 /path/to/vault/engine/bin/rag-capture.sh",
+      "timeout": 30
   } ] } ] } }
   ```
+
+  **Keep the `timeout`.** The capture cost scales with how many sibling repos the session's
+  directory holds — a single repo finishes in well under a second, a workspace root holding
+  dozens takes seconds — and the host cancels a SessionEnd hook that outruns its window
+  (about one second was observed, with no `timeout` set). The script appends in one block at
+  the very end, so a cancellation drops the whole capture, and a dropped capture looks
+  exactly like a quiet session: the buffer simply stays empty. Wiring this by tool instead?
+  `ensure-hook.sh --timeout 30` writes the same field.
 
 ## Keeping it current
 
