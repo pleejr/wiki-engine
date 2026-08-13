@@ -8,6 +8,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.54.5] — 2026-08-12
+
+Patch — consecutive sessions no longer re-file the same repo block. Backwards-compatible; the window keeps its meaning and no capture is lost.
+
+### Fixed
+- **The capture window is a flat lookback while the hook fires per session, so the buffer grew as (sessions × repos in window) rather than as work done.** Two sessions ending inside one window both look back over the whole of it; three captures over two repos produced six identical blocks and three distinct facts. Reported from the work-boundary vault. `Proposal: rag-capture-window-is-a-flat-lookback-while-the-buffer-is-filed-per-session`
+  - **Every block was true and the attribution was not.** A block filed under a session's timestamp reads as a record of *that* session while describing a previous one's work — into a buffer `SCHEMA.md` names as distillation input and `rag-build` indexes.
+  - **A repo block identical to the newest one already recorded is no longer appended**; the session names it on an `unchanged since <ts>` line instead. That answers the reporter's own objection to this shape — it keeps "a session happened here" true at one line rather than a duplicated block — and the line carries repo/branch/sha, so it still reads correctly after the block it refers to has been pruned.
+  - **Declined: making the window "since the previous capture".** The report named the wrinkle and it is decisive here — that boundary is **global** while the unit is per-session, and peer sessions are a shipped feature, so whichever session ends first claims the interval and a long session ending later reports a window shorter than its own life. Over-capture is noise; under-capture loses the session the user just had, which is the direction this engine already settled in the dirt-window fallback.
+  - **Degrades safely under concurrency**: two sessions may both read the buffer before either writes, and the worst case is the duplicate block that used to be the only case — never a lost one.
+
 ## [1.54.4] — 2026-08-12
 
 Patch — the engine's own maintenance sweep no longer leaves the footprint its capture reads as "the operator worked here". Backwards-compatible; no migration.

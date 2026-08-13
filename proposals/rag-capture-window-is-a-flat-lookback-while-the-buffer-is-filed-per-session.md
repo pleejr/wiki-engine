@@ -1,7 +1,8 @@
 ---
 slug: rag-capture-window-is-a-flat-lookback-while-the-buffer-is-filed-per-session
-outcome: open
+outcome: partially-accepted
 received: 2026-08-12
+reason: "Defect, mechanism and fail-open framing accepted in full and reproduced (six blocks, three distinct facts). The primary shape - window = since the previous capture - is DECLINED on the wrinkle the report itself names: that boundary is global while the buffer's unit is per-session, and peer sessions are a shipped feature, so the first session to end claims the interval and a longer one ending later reports a window shorter than its own life. That trades over-capture (noise) for under-capture (losing the session just had), a direction this engine already settled in the dirt-window fallback. The narrower alternative shipped instead, with the reporter's own objection to it answered: a repo block identical to the newest already recorded is not re-appended, and the session is still evidenced by an 'unchanged since <ts>' line carrying repo/branch/sha, which survives pruning of the block it refers to."
 ---
 
 HANDOFF — engine defect report
