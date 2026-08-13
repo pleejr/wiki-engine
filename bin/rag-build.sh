@@ -52,7 +52,10 @@ WIKI  = os.environ["RAG_WIKI"]
 FORCE = os.environ["RAG_FORCE"] == "1"
 RAGDIR = os.path.join(WIKI, ".rag")
 INDEX  = os.path.join(RAGDIR, "index.jsonl")
-SKIP_DIRS = {".git", "engine", ".obsidian", ".rag"}
+# Kept in step with VAULT_SCAN_SKIP_DIRS in wiki-root-lib.sh; lint-docs.sh gates the pair.
+# `.worktrees` is named even though glob() already skips dot-prefixed directories: that
+# immunity is accidental and ends the day the directory is renamed without its dot.
+SKIP_DIRS = {".git", "engine", ".obsidian", ".rag", ".worktrees"}
 
 def current_model():
     m = os.environ.get("RAG_LOCAL_MODEL") or os.environ.get("RAG_EMBED_MODEL")

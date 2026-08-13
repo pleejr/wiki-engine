@@ -20,6 +20,12 @@
 #   lint-memory.sh --strict       treat warnings as failures
 set -euo pipefail
 
+# The shared vault-walk exclusion (vault_pages / vault_grep_excludes). Sourced, never run;
+# it sets no shell options. A missing lib is fatal: walking the vault WITHOUT the exclusion
+# is the defect this closes, so failing loudly beats silently scanning session worktrees.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/wiki-root-lib.sh" || { echo "error: missing wiki-root-lib.sh — broken engine checkout" >&2; exit 1; }
+
 WIKI="${WIKI_PATH:-}"
 STRICT=0
 TYPES="memory lesson decision preference"
@@ -40,10 +46,7 @@ INDEX="$WIKI/index.md"
 
 # --- set of resolvable link targets: every page slug in the vault -------------
 # (basename without .md, excluding the engine submodule, git, obsidian, and .rag dirs)
-SLUGS="$(find "$WIKI" \
-  -type d \( -name .git -o -name engine -o -name .obsidian -o -name .rag \) -prune -o \
-  -type f -name '*.md' -print 2>/dev/null \
-  | sed -e 's|.*/||' -e 's|\.md$||' | LC_ALL=C sort -u)"
+SLUGS="$(vault_pages "$WIKI" | sed -e 's|.*/||' -e 's|\.md$||' | LC_ALL=C sort -u)"
 
 has_slug() { printf '%s\n' "$SLUGS" | grep -qxF "$1"; }
 

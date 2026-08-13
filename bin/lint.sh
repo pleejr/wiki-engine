@@ -59,9 +59,7 @@ done
 # vault markdown, excluding the engine submodule and non-content dirs.
 # (while-read, not mapfile — macOS ships bash 3.2.)
 PAGES=()
-while IFS= read -r p; do PAGES+=("$p"); done < <(find "$WIKI" \
-  -type d \( -name .git -o -name engine -o -name .obsidian -o -name .rag \) -prune -o \
-  -type f -name '*.md' -print | sort)
+while IFS= read -r p; do PAGES+=("$p"); done < <(vault_pages "$WIKI")
 [ "${#PAGES[@]}" -gt 0 ] || { echo "error: no pages under $WIKI" >&2; exit 1; }
 
 rc=0

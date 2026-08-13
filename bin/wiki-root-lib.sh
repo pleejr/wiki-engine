@@ -125,6 +125,49 @@ resolve_seam_file() {
   return 0
 }
 
+# --- WHAT A VAULT WALK MUST NOT SEE ----------------------------------------------------
+#
+# VAULT_SCAN_SKIP_DIRS is the one list, and it is one list because four copies of it is
+# what produced the defect it now closes. Every tool that walks "the vault's pages" had its
+# own prune list; four of five omitted `.worktrees`, so every page of every live session
+# worktree — a checkout of ANOTHER BRANCH that happens to live inside the vault directory —
+# was walked as vault content. Measured with one worktree open: repo pages listed twice by
+# the verified-status report, 179 extra pages in the umbrella lint's per-page gates, a
+# memory-lint slug set in which a `[[link]]` resolves because some other branch has the
+# target, and a migration sweep that would REWRITE files in a checkout its session did not
+# author. The counts changed back when the worktree was retired, which is why it survived:
+# a tool run from a quiet vault behaves perfectly.
+#
+# `.worktrees` covers the orphan case too (`<id>.orphaned-<stamp>` is renamed aside INSIDE
+# that root), and the RAG indexer names it explicitly even though its language's recursive
+# glob already skips dot-prefixed directories — an accidental immunity ends the day the
+# directory is renamed to something without a dot.
+VAULT_SCAN_SKIP_DIRS=".git engine .obsidian .rag .worktrees"
+
+# vault_pages ROOT [EXTRA_SKIP...] — every markdown page under ROOT that is vault content,
+# sorted. Callers add their own extra skips (the verified-status report skips `raw`), and
+# get the shared list for free. Returns 0 with no output when ROOT has none.
+vault_pages() {
+  local root="${1:-}"; shift 2>/dev/null || true
+  [ -n "$root" ] || return 0
+  local args=() name
+  for name in $VAULT_SCAN_SKIP_DIRS "$@"; do
+    [ "${#args[@]}" -eq 0 ] && args+=(-name "$name") || args+=(-o -name "$name")
+  done
+  find "$root" -type d \( "${args[@]}" \) -prune -o -type f -name '*.md' -print 2>/dev/null | sort
+  return 0
+}
+
+# vault_grep_excludes — the same list as `--exclude-dir=` flags, for the recursive greps
+# that cannot use `vault_pages` (they search content rather than enumerate paths). Word
+# splitting is intended and safe: these are directory names, never paths.
+vault_grep_excludes() {
+  local name out=""
+  for name in $VAULT_SCAN_SKIP_DIRS; do out="$out --exclude-dir=$name"; done
+  printf '%s' "${out# }"
+  return 0
+}
+
 # canonical_commit_gated ROOT — echo "1" when an ordinary TRACKED-CONTENT commit made in
 # ROOT would be refused by this vault's write-time gate; empty when it would be allowed.
 #

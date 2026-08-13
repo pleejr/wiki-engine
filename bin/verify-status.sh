@@ -29,6 +29,12 @@
 #   verify-status.sh --check         exit 1 if any repo page is unverified or stale
 set -euo pipefail
 
+# The shared vault-walk exclusion (vault_pages / vault_grep_excludes). Sourced, never run;
+# it sets no shell options. A missing lib is fatal: walking the vault WITHOUT the exclusion
+# is the defect this closes, so failing loudly beats silently scanning session worktrees.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/wiki-root-lib.sh" || { echo "error: missing wiki-root-lib.sh — broken engine checkout" >&2; exit 1; }
+
 WIKI="${WIKI_PATH:-}"
 MODE="report"   # report | todo | check
 
@@ -101,9 +107,7 @@ while IFS= read -r f; do
   p="$(parse "$f")"; [ "$(field "$p" hasver)" = "1" ] || continue
   other=$((other+1))
   report="$report  ✓ $slug — verified $(field "$p" date) (non-repo, opt-in)"$'\n'
-done < <(find "$WIKI" \
-  -type d \( -name .git -o -name engine -o -name .obsidian -o -name .rag -o -name raw \) -prune -o \
-  -type f -name '*.md' -print | sort)
+done < <(vault_pages "$WIKI" raw)
 
 if [ "$MODE" = "todo" ]; then
   printf '%s' "$todo" | sed '/^$/d'

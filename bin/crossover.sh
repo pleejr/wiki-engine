@@ -47,6 +47,12 @@
 
 set -uo pipefail
 
+# The shared vault-walk exclusion (vault_pages / vault_grep_excludes). Sourced, never run;
+# it sets no shell options. A missing lib is fatal: walking the vault WITHOUT the exclusion
+# is the defect this closes, so failing loudly beats silently scanning session worktrees.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/wiki-root-lib.sh" || { echo "error: missing wiki-root-lib.sh — broken engine checkout" >&2; exit 1; }
+
 PROTO="CROSSOVER v1"
 LEDGER_DIR=".crossover"
 
@@ -497,7 +503,7 @@ do_finalize() {
       [[ -n "$f" ]] || continue
       sed -i.bak -E "s#\[\[$slug\]\]#$marker#g" "$f"
       rm -f "$f.bak"; touched+=("$f")
-    done < <(grep -rl --include='*.md' "\[\[$slug\]\]" "$VAULT" 2>/dev/null || true)
+    done < <(grep -rl --include='*.md' $(vault_grep_excludes) "\[\[$slug\]\]" "$VAULT" 2>/dev/null || true)
   done < "$out"
 
   # record what happened, mark the ledger finalized

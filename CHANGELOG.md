@@ -8,6 +8,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.54.3] — 2026-08-12
+
+Patch — every vault walk now goes through one shared exclusion, so no tool reads (or writes) another session's worktree as if it were vault content. Backwards-compatible; no migration.
+
+### Fixed
+- **Four of the five tools that walk a vault descended into `.worktrees/`, treating full checkouts of OTHER BRANCHES as vault pages.** The isolation feature puts them inside the vault directory by design; the walks never accounted for it, and only one of the five pruned it — which is what showed the list was meant to include it. `Proposal: vault-walks-descend-into-the-worktree-root`
+  - **Measured with one worktree open (179 markdown files beneath it):** `verify-status.sh` listed every repo page twice and counted both, the duplicate reporting *that branch's* state; `lint.sh` ran its per-page gates (boundary, provenance, clean-tag) against a tree the commit was not about; `lint-memory.sh`'s slug set made a `[[link]]` resolve because some other branch had the target — fail-open on the dead-link check; and `crossover.sh`'s reference sweep would have **rewritten files inside a checkout its session did not author**, which is the write-side instance and the reason this is not cosmetic.
+  - **Why it survived:** none of it reproduces in a quiet vault. The affected runs are exactly the ones made during a session that took isolation, and the numbers change back when the worktree is retired.
+  - **One list, not five.** `VAULT_SCAN_SKIP_DIRS` plus `vault_pages` / `vault_grep_excludes` live in `wiki-root-lib.sh`, and every walk calls them. Adding the missing name to four private lists would have left the tool nobody has written yet to copy whichever list it happened to see — four copies drifting apart is what produced this.
+  - **`lint-docs.sh` gains a fifth check** that fails on any hand-rolled vault walk in `bin/`, on a recursive vault grep without the shared excludes, and on the Python indexer's own `SKIP_DIRS` drifting from the shell list. Both failure modes were verified red-before/green-after rather than assumed.
+  - **`rag-build.sh` now names `.worktrees` explicitly** although its recursive glob already skipped dot-prefixed directories: that immunity is accidental and would end the day the directory is renamed without its dot.
+
 ## [1.54.2] — 2026-08-12
 
 Patch — the run that adopts a release now applies with **that release's** updater instead of the previous one. Backwards-compatible: no migration, no adoption step, and an update's outcome is unchanged apart from one line naming which copy did the applying. `UPDATE_REEXEC=0` restores the old behaviour.

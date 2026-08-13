@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # lint-docs.sh — keep the usage docs honest so new users adopt with the lowest friction.
-# Four cheap, deterministic checks (no LLM, never `claude`):
+# Five cheap, deterministic checks (no LLM, never `claude`):
 #   1. every skill (skills/*/) is mentioned in USAGE.md  — nothing user-facing goes undocumented
 #   2. every `bin/<name>.sh` USAGE.md references actually exists — no stale pointers to deleted tools
 #   3. no shipped skill or tool STAMPS a specific boundary value — the engine is
 #      boundary-agnostic (SCHEMA.md), so it must ask the vault, never name one
 #   4. a worktree-taking skill must name CANONICAL where it touches git-ignored state (v1.51.0)
-#      — see the section comment below; the count above and this list have both been wrong
+#   5. every vault WALK goes through the shared exclusion, never its own prune list (v1.54.3)
+#      — see the section comments below; the count above and this list have both been wrong
 #      before, so keep all three in step: this header, the numbered sections, and the
 #      success line at the bottom that names each check to the reader.
 # Run in CI (engine-ci) and before cutting a release. Exit 1 on any gap.
@@ -14,6 +15,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# VAULT_SCAN_SKIP_DIRS lives here; check 5 asserts the Python indexer agrees with it.
+. "$SCRIPT_DIR/wiki-root-lib.sh" || { echo "lint-docs: missing wiki-root-lib.sh" >&2; exit 1; }
 USAGE="$ROOT/USAGE.md"
 [ -f "$USAGE" ] || { echo "lint-docs: no USAGE.md at $USAGE" >&2; exit 1; }
 
@@ -93,7 +96,49 @@ for f in "$ROOT"/skills/*/SKILL.md; do
   done <<< "$ignored_tokens"
 done
 
+# 5. every vault walk uses the shared exclusion ------------------------------------------
+# THE DEFECT THIS CLOSES was four private copies of one prune list: `.git`, `engine`,
+# `.obsidian`, `.rag` — and, in one of five, `.worktrees`. The four that omitted it walked
+# every page of every live session worktree as vault content, so the verified-status report
+# double-counted repo pages, the umbrella lint ran its per-page gates against another
+# branch's checkout, a memory `[[link]]` resolved because some OTHER branch had the target,
+# and the migration sweep would have rewritten files in a checkout its session did not
+# author. None of it reproduces in a quiet vault, which is why it survived.
+#
+# Adding the missing name to four lists would leave the fifth tool — the one nobody has
+# written yet — to copy whichever list it happens to see. So the list moved into
+# wiki-root-lib.sh and this gate keeps it the only one: a walk rooted at a vault must call
+# vault_pages / vault_grep_excludes, not hand-roll a prune.
+while IFS= read -r hit; do
+  f="${hit%%:*}"; rest="${hit#*:}"; ln="${rest%%:*}"
+  case "$f" in */wiki-root-lib.sh) continue;; esac        # the definition itself
+  echo "lint-docs: ${f#$ROOT/}:$ln walks a vault with its own prune list" >&2
+  echo "lint-docs:   use vault_pages (or vault_grep_excludes for a recursive grep) from" >&2
+  echo "lint-docs:   wiki-root-lib.sh — a private copy is how .worktrees went unexcluded in" >&2
+  echo "lint-docs:   four of five walks, silently, for as long as no session was open." >&2
+  fail=1
+done < <(grep -rn -- '-name \.obsidian' "$ROOT/bin" 2>/dev/null || true)
+
+while IFS= read -r hit; do
+  f="${hit%%:*}"; rest="${hit#*:}"; ln="${rest%%:*}"
+  echo "lint-docs: ${f#$ROOT/}:$ln greps a vault recursively without the shared excludes" >&2
+  echo "lint-docs:   add \$(vault_grep_excludes) — a bare grep -r descends into .worktrees," >&2
+  echo "lint-docs:   and a sweep that WRITES would edit another session's checkout." >&2
+  fail=1
+done < <(grep -rn -- 'grep -r[a-z]* --include=.\*\.md.\+"\$\(VAULT\|WIKI\)"' "$ROOT/bin" 2>/dev/null \
+         | grep -v 'vault_grep_excludes' || true)
+
+# The Python indexer keeps its own literal set (different language, same list) — assert the
+# two agree rather than trusting a comment that says they do.
+py_skips="$(grep -o 'SKIP_DIRS = {[^}]*}' "$ROOT/bin/rag-build.sh" 2>/dev/null | tr -d '"{}' | sed 's/SKIP_DIRS = //; s/,/ /g')"
+for name in $VAULT_SCAN_SKIP_DIRS; do
+  case " $py_skips " in
+    *" $name "*) ;;
+    *) echo "lint-docs: rag-build.sh SKIP_DIRS is missing '$name' (VAULT_SCAN_SKIP_DIRS has it)" >&2; fail=1;;
+  esac
+done
+
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values; worktree skills name canonical for ignored state"
+  echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion"
 fi
 exit "$fail"
