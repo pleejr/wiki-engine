@@ -1,6 +1,6 @@
 ---
 name: skill-candidates
-description: Mine the vault's own durable record — `memory/` notes, `log.md`, `raw/sessions/` — for procedures repeated often enough to deserve a skill, and report ranked CANDIDATES with the dated evidence behind each. Evidence is the whole point: a candidate is justified by several dated notes or log lines showing the same procedure done more than once, never by the session that just ended. Reports a name, the repeated procedure, the notes evidencing it, an overlap check against the installed catalog, and a verdict — and never writes a `SKILL.md`, which is a separate job for a skill-authoring skill. Runs in two modes off one signal — the FIRST run on a vault that has never been mined is a backlog drain over the whole record and should return many candidates, while every later run sweeps forward from the last verdict and should return none or one. Use when the user says "mine the vault for skill candidates", "should this be a skill", "what should I turn into a skill", "have I done this enough times to encode it", "find the skills hiding in my notes", "catch up on the skills I never wrote", or at the end of a session once `checkpoint` has written its notes. Distinct from `checkpoint` (which distills facts INTO `memory/` and owns the end-of-session ritual): this reads those notes back out and proposes tooling, so it runs AFTER checkpoint, never instead of it. NOT for writing, fixing or debugging a skill, and NOT for a procedure with a single occurrence — one session is a feeling, not evidence.
+description: Mine the vault's own durable record — `memory/` notes, `log.md`, `raw/sessions/` — for procedures repeated often enough to deserve a skill, and report ranked CANDIDATES with the dated evidence behind each. Evidence is the whole point: a candidate is justified by several dated notes or log lines showing the same procedure done more than once, never by the session that just ended. Reports a name, the repeated procedure, the notes evidencing it, and an overlap check against the installed catalog — then puts EVERY candidate that clears the bar to the operator as an interactive develop/discard/defer choice rather than settling any of them itself, since its own ranking axes cannot see whether a skill is the right form at all. Never writes a `SKILL.md`, which is a separate job for a skill-authoring skill, and invokes nothing — it returns verdicts to whoever ran it, so `checkpoint` can run it without the two cycling. Runs in two modes off one signal — the FIRST run on a vault that has never been mined is a backlog drain over the whole record and should return many candidates, while every later run sweeps forward from the last verdict and should return none or one. Use when the user says "mine the vault for skill candidates", "should this be a skill", "what should I turn into a skill", "have I done this enough times to encode it", "find the skills hiding in my notes", "catch up on the skills I never wrote", or at the end of a session once `checkpoint` has written its notes. Distinct from `checkpoint` (which distills facts INTO `memory/` and owns the end-of-session ritual): this reads those notes back out and proposes tooling, so it runs AFTER checkpoint, never instead of it. NOT for writing, fixing or debugging a skill, and NOT for a procedure with a single occurrence — one session is a feeling, not evidence.
 status: active
 summary: mine `memory/`, `log.md` and the session buffer for procedures proven to repeat; report ranked skill candidates with dated evidence, never a SKILL.md.
 updated: 2026-08-13
@@ -132,23 +132,47 @@ One block per surviving candidate, ranked, no prose preamble:
   Evidence    N occurrences — [[note-slug]] (date) · log.md (date) · …
   Cost        what went wrong when it was done ad hoc, if the record says
   Overlap     the nearest installed skill, and why this is not it
-  Verdict     build | fold into <skill> | CLAUDE.md instead | not yet — needs more occurrences
+  Recommend   develop | discard (<why>) | defer at N — and one line of reasoning
 ```
 
-`not yet` is a first-class outcome, and in steady state it is usually the honest one. Report near-misses with their current count so the next run can see the pattern building rather than starting over.
+**`Recommend` is advisory, not a decision.** The operator chooses; see §6a. Say what you would do and why, because a recommendation with no reasoning is not reviewable — but never write it up as settled, and never act on your own recommendation without the answer.
+
+`defer` is a first-class outcome, and in steady state it is usually the honest one. Report near-misses with their current count so the next run can see the pattern building rather than starting over.
 
 In backlog mode, order the report by rank and mark the small set you recommend building first, so a long list stays actionable instead of becoming a wish-list nobody works through.
 
 Finish with one line naming what you searched, what mode you were in, and what you found nothing for. A run that surfaces no candidate should say so plainly — in steady state that is the ordinary case, and a skill invented to justify the run is worse than an empty report. On a **first** run, though, an empty report is a result to distrust: a vault with months of notes has almost certainly repeated something, so check the queries before concluding the record is clean.
 
+## 6a. Ask, one candidate at a time
+
+**Every candidate that clears the bar goes to the operator as a choice. You do not get to settle any of them yourself** — not the obvious discards, not the folds, not the ones you are confident about. A detection skill that also decides has quietly become an authoring skill with a filter, and the operator finds out what it chose only by reading the vault afterwards.
+
+Use the host's interactive question facility, and offer exactly three outcomes per candidate:
+
+- **Develop** — hand it to a skill-authoring skill (§7). Nothing is written yet.
+- **Discard** — never propose this again. **Capture the operator's reason in one line**; that reason is the entire value of the record, because the evidence will keep growing and a future run will otherwise re-derive the same candidate and re-ask.
+- **Defer** — keep it with its current count, to be reconsidered when the count grows past it.
+
+Practical shape: these facilities cap the number of questions per call — commonly four — so **batch, never truncate**. Six candidates is two rounds. Silently dropping the tail would report a filtered list as the whole list, which is the failure this skill exists to avoid.
+
+**A discard reason is not a formality, and it is where your recommendation is most likely to be wrong.** The axes you rank on — recurrence and cost — measure whether the *evidence* is real. They cannot see whether a **skill is the right form**: notes that already load on demand may cover the ground without anything needing to fire, and an always-on preference belongs in the vault's `CLAUDE.md` instead. The operator can see that and you often cannot, so record the reason they give rather than the one you would have guessed.
+
 ## 7. Close the loop
 
-**Do not write the `SKILL.md`.** Authoring is a different job with its own conventions, trigger design and eval loop; hand an accepted candidate to whichever skill-authoring skill the machine has. Keeping this skill to detection is what keeps it cheap enough to run every session.
+**Do not write the `SKILL.md`.** Authoring is a different job with its own conventions, trigger design and eval loop; hand a *develop* candidate to whichever skill-authoring skill the machine has. Keeping this skill to detection is what keeps it cheap enough to run every session.
 
-Record the verdict so it is not re-litigated. This skill writes nothing itself — hand the decision to `checkpoint`, which owns vault writes, as a `type: decision` note tagged `skill-candidate`:
+**This skill writes nothing, and it invokes nothing.** It returns the decided verdicts to whoever ran it, and stops there. That is a deliberate one-way edge: `checkpoint` may run this skill, so if this skill called `checkpoint` back to save its verdicts the two would cycle. Same structural rule as the hook ban, one layer in — the fix is that the caller writes, never the callee.
 
-- **Declined** — record it with the reason and the count it was declined at. Without this, the same candidate is rediscovered every run, and the reason it was rejected is lost while the evidence for it keeps accumulating.
-- **Accepted** — record what it was built from, so the skill's own provenance points back at the notes that justified it.
+So the verdicts land one of two ways, and both end here:
+
+- **Run from `checkpoint`** — hand the verdicts back; `checkpoint` is mid-pass with a worktree already open and writes them into that same commit.
+- **Run standalone** — print the verdicts and say plainly that they are unrecorded until `checkpoint` runs. Do not invoke it.
+
+Either way each verdict becomes a `type: decision` note tagged `skill-candidate`:
+
+- **Discarded** — the operator's reason, and the count it was discarded at. Without this the candidate is rediscovered every run and the reason is lost while the evidence keeps accumulating.
+- **Developed** — what it was built from, so the skill's provenance points back at the notes that justified it.
+- **Deferred** — the count, which is the only thing that makes it reconsiderable rather than merely rediscoverable.
 
 Read those notes at the start of the next run — with the frontmatter query from **Two modes**, not a bare name grep — and skip anything already declined — unless its evidence count has grown past the count in the decline, which is precisely when a previous "not yet" becomes a "yes".
 
@@ -156,5 +180,6 @@ Read those notes at the start of the next run — with the frontmatter query fro
 
 - **In-session, on demand.** Never wire this to a session-lifecycle hook. It runs after `checkpoint`, and it reads the notes checkpoint just wrote — running it from a hook re-fires the event that spawned it, which is the structure the engine's `CLAUDE.md` bans.
 - **Never propose a skill from the current session alone.** The session in progress is the one input with no dated history behind it, and it is the one that always feels sufficient.
+- **Recommend; never decide.** Every candidate clearing the bar goes to the operator as a develop/discard/defer choice, including the ones you are sure about. Deciding on their behalf turns a detection skill into an authoring skill with a filter, and they discover what it chose by reading the vault later.
 - **Query the frontmatter, never the prose.** Every note *about* a subject contains its name, so a bare `grep` for a tag or a slug counts discussion as evidence — and short tags additionally match inside ordinary words. Both directions fail toward a confident wrong answer: the mode check reads a mention as a verdict, and a cluster count inflates. Anchor on `^tags:` / `^type:` with the tag delimited.
 - **Filter on the bar, never on the count.** A catalogue full of thinly-justified skills triggers worse than a small one, so nothing that fails §1 is reported — but a long list of candidates that each *clear* §1 is a real backlog, not a filter that stopped working. Trimming it to look disciplined discards evidence the record earned. Control the number you recommend **building**, not the number you report.
