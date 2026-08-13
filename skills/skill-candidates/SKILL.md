@@ -1,6 +1,6 @@
 ---
 name: skill-candidates
-description: Mine the vault's own durable record — `memory/` notes, `log.md`, `raw/sessions/` — for procedures repeated often enough to deserve a skill, and report ranked CANDIDATES with the dated evidence behind each. Evidence is the whole point: a candidate is justified by several dated notes or log lines showing the same procedure done more than once, never by the session that just ended. Reports a name, the repeated procedure, the notes evidencing it, an overlap check against the installed catalog, and a verdict — and never writes a `SKILL.md`, which is a separate job for a skill-authoring skill. Use when the user says "mine the vault for skill candidates", "should this be a skill", "what should I turn into a skill", "have I done this enough times to encode it", "find the skills hiding in my notes", or at the end of a session once `checkpoint` has written its notes. Distinct from `checkpoint` (which distills facts INTO `memory/` and owns the end-of-session ritual): this reads those notes back out and proposes tooling, so it runs AFTER checkpoint, never instead of it. NOT for writing, fixing or debugging a skill, and NOT for a procedure with a single occurrence — one session is a feeling, not evidence.
+description: Mine the vault's own durable record — `memory/` notes, `log.md`, `raw/sessions/` — for procedures repeated often enough to deserve a skill, and report ranked CANDIDATES with the dated evidence behind each. Evidence is the whole point: a candidate is justified by several dated notes or log lines showing the same procedure done more than once, never by the session that just ended. Reports a name, the repeated procedure, the notes evidencing it, an overlap check against the installed catalog, and a verdict — and never writes a `SKILL.md`, which is a separate job for a skill-authoring skill. Runs in two modes off one signal — the FIRST run on a vault that has never been mined is a backlog drain over the whole record and should return many candidates, while every later run sweeps forward from the last verdict and should return none or one. Use when the user says "mine the vault for skill candidates", "should this be a skill", "what should I turn into a skill", "have I done this enough times to encode it", "find the skills hiding in my notes", "catch up on the skills I never wrote", or at the end of a session once `checkpoint` has written its notes. Distinct from `checkpoint` (which distills facts INTO `memory/` and owns the end-of-session ritual): this reads those notes back out and proposes tooling, so it runs AFTER checkpoint, never instead of it. NOT for writing, fixing or debugging a skill, and NOT for a procedure with a single occurrence — one session is a feeling, not evidence.
 status: active
 summary: mine `memory/`, `log.md` and the session buffer for procedures proven to repeat; report ranked skill candidates with dated evidence, never a SKILL.md.
 updated: 2026-08-13
@@ -26,6 +26,21 @@ Inputs, all in canonical `$WIKI_PATH`:
 - `raw/sessions/` — the auto-captured buffer. **Canonical `$WIKI_PATH` only**: it is git-ignored per-machine state, so it does not exist in a worktree, and its absence there looks exactly like an empty buffer.
 
 The buffer is a weak, recent, disposable source — a session captured there may never have been curated. Use it to notice a *pattern forming*, never to justify a candidate on its own.
+
+## Two modes: backlog, then steady state
+
+**The first run on a vault is a backlog drain, and it should return many candidates.** A vault that has been checkpointing for months without ever mining those notes has accumulated every procedure it repeated in that time. Finding eight is the correct result there, and reporting two because a long list felt undisciplined is the same under-reporting failure this skill exists to prevent, arriving from the other direction.
+
+Detecting which mode you are in is free, and needs no new state: **if no `skill-candidate` verdict note exists, this is a first run.** The vault has never been mined, so the whole record is unexamined.
+
+- **Backlog mode** — sweep the entire record, oldest to newest. Expect many. Rank hard, because with a long list the ranking carries the whole value (§4).
+- **Steady state** — sweep forward from the date of the newest verdict note, and re-check anything previously marked *not yet*. Expect zero or one. Zero is the run working, not the run failing.
+
+**The bar does not relax in backlog mode, and it does not tighten in steady state.** It is the same three tests either way (§1). What changes is only how many candidates clearing it you should expect to see, and therefore what an unusual result looks like: a first run returning nothing means the queries are wrong, and a steady-state run returning six means either the vault has been left un-mined for a long stretch, or the bar is being applied loosely.
+
+**Separate what you report from what you recommend building.** Report every candidate that clears the bar — that inventory is the honest output, and suppressing it loses work the record actually earned. Recommend a **small number to build first**, because skills are written one at a time and eight authored in one sitting are eight thin ones. The rest keep their evidence and wait; nothing is lost, since the next run re-derives them from the same notes.
+
+Convergence is the intended shape: the backlog drains once, and regular `checkpoint` runs then keep each later pass near zero. A steady state of nothing-to-report is this skill succeeding.
 
 ## 1. The bar
 
@@ -109,9 +124,11 @@ One block per surviving candidate, ranked, no prose preamble:
   Verdict     build | fold into <skill> | CLAUDE.md instead | not yet — needs more occurrences
 ```
 
-`not yet` is a first-class outcome and usually the honest one. Report near-misses with their current count so the next run can see the pattern building rather than starting over.
+`not yet` is a first-class outcome, and in steady state it is usually the honest one. Report near-misses with their current count so the next run can see the pattern building rather than starting over.
 
-Finish with one line naming what you searched and what you found nothing for. A run that surfaces no candidate should say so plainly — the record not yet showing a repeat is the ordinary case, and a skill invented to justify the run is worse than an empty report.
+In backlog mode, order the report by rank and mark the small set you recommend building first, so a long list stays actionable instead of becoming a wish-list nobody works through.
+
+Finish with one line naming what you searched, what mode you were in, and what you found nothing for. A run that surfaces no candidate should say so plainly — in steady state that is the ordinary case, and a skill invented to justify the run is worse than an empty report. On a **first** run, though, an empty report is a result to distrust: a vault with months of notes has almost certainly repeated something, so check the queries before concluding the record is clean.
 
 ## 7. Close the loop
 
@@ -128,4 +145,4 @@ Read those notes at the start of the next run (`grep -l 'skill-candidate' "$WIKI
 
 - **In-session, on demand.** Never wire this to a session-lifecycle hook. It runs after `checkpoint`, and it reads the notes checkpoint just wrote — running it from a hook re-fires the event that spawned it, which is the structure the engine's `CLAUDE.md` bans.
 - **Never propose a skill from the current session alone.** The session in progress is the one input with no dated history behind it, and it is the one that always feels sufficient.
-- Prefer few strong candidates over a long list. A run that proposes six skills has stopped filtering, and a catalogue full of thinly-justified skills triggers worse than a small one.
+- **Filter on the bar, never on the count.** A catalogue full of thinly-justified skills triggers worse than a small one, so nothing that fails §1 is reported — but a long list of candidates that each *clear* §1 is a real backlog, not a filter that stopped working. Trimming it to look disciplined discards evidence the record earned. Control the number you recommend **building**, not the number you report.
