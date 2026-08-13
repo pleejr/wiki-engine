@@ -1705,6 +1705,65 @@ jobs:
           sys.exit(fail)
           PY
 
+      - name: The hard slice cuts at a sentence end, not at a character count
+        run: |
+          # The LAST level of the split chain, and the only cut that cannot fall on a line
+          # boundary. A vault whose append-only log writes each entry as ONE physical line
+          # bottoms the chain out: `##` and `###` are absent, the item IS the unit, and LINE
+          # packing cannot reduce a single line. So an over-cap entry reached a cut at a
+          # character count — mid-sentence, often mid-word — and the remainder became its own
+          # embedding of a fragment that means nothing alone. Filed as an IMPROVEMENT, and
+          # ranked low by its reporter: 2 items in 265 on the page they measured, and
+          # rag-build.sh already announces every occurrence. Fixed because the chain is
+          # otherwise complete and the failure recurs by construction — log entries only
+          # get longer.
+          python3 - <<'PY'
+          import sys, re; sys.path.insert(0, "bin")
+          import rag_chunk
+          from rag_chunk import parse_file, CHUNKER_VERSION
+          from rag_embed import MAX_CHARS
+          fail = 0
+          L = MAX_CHARS
+
+          # NO title line. The first chunk of a titled page is the title itself, and asserting
+          # on chunks[0] there tests a five-character heading — it passed for a reason that had
+          # nothing to do with slicing.
+          sent = "The quick brown fox jumped over the lazy dog and kept running. "
+          page = "- **2026-01-01 (entry)** \u2014 " + sent * ((L // len(sent)) + 40) + "\n"
+          open("/tmp/slice-log.md", "w").write(page)
+          ch = parse_file("/tmp/slice-log.md")[2]
+
+          if len(ch) > 1: print("  ok   the over-cap single-line item was sliced")
+          else: print("  FAIL the fixture never exceeded the cap \u2014 nothing below is a test"); fail = 1
+          if all(len(t) <= L for _, _, t in ch): print("  ok   no chunk exceeds MAX_CHARS")
+          else: print("  FAIL a chunk is over the embedder's cap"); fail = 1
+          if re.search(r'[.!?]["\')\]]*\s*$', ch[0][2]): print("  ok   the first chunk ends on a completed sentence")
+          else: print("  FAIL still cutting mid-sentence: ...%r" % ch[0][2][-60:]); fail = 1
+
+          squash = lambda s: re.sub(r"\s+", "", s)
+          if squash("".join(t for _, _, t in ch)) == squash(page): print("  ok   every non-whitespace character survives")
+          else: print("  FAIL characters were lost or duplicated"); fail = 1
+
+          # No sentence end in the window must still cut EXACTLY at the cap, byte-for-byte as
+          # before. That is the reporter's own acceptance criterion, and the reason no
+          # word-boundary fallback was added on top of it.
+          open("/tmp/slice-nb.md", "w").write("- **2026-01-01 (e)** \u2014 " + "x" * (L + 500) + "\n")
+          nb = parse_file("/tmp/slice-nb.md")[2]
+          if len(nb[0][2]) == L: print("  ok   with no boundary in the window, the cut stays at the cap")
+          else: print("  FAIL an unbounded run no longer cuts at the cap: %d" % len(nb[0][2])); fail = 1
+
+          # A page that never reaches the hard slice must be untouched by this change.
+          st = "# T\n\n## A\n\n" + ("alpha beta gamma. " * 200) + "\n\n## B\n\n" + ("delta epsilon. " * 200) + "\n"
+          open("/tmp/slice-st.md", "w").write(st)
+          sc = parse_file("/tmp/slice-st.md")[2]
+          if len(sc) >= 2 and all(len(t) <= L for _, _, t in sc): print("  ok   a heading-structured page still splits on its headings")
+          else: print("  FAIL the structured page changed shape"); fail = 1
+
+          if CHUNKER_VERSION >= 4: print("  ok   CHUNKER_VERSION bumped, so existing indexes re-chunk")
+          else: print("  FAIL CHUNKER_VERSION not bumped \u2014 inert on every existing vault"); fail = 1
+          sys.exit(fail)
+          PY
+
       - name: A page without '##' headings is indexed whole, not just its first 6k
         run: |
           # REGRESSION: rag-build chunked on `## ` only, and rag_embed truncated every

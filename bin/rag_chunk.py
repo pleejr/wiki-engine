@@ -16,15 +16,32 @@
 # would also have broken the page:
 #   `## ` section  ->  `### ` subsection  ->  whole-line size packing  ->  hard slice
 # Only the last of those can split mid-line, and only for a single line longer than
-# the entire budget.
-import hashlib, os
+# the entire budget. That last cut prefers a SENTENCE end within a window below the cap,
+# and falls back to the cap exactly when the window holds none.
+import hashlib, os, re
 
 from rag_embed import MAX_CHARS
 
 # Bump when the split changes shape. Records carry it and rag-build refuses to reuse
 # vectors produced by an older chunker — without that, this fix would be inert on
 # every existing vault until each file happened to change for some other reason.
-CHUNKER_VERSION = 3
+CHUNKER_VERSION = 4
+
+# The hard slice is the one cut that cannot fall on a line boundary, and it used to fall
+# on a character count — mid-sentence, often mid-word, with the remainder becoming its own
+# embedding of a fragment that means nothing on its own. Look back from the cap for a
+# sentence end and cut there instead.
+#
+# SLICE_BACKOFF is a FRACTION of the budget, not a character count, so the window scales
+# with `limit` rather than needing a second number kept in step with it. A tenth of a
+# 6,000-character cap is 600 — long enough to contain a sentence end in ordinary prose,
+# short enough that the chunk before it stays near full.
+SLICE_BACKOFF = 0.1
+
+# A terminator, any closing quotes or brackets that belong to it, then whitespace. The
+# trailing `\s` is what makes this a SENTENCE end rather than a decimal point or an
+# abbreviation followed by more of the same word.
+_SENTENCE_END = re.compile(r'[.!?]["\')\]]*\s')
 
 
 def _trim(pairs):
@@ -150,6 +167,27 @@ def _pack_runs(runs, limit):
         out.append(cur)
     return out
 
+def _hard_slice(text, limit):
+    """Yield pieces of `text`, each <= limit, preferring a sentence end to the bare cap.
+
+    Concatenating the yielded pieces reproduces `text` EXACTLY — the cut is an index, and
+    nothing is dropped, trimmed or normalised. That invariant is what lets the caller keep
+    claiming every character of the page is indexed.
+    """
+    window = max(1, int(limit * SLICE_BACKOFF))
+    while len(text) > limit:
+        cut = limit
+        # The LAST sentence end that finishes at or before the cap. `endpos` bounds the
+        # match itself, so a terminator whose trailing whitespace falls past the cap is
+        # correctly not a candidate.
+        for m in _SENTENCE_END.finditer(text, limit - window, limit):
+            cut = m.end()
+        yield text[:cut]
+        text = text[cut:]
+    if text:
+        yield text
+
+
 def _chunk(pairs, heading, limit):
     pairs = _trim(pairs)
     if not pairs:
@@ -200,14 +238,17 @@ def _chunk(pairs, heading, limit):
                 if len(st) <= limit:
                     out.append((sh, sln, st))
                 else:
-                    for k in range(0, len(st), limit):
-                        out.append((sh if k == 0 else "%s (cont.)" % sh, sln, st[k:k + limit]))
+                    for k, part in enumerate(_hard_slice(st, limit)):
+                        out.append((sh if k == 0 else "%s (cont.)" % sh, sln, part))
             continue
         # A single line longer than the whole budget: the only case where a chunk
         # boundary cannot fall on a line boundary. Every slice keeps that line's
-        # number, because that is genuinely where the text is.
-        for k in range(0, len(t), limit):
-            out.append((h if k == 0 else "%s (cont.)" % h, ln, t[k:k + limit]))
+        # number, because that is genuinely where the text is. A one-line-per-entry log
+        # reaches here with no boundary left to try — `##` and `###` are absent, the item
+        # IS the unit, and LINE packing cannot reduce a single line — so this is where the
+        # sentence-end backoff earns its place.
+        for k, part in enumerate(_hard_slice(t, limit)):
+            out.append((h if k == 0 else "%s (cont.)" % h, ln, part))
     return out
 
 
