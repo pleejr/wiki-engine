@@ -8,6 +8,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.54.4] — 2026-08-12
+
+Patch — the engine's own maintenance sweep no longer leaves the footprint its capture reads as "the operator worked here". Backwards-compatible; no migration.
+
+### Fixed
+- **`upkeep.sh sync-clones` stamped every clone it manages with a fresh `FETCH_HEAD`, and the next capture recorded all of them as worked.** `rag-capture.sh` selects a repo when it sees a fetch or checkout inside its window, because a session spent *reading* a repo writes nothing else; the sweep performs that identical filesystem action on every clone, for maintenance. Reported from a consumer vault on the other side of a boundary, reproduced here at v1.54.2. `Proposal: rag-capture-fetch-clause-selects-repos-the-engine-itself-fetched`
+  - **Fail-open, into the worst possible destination.** The capture exits 0 and writes a well-formed block asserting work happened in a repo nobody opened, and that buffer is distillation input *and* indexed for recall — so the false association is retrieved later as evidence. A session asking "what was I working on" gets the answer the maintenance verb produced.
+  - **The same trap v1.54.0 rejected the index mtime for**, one verb further out: a tool perturbing the signal another tool reads as evidence. There the capture perturbed its own; here a sibling verb perturbs it from across the engine.
+  - **The fix belongs in the writer, not the reader.** Nothing in `FETCH_HEAD` distinguishes a fetch by a person from a fetch by a tool, so the reader cannot tell — but the tool knows exactly what it did, and now restores the timestamps it disturbed on every path out of the fetch, including the one that fast-forwarded. Content is untouched: a reflog entry the sweep causes stays in the reflog, honestly; only the *timing* footprint goes back. A clone with no reflog at all gets one dated to its own last head change rather than to now.
+  - **The clause's meaning is now stated rather than implied: it detects ACCESS, and the commit clause detects CHANGE.** The reporter's alternative — require the fetch to have brought something back — reads as the stricter test and would have deleted the case the clause exists for, since reviewing an already-current repo produces a no-op fetch. Declined for that reason, with the reasoning recorded in `SCHEMA.md` and beside the code.
+  - **Two boundaries stated instead of left to be discovered.** A consumer's own `fetch --all` sweep is *not* covered and cannot be — its footprint is identical to access by design, and the engine answers only for the verbs it ships. And a fast-forward that brings a genuinely recent commit still selects the repo, which is the change clause telling the truth about a repo that moved.
+
 ## [1.54.3] — 2026-08-12
 
 Patch — every vault walk now goes through one shared exclusion, so no tool reads (or writes) another session's worktree as if it were vault content. Backwards-compatible; no migration.

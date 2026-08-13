@@ -1,7 +1,8 @@
 ---
 slug: rag-capture-fetch-clause-selects-repos-the-engine-itself-fetched
-outcome: open
+outcome: partially-accepted
 received: 2026-08-12
+reason: "The defect and its mechanism are accepted in full and fixed at the writer (sync-clones restores the timestamps it disturbs, on every path out of the fetch). Shape (b) — require the fetch to have changed a remote-tracking ref — is DECLINED: the clause detects operator ACCESS, and reviewing an already-current repo produces a no-op fetch, so that test would delete the case the clause was added for. Shape (a) is what shipped, and its stated limit stands: a consumer's own `fetch --all` is indistinguishable from access and is documented rather than handled. One residual is disclosed rather than fixed — a fast-forward that brings a genuinely recent commit still selects the repo, via the separate COMMIT clause, which is that clause telling the truth about a repo that moved."
 ---
 
 HANDOFF — engine defect report
