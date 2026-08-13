@@ -8,6 +8,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.57.0] — 2026-08-12
+
+Minor — a new skill, `drain`, and a fix to the gate that was supposed to notice it.
+
+### Added
+- **`drain` — the engine-dev outer loop.** Handling engine work one report at a time, with a check-in between each, turns a day of work into a day of questions. This skill holds the whole work-list — open proposals, awaiting-merge *and* long-open pull requests, red CI, the gates, plus the consuming vault's pin, `verify-status` and `upkeep` queues — and runs each item to *released and adopted*: reproduce at HEAD, judge the reporter's prescription against the mechanism rather than its confidence, fix the **class** rather than the instance, drive the test red before green, fold the cycle's own drift into the same pass, then merge, tag, release, adopt, re-verify.
+  - **It decides what most loops stop to ask**: release level by this repo's own SemVer rules, which shape to build *including declining a reporter's suggestion with the technical reason recorded*, the outcome and its reason, and provably-reversible cleanup.
+  - **It stops for four things only**: a breaking change, destroying work with no other copy, a taste call the code cannot settle, and a gate that would have to be weakened to let the change land.
+  - **It carries the loop's own failure modes**, each earned: measure before changing state, run a control before believing a fixture, age a fixture whose subject is time, never `git add -A`, do not move a correctness stamp further than you read, and establish a finding — reproduce it, check the timeline, read the closing comment — before filing it.
+
+### Fixed
+- **`lint-docs.sh`'s skill-coverage check passed on an incidental word.** It ran an unanchored `grep -q "$name"` over `USAGE.md`, so a skill whose name is an ordinary word was "documented" by any coincidental mention — `drain` matched *drainable* in an unrelated table row, and the gate reported full coverage for a skill nobody had written up. Found by adding that skill, which is the only reason it surfaced at all. It now matches the **backticked name**, the form every documented skill already uses, and CI pins both directions with a probe skill: an incidental mention must fail, the documented form must pass.
+
 ## [1.56.0] — 2026-08-12
 
 Minor — a flat list page chunks on item boundaries instead of purely on size, so an append-only log is retrievable per entry rather than per 5k block. `CHUNKER_VERSION` bumps to 3, so existing vaults re-embed the affected pages once on the next `rag-build`.

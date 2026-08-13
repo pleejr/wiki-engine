@@ -1585,6 +1585,39 @@ jobs:
           ./bin/lint.sh --wiki "$VAULT"
           ./bin/adopt.sh --check --wiki "$VAULT"
 
+      - name: Skill-coverage matches the documented name, not an incidental word
+        run: |
+          # The coverage check was an unanchored `grep -q "$name"` over USAGE.md, so a skill
+          # whose name is an ordinary word passed on any incidental mention: `drain` matched
+          # "drainable" in an unrelated table row and the gate reported full coverage for a
+          # skill nobody had documented. Same class of false pass the engine keeps finding —
+          # a check that cannot distinguish its subject from a coincidence.
+          fail=0
+          tmp="$RUNNER_TEMP/skillcov"; rm -rf "$tmp"; mkdir -p "$tmp"
+          probe="$GITHUB_WORKSPACE/skills/zzprobeskill"
+          mkdir -p "$probe"
+          printf -- '---\nname: zzprobeskill\ndescription: probe\n---\n# probe\n' > "$probe/SKILL.md"
+
+          # an incidental mention of the bare word must NOT satisfy coverage
+          cp "$GITHUB_WORKSPACE/USAGE.md" "$tmp/USAGE.bak"
+          printf '\nA sentence mentioning zzprobeskill in passing.\n' >> "$GITHUB_WORKSPACE/USAGE.md"
+          "$GITHUB_WORKSPACE/bin/lint-docs.sh" >/dev/null 2>&1 \
+            && { echo "  FAIL an incidental mention counted as documentation"; fail=1; } \
+            || echo "  ok   an incidental mention does not count as documentation"
+
+          # the documented form does
+          cp "$tmp/USAGE.bak" "$GITHUB_WORKSPACE/USAGE.md"
+          printf '\n- **`zzprobeskill`** — documented properly.\n' >> "$GITHUB_WORKSPACE/USAGE.md"
+          "$GITHUB_WORKSPACE/bin/lint-docs.sh" >/dev/null 2>&1 \
+            && echo "  ok   ...and the backticked name does" \
+            || { echo "  FAIL a properly documented skill still failed"; fail=1; }
+
+          cp "$tmp/USAGE.bak" "$GITHUB_WORKSPACE/USAGE.md"; rm -rf "$probe"
+          "$GITHUB_WORKSPACE/bin/lint-docs.sh" >/dev/null 2>&1 \
+            && echo "  ok   ...and the repo is green once the probe is removed" \
+            || { echo "  FAIL lint-docs stayed red after cleanup"; fail=1; }
+          exit "$fail"
+
       - name: A flat list chunks on item boundaries, not on size
         run: |
           # A heading-less log — one `# ` title, a long flat list of dated entries — had no

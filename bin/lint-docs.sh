@@ -26,8 +26,16 @@ fail=0
 for d in "$ROOT"/skills/*/; do
   [ -d "$d" ] || continue
   name="$(basename "$d")"
-  if ! grep -q "$name" "$USAGE"; then
+  # MATCH THE DOCUMENTED FORM, not the bare word. This was an unanchored `grep -q "$name"`,
+  # so a skill whose name is an ordinary word passed on any incidental mention: `drain`
+  # matched "drainable" in an unrelated table row, and the gate reported full coverage for
+  # a skill nobody had documented. Every skill is listed as a backticked name, so require
+  # that — a substring match on a common word is the same class of false pass the engine
+  # keeps finding elsewhere.
+  if ! grep -qF -- "\`$name\`" "$USAGE"; then
     echo "lint-docs: skill '$name' is not documented in USAGE.md (add it to the Skills section)" >&2
+    echo "lint-docs:   looked for the backticked name; an incidental mention of the bare" >&2
+    echo "lint-docs:   word does not count as documentation." >&2
     fail=1
   fi
 done
