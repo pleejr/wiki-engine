@@ -128,15 +128,24 @@ while IFS= read -r hit; do
 done < <(grep -rn -- 'grep -r[a-z]* --include=.\*\.md.\+"\$\(VAULT\|WIKI\)"' "$ROOT/bin" 2>/dev/null \
          | grep -v 'vault_grep_excludes' || true)
 
-# The Python indexer keeps its own literal set (different language, same list) — assert the
-# two agree rather than trusting a comment that says they do.
-py_skips="$(grep -o 'SKIP_DIRS = {[^}]*}' "$ROOT/bin/rag-build.sh" 2>/dev/null | tr -d '"{}' | sed 's/SKIP_DIRS = //; s/,/ /g')"
-for name in $VAULT_SCAN_SKIP_DIRS; do
-  case " $py_skips " in
-    *" $name "*) ;;
-    *) echo "lint-docs: rag-build.sh SKIP_DIRS is missing '$name' (VAULT_SCAN_SKIP_DIRS has it)" >&2; fail=1;;
-  esac
-done
+# The Python indexer skips the CLASS rather than a list — every name in
+# VAULT_SCAN_SKIP_DIRS is either `engine` or a dot-directory, and python's own walk plus an
+# explicit dot-prefix test covers the second group without enumerating it. That is stronger
+# than list-equality (it cannot miss the next dot-directory), so assert the RULE: the walk
+# must skip `engine` and anything dot-prefixed. Asserting the old list here would fail a
+# correct implementation, which is its own kind of broken gate.
+py_walk="$(grep -n 'SKIP_NAMES' "$ROOT/bin/rag-build.sh" 2>/dev/null || true)"
+[ -n "$py_walk" ] \
+  || { echo "lint-docs: rag-build.sh has no SKIP_NAMES — the indexer's skip rule is gone" >&2; fail=1; }
+printf '%s' "$py_walk" | grep -q 'startswith(".")' \
+  || { echo "lint-docs: rag-build.sh does not skip dot-directories by class" >&2; \
+       echo "lint-docs:   an enumerated list is how .worktrees/ went unskipped — a full" >&2; \
+       echo "lint-docs:   checkout of every page, indexed a second time under paths that" >&2; \
+       echo "lint-docs:   vanish when the worktree is retired." >&2; fail=1; }
+case " $VAULT_SCAN_SKIP_DIRS " in
+  *" engine "*) ;;
+  *) echo "lint-docs: VAULT_SCAN_SKIP_DIRS no longer names 'engine'; the two walks have diverged" >&2; fail=1;;
+esac
 
 if [ "$fail" -eq 0 ]; then
   echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion"
