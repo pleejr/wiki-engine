@@ -8,6 +8,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.64.0] — 2026-08-13
+
+Minor — `checkpoint` now mines its own notes for skill candidates, and `skill-candidates` stops deciding on the operator's behalf. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Changed
+- **`skill-candidates` recommends; it no longer decides.** Its report carried a `Verdict` field the *skill* filled in, so an operator learned what it had chosen by reading the vault afterwards — and on its first real run it settled four of six candidates unilaterally, surfacing only the two it had already decided to build. Every candidate clearing the bar now goes to the operator as an interactive **develop / discard / defer** choice, including the obvious ones. A detection skill that also decides has quietly become an authoring skill with a filter.
+  - **The change is not merely procedural: the skill's axes cannot see the question that matters most.** Recurrence and cost measure whether the *evidence* is real. Neither can tell whether a **skill is the right form** — notes that already load on demand may cover the ground with nothing needing to fire, and an always-on preference belongs in the vault's `CLAUDE.md`. That is exactly how the first run's top-ranked candidate was decided: it was declined on review for a reason the ranking had no way to represent. So a discard now captures the **operator's** reason, not the one the skill would have guessed.
+  - **Batches rather than truncates.** Interactive question facilities cap questions per call, commonly at four, so six candidates is two rounds. Silently dropping the tail would report a filtered list as the whole list — the precise failure this skill exists to prevent.
+- **`checkpoint` runs `skill-candidates` itself, as a new §2b.** Previously it only *told the reader* to run it afterwards, which meant it usually did not happen. Placed after §2 because the mining has nothing to read until the session's own notes have landed, and before §4 so the verdicts are linted and committed in the same pass instead of left loose. Cheap enough to run every time: in steady state the sweep starts from the newest existing verdict note rather than the whole vault, and only a never-mined vault pays for the backlog drain, once.
+
+### Fixed
+- **A cycle the auto-run would otherwise have created.** `skill-candidates` §7 said to record verdicts *through* `checkpoint`; with `checkpoint` now invoking `skill-candidates`, a callee that saved its results by calling its caller back would loop. The edge is now explicitly one-way — **the caller writes, never the callee**. `skill-candidates` writes nothing and invokes nothing: run from `checkpoint` it hands the verdicts back for that pass's open worktree to commit, and run standalone it prints them and states plainly that they are unrecorded until `checkpoint` runs. Structurally the same rule as the hook ban, one layer in.
+
 ## [1.63.0] — 2026-08-13
 
 Minor — a new skill, `prove-the-test-can-fail`, which runs a new check against a broken subject instead of trusting that it works. Adopt with `bin/adopt.sh` or `update.sh`.

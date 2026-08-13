@@ -1,9 +1,9 @@
 ---
 name: checkpoint
-description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, then distills durable facts from this session into memory/ notes. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session, on demand — never from a session-lifecycle hook.
+description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, distills durable facts from this session into memory/ notes, then automatically runs `skill-candidates` over them and writes back whichever verdicts the operator chooses. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session, on demand — never from a session-lifecycle hook.
 status: active
-summary: "end-of-session: update project page + `log.md`, distill memory. In-session only."
-updated: 2026-07-21
+summary: "end-of-session: update project page + `log.md`, distill memory, mine it for skill candidates and record the verdicts. In-session only."
+updated: 2026-08-13
 used_by: []
 ---
 
@@ -36,7 +36,19 @@ Before editing any vault file, take an isolated working copy so a second concurr
 - Promote **durable** facts into `$WIKI_PATH/memory/` notes with the right `type`: `preference` (how I work) · `decision` (a chosen path + why) · `lesson` (a hard-won rule).
 - Give each ≥2 `[[wikilinks]]`; mark any note it supersedes as `status: superseded`.
 - Add/refresh the `$WIKI_PATH/index.md` memory entry. For **project** pages, don't hand-edit the index Projects buckets — regenerate them from frontmatter: `$WIKI_PATH/engine/bin/gen-projects-index.sh --wiki "$WORK"` (splices between the `<!-- projects:start/end -->` sentinels, same pattern as the skills catalog).
-- **The notes this step writes are the evidence base for `skill-candidates`**, which reads them back out to find procedures repeated often enough to deserve a skill. Nothing here needs to anticipate that — just date the notes and keep them specific about what was *done*, since a note recording only a conclusion cannot later be counted as an occurrence. Run `skill-candidates` after this skill, never instead of it: it judges recurrence across weeks of notes, so it has nothing to read until the session's own notes have landed. If a candidate is accepted or declined there, the verdict comes back here as a `type: decision` note tagged `skill-candidate` — that is what stops a rejected candidate being re-proposed every session.
+- **The notes this step writes are the evidence base for `skill-candidates`** (§2b), which reads them back out to find procedures repeated often enough to deserve a skill. Nothing here needs to anticipate that — just date the notes and keep them specific about what was *done*, since a note recording only a conclusion cannot later be counted as an occurrence.
+
+## 2b. Mine for skill candidates, then write the verdicts
+
+Run **`skill-candidates`** here, automatically — not as a suggestion at the end. It must come *after* §2, because it judges recurrence across weeks of notes and has nothing to read until this session's own notes have landed; and *before* §4, so the verdicts it produces are linted and committed in this same pass rather than left loose.
+
+**In steady state this is cheap**, which is what makes it safe to run every time: the sweep starts from the newest existing verdict note, so it reads what changed since, not the whole vault. Only a vault that has never been mined pays for the full backlog drain, and it pays once.
+
+**`skill-candidates` decides nothing and writes nothing.** It puts every candidate to the operator as a develop/discard/defer choice and hands the answers back. Writing them is this skill's job, here, using the worktree already open from §0 — one `type: decision` note per verdict, tagged `skill-candidate`, carrying the operator's reason for a discard and the count for a defer.
+
+**The edge is deliberately one-way: this skill calls that one, and that one never calls back.** If `skill-candidates` invoked `checkpoint` to save its own verdicts, the two would cycle. Same structural rule as the hook ban one layer in — the caller writes, never the callee. Nothing else here may invoke a skill that can reach `checkpoint`.
+
+If the operator declines every candidate, or there are none, write nothing and say so in one clause. A run that finds nothing is the ordinary steady-state result, not a failure.
 
 ## 3. Prune the raw source (keep the vault authoritative)
 - **Only after** a native note's durable content is captured in the vault, remove it from native memory (`~/.claude/projects/*/memory/*.md`) and drop its line from that dir's `MEMORY.md` index — so the vault is the single source of truth and native can't drift into a competing authority.
