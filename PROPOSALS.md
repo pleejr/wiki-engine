@@ -39,6 +39,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 |---|---|---|
 | `adopt-reconcile-gitignore` | shipped | derived |
 | `adopt-step-asset-resolution` | shipped | v1.32.0 |
+| `adoption-leaves-the-skills-catalog-stale-so-the-pin-commit-is-refused-both-ways` | open | received 2026-08-13 |
 | `bare-status-ignores-submitted-markers` | shipped | derived |
 | `bump-pinned-huggingface-hub-1-26-0` | shipped | derived |
 | `checkpoint-prune-confirm-scope` | shipped | derived |
