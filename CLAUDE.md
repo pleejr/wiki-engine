@@ -12,7 +12,7 @@ Shared machinery for an LLM-Wiki / Karpathy-pattern vault: the node model, page 
 ## Working style
 
 - Terse; no filler. Push back on destructive actions and anti-patterns — ask rather than guess.
-- No embeddings — retrieval is the link graph + frontmatter.
+- Retrieval is the link graph + frontmatter. Semantic recall (`bin/recall.sh`) is an **optional, derived** lens over the same markdown — it points at which pages to open, it never replaces the map or the links.
 
 ## Hard safety rule
 
