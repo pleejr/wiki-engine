@@ -8,6 +8,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.56.0] — 2026-08-12
+
+Minor — a flat list page chunks on item boundaries instead of purely on size, so an append-only log is retrievable per entry rather than per 5k block. `CHUNKER_VERSION` bumps to 3, so existing vaults re-embed the affected pages once on the next `rag-build`.
+
+### Fixed
+- **A heading-less list page was chunked purely by size, so one embedding had to represent several unrelated entries.** v1.55.0 made such pages *indexable*; this makes them *findable*. The splitter preferred `## ` then `### ` and fell back to size packing, and an append-only log has neither — so entries that are individually self-contained were packed three to a chunk and the lead entry dominated the vector. `Proposal: chunk-a-flat-list-on-item-boundaries-not-on-size`
+  - **Not a coverage failure — a ranking one.** Every character was embedded. Measured on one vault's log: 187 entries, median 1,475 characters, packed into 64 chunks at a median 5,115 — ~2.9 unrelated entries each. A query sharing the entry's vocabulary returned it first; a paraphrase of the same question did not return the page at all, with the containing chunk confirmed present in the index.
+  - **The item is the retrieval unit.** A new split level sits between `### ` and size packing: when a block has no sub-headings and is a flat list, it splits on top-level item boundaries and packs consecutive items only up to `LIST_PACK` (2,000), well below the embedder cap — so a page of many tiny bullets does not become one chunk each, while an ordinary long entry stands alone. After: **155 chunks, median 1,766, ~1.2 entries each.**
+  - **A continuation stays with its item** — indented text, a nested bullet, and a fenced block that itself contains bullet-looking lines, which is why the scan tracks fences rather than splitting on every matching line.
+  - **An over-cap item falls back to LINE packing before it is ever sliced.** Caught by measurement, not by review: the first version pushed one page's largest chunk from 4,021 to 6,000 characters, because a list run is never split by the packer and arrived at the hard-slice path that had only ever seen a single over-long line. The list level had made a chunk *worse*.
+  - **Structured pages are untouched**, asserted against a prose fixture chunked with the level disabled. Across the vault, only pages whose long sections are themselves bullet lists changed, and every non-whitespace character survives — verified by comparing the old and new output with whitespace removed.
+
 ## [1.55.0] — 2026-08-12
 
 Minor — the RAG layer indexes whole pages instead of a truncated prefix, and gains a chunker module with a version stamp that invalidates vectors produced by an older split. Existing vaults re-embed once on the next `rag-build`; nothing else to do.

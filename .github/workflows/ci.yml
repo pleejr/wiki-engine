@@ -1585,6 +1585,93 @@ jobs:
           ./bin/lint.sh --wiki "$VAULT"
           ./bin/adopt.sh --check --wiki "$VAULT"
 
+      - name: A flat list chunks on item boundaries, not on size
+        run: |
+          # A heading-less log — one `# ` title, a long flat list of dated entries — had no
+          # structure for the `##`/`###` levels to find, so it fell through to size packing
+          # and filled every chunk to the embedder's cap. Measured on a real log: 187
+          # self-contained entries, median 1,475 chars, packed ~2.9 to a chunk at a median
+          # 5,115. Nothing was LOST — that is the v1.55.0 fix — but one vector then had to
+          # represent three unrelated days, so a query phrased from memory ranked the diluted
+          # chunk below shorter topical pages: present in the index, unreachable in practice.
+          python3 - <<'PY'
+          import sys; sys.path.insert(0, "bin")
+          import rag_chunk, re
+          fail = 0
+
+          # a flat list page: 20 self-contained items, no headings
+          items = "\n".join("- **2026-07-%02d** — entry %d about topic %d, %s" % (i+1, i, i, "x"*400) for i in range(20))
+          open("/tmp/flat.md", "w").write("# Log\n\n" + items + "\n")
+          ch = rag_chunk.parse_file("/tmp/flat.md")[2]
+          sizes = sorted(len(t) for _, _, t in ch)
+          med = sizes[len(sizes)//2]
+          if med < rag_chunk.MAX_CHARS / 2:
+              print("  ok   median chunk %d is near the item size, not the cap" % med)
+          else:
+              print("  FAIL median chunk %d — still packing to the cap" % med); fail = 1
+          if all(len(t) <= rag_chunk.MAX_CHARS for _, _, t in ch):
+              print("  ok   no chunk exceeds the embedder cap")
+          else:
+              print("  FAIL a chunk exceeds MAX_CHARS"); fail = 1
+
+          # every recorded line must point at its own first line
+          lines = open("/tmp/flat.md").read().split("\n")
+          bad = [ln for _, ln, t in ch if lines[ln-1].strip() and lines[ln-1].strip() not in t]
+          print("  ok   every chunk's line number names its own first line" if not bad
+                else "  FAIL %d chunk(s) point at the wrong line" % len(bad))
+          if bad: fail = 1
+
+          # a continuation — indented text and a fence containing a bullet — stays with its item
+          page = "# t\n\n- **a** one\n  ```\n  - not an item\n  ```\n  tail\n- **b** two\n"
+          open("/tmp/fence.md", "w").write(page)
+          fch = rag_chunk.parse_file("/tmp/fence.md")[2]
+          if all(t.count("```") % 2 == 0 for _, _, t in fch):
+              print("  ok   a fenced block inside an item is never split across chunks")
+          else:
+              print("  FAIL a fence was split"); fail = 1
+
+          # STRUCTURED pages must be untouched: prose sections chunk exactly as before
+          prose = "# t\n\n## one\n\n" + ("word " * 2000) + "\n\n## two\n\n" + ("word " * 2000) + "\n"
+          open("/tmp/prose.md", "w").write(prose)
+          new = [c[2] for c in rag_chunk.parse_file("/tmp/prose.md")[2]]
+          orig = rag_chunk._split_items
+          rag_chunk._split_items = lambda pairs: None          # pre-change behaviour
+          old = [c[2] for c in rag_chunk.parse_file("/tmp/prose.md")[2]]
+          rag_chunk._split_items = orig
+          if new == old:
+              print("  ok   a prose page chunks exactly as it did before")
+          else:
+              print("  FAIL the list level changed a page that is not a list"); fail = 1
+
+          # an item LARGER than the cap must line-pack, never hard-slice mid-line
+          big = "# t\n\n- **a** " + "\n  ".join("line %d %s" % (i, "y"*100) for i in range(120)) + "\n- **b** two\n"
+          open("/tmp/big.md", "w").write(big)
+          bch = rag_chunk.parse_file("/tmp/big.md")[2]
+          if all(len(t) <= rag_chunk.MAX_CHARS for _, _, t in bch):
+              print("  ok   an over-cap item is split within itself, still under the cap")
+          else:
+              print("  FAIL an over-cap item produced an over-cap chunk"); fail = 1
+          # ...and the split falls on line boundaries: no chunk starts mid-word
+          if all(not t[:1].isspace() for _, _, t in bch):
+              print("  ok   ...on line boundaries, not mid-line")
+          else:
+              print("  FAIL a chunk began mid-line"); fail = 1
+
+          # content is preserved: identical ignoring whitespace
+          def flat(p):
+              return re.sub(r"\s+", "", "".join(t for _, _, t in rag_chunk.parse_file(p)[2]))
+          a = flat("/tmp/flat.md")
+          rag_chunk._split_items = lambda pairs: None
+          b = flat("/tmp/flat.md")
+          rag_chunk._split_items = orig
+          if a == b:
+              print("  ok   every non-whitespace character survives the new split")
+          else:
+              print("  FAIL content changed: %d chars" % (len(b) - len(a))); fail = 1
+
+          sys.exit(fail)
+          PY
+
       - name: A page without '##' headings is indexed whole, not just its first 6k
         run: |
           # REGRESSION: rag-build chunked on `## ` only, and rag_embed truncated every
