@@ -74,10 +74,7 @@ EXT_PATH="$(resolve_seam_file "$WIKI" "$EXT_FILE")"
 [ -n "$EXT_PATH" ] && EXTERNAL="$(grep -v '^[ \t]*#' "$EXT_PATH" | grep -v '^[ \t]*$' || true)"
 
 # --- resolvable targets: every page slug in the vault --------------------------
-SLUGS="$(find "$WIKI" \
-  -type d \( -name .git -o -name engine -o -name .obsidian -o -name .rag -o -name .worktrees \) -prune -o \
-  -type f -name '*.md' -print 2>/dev/null \
-  | sed -e 's|.*/||' -e 's|\.md$||' | LC_ALL=C sort -u)"
+SLUGS="$(vault_pages "$WIKI" | sed -e 's|.*/||' -e 's|\.md$||' | LC_ALL=C sort -u)"
 
 # --- content-node dirs (shared definition with lint.sh) ------------------------
 NODE_DIRS=()
