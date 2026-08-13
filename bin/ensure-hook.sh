@@ -27,22 +27,32 @@
 # `startup` entry beside a `startup|resume` entry really does run twice on startup — so
 # that report is correct, not a false positive, and broadening the request is the fix.
 #
+# Timeout: `--timeout N` writes `"timeout": N` (seconds) beside type/command. The host
+# aborts a hook that outruns its window, and the window a hook inherits by DEFAULT is the
+# host's, not one the engine chose — a SessionEnd hook was observed cancelled at about one
+# second, which is less than a workspace-wide `rag-capture.sh` scan takes. So a slow
+# deterministic hook has to state its own budget, and before this option the tool could not
+# express the field at all. Add-only still holds: a command already wired WITHOUT a
+# sufficient timeout is REPORTED, never edited — see the report below.
+#
 # Deterministic — plain jq + file writes, NEVER runs `claude` (safe from a hook per the
 # engine's hard rule). Exits 0 whether it changed anything or not, so it can't block a
 # session start; a genuine error (bad JSON, unwritable file) exits non-zero instead.
 #
 # On a change it prints one line to stdout:   wired <event>[<matcher>] -> <command>
-# On a no-op it prints nothing (bar a duplicate report, which is not a no-op finding).
+# On a no-op it prints nothing (bar a duplicate or timeout report, neither of which is a
+# no-op finding).
 #
 # Usage:
 #   ensure-hook.sh --event SessionStart --matcher 'startup|resume' \
 #                  --command 'WIKI_PATH=/v /v/engine/bin/session-boot.sh' \
-#                  [--status 'engine boot'] [--settings ~/.claude/settings.json]
+#                  [--status 'engine boot'] [--timeout 30] \
+#                  [--settings ~/.claude/settings.json]
 #
 # --settings defaults to $CLAUDE_SETTINGS, else ~/.claude/settings.json.
 set -uo pipefail
 
-EVENT=""; MATCHER=""; COMMAND=""; STATUS=""; CHECK=0
+EVENT=""; MATCHER=""; COMMAND=""; STATUS=""; CHECK=0; TIMEOUT=""; TIMEOUT_SET=0
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,6 +60,7 @@ while [ $# -gt 0 ]; do
     --matcher)  MATCHER="$2"; shift 2;;
     --command)  COMMAND="$2"; shift 2;;
     --status)   STATUS="$2"; shift 2;;
+    --timeout)  TIMEOUT="$2"; TIMEOUT_SET=1; shift 2;;
     --settings) SETTINGS="$2"; shift 2;;
     --check)    CHECK=1; shift;;
     -h|--help)  grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
@@ -59,6 +70,14 @@ done
 
 [ -n "$EVENT" ]   || { echo "ensure-hook: --event required" >&2; exit 2; }
 [ -n "$COMMAND" ] || { echo "ensure-hook: --command required" >&2; exit 2; }
+# Refuse a malformed timeout rather than writing it. A hook carrying `"timeout": "30"` or
+# `"timeout": 0` is worse than one carrying none: the field is present, so it reads as
+# handled, while the host falls back to its default or cancels immediately.
+if [ "$TIMEOUT_SET" -eq 1 ]; then
+  case "$TIMEOUT" in
+    ''|*[!0-9]*|0*) echo "ensure-hook: --timeout must be a positive whole number of seconds, got '$TIMEOUT'" >&2; exit 2;;
+  esac
+fi
 command -v jq >/dev/null 2>&1 || { echo "ensure-hook: jq not found; cannot wire $EVENT hook" >&2; exit 2; }
 
 # Ensure the settings file exists as a JSON object (never create it in --check mode).
@@ -114,9 +133,41 @@ if [ "$dupes" -gt 1 ]; then
     "$SETTINGS" >&2
 fi
 
+# Already wired, but without a big enough timeout? Add-only cannot repair that either, and
+# silence is the worst answer available: the hook stays wired, reports itself wired, and is
+# cancelled by the host on every slow run, so the only observable is a buffer that never
+# grows. Every vault that adopted the pre-timeout snippet is in exactly this state, so the
+# report is what reaches them. A LARGER existing value is the operator having already solved
+# it — say nothing there, or the message is noise on the vaults that got it right.
+if [ "$TIMEOUT_SET" -eq 1 ] && [ "$dupes" -gt 0 ]; then
+  have="$(
+    printf '%s' "$current" | jq -r --arg ev "$EVENT" --arg m "$MATCHER" --arg cmd "$COMMAND" "$JQ_LIB"'
+      ($m | if . == "" then null else split("|") end) as $want
+      | ((.hooks // {})[$ev] // []) | covering($want; $cmd)
+      | [ .[].hooks[]? | select(.command == $cmd) | (.timeout // 0) ]
+      | if length == 0 then 0 else min end
+    '
+  )" || { echo "ensure-hook: jq timeout scan failed on $SETTINGS" >&2; exit 2; }
+  case "$have" in ''|*[!0-9]*) have=0;; esac
+  if [ "$have" -lt "$TIMEOUT" ]; then
+    if [ "$have" -eq 0 ]; then
+      printf 'ensure-hook: %s[%s] is already wired without a timeout: %s\n' \
+        "$EVENT" "$MATCHER" "$COMMAND" >&2
+    else
+      printf 'ensure-hook: %s[%s] is already wired with timeout %s, under the %s this hook needs: %s\n' \
+        "$EVENT" "$MATCHER" "$have" "$TIMEOUT" "$COMMAND" >&2
+    fi
+    printf 'ensure-hook: the host cancels a hook that outruns its window, and a cancelled hook\n' >&2
+    printf 'ensure-hook:   is silent — add "timeout": %s to that entry in %s\n' \
+      "$TIMEOUT" "$SETTINGS" >&2
+  fi
+fi
+
 updated="$(
-  printf '%s' "$current" | jq --arg ev "$EVENT" --arg m "$MATCHER" --arg cmd "$COMMAND" --arg sm "$STATUS" "$JQ_LIB"'
-    def newhook: {type:"command", command:$cmd} + (if $sm == "" then {} else {statusMessage:$sm} end);
+  printf '%s' "$current" | jq --arg ev "$EVENT" --arg m "$MATCHER" --arg cmd "$COMMAND" --arg sm "$STATUS" --arg to "$TIMEOUT" "$JQ_LIB"'
+    def newhook: {type:"command", command:$cmd}
+      + (if $sm == "" then {} else {statusMessage:$sm} end)
+      + (if $to == "" then {} else {timeout:($to | tonumber)} end);
     ($m | if . == "" then null else split("|") end) as $want
     | .hooks = (.hooks // {})
     | .hooks[$ev] = (.hooks[$ev] // [])
