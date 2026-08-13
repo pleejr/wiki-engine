@@ -8,6 +8,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.60.0] — 2026-08-13
+
+Minor — `skill-candidates` gains the mode it was missing: a first run is a backlog drain and is supposed to return many. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Changed
+- **`skill-candidates` distinguishes a backlog drain from a steady-state pass.** As shipped in v1.59.0 the skill was written entirely in steady-state framing, and three of its own sentences would have suppressed the backlog it exists to find: *"`not yet` … usually the honest one"*, *"the record not yet showing a repeat is the ordinary case"*, and — the load-bearing one — *"a run that proposes six skills has stopped filtering"*. A vault that checkpointed for months without ever mining those notes has accumulated every procedure it repeated in that time, so on its first run six candidates is the **correct** result. The skill would have talked itself out of the work, which is the same under-reporting failure it was built to prevent, arriving from the other direction.
+  - **The mode signal is free and needs no new state**: if no `skill-candidate` verdict note exists, the vault has never been mined, so this is a first run. Backlog mode sweeps the whole record; steady state sweeps forward from the newest verdict and re-checks anything previously marked *not yet*.
+  - **The bar does not move between modes** — the same three tests either way. Only the expected count changes, which is what makes an unusual result legible: an empty **first** run means the queries are wrong rather than the record being clean, and a busy steady-state run means either a long un-mined stretch or a bar being applied loosely.
+  - **Reporting and recommending are now separate.** Report every candidate clearing the bar, since trimming a real backlog to look disciplined discards evidence the record earned; recommend a small set to *build* first, because skills are written one at a time and eight authored in one sitting are eight thin ones. The rest keep their evidence and wait — nothing is lost, as the next run re-derives them from the same notes. The old rule now filters on the bar, never on the count.
+  - Convergence is stated as the intended shape: the backlog drains once, and regular `checkpoint` runs keep every later pass near zero. **A steady state of nothing-to-report is the skill succeeding**, not a wasted run.
+
 ## [1.59.0] — 2026-08-13
 
 Minor — a new skill, `skill-candidates`, which reads the curated record back out to find the procedures a vault has already proved it repeats. Adopt with `bin/adopt.sh` or `update.sh`.
