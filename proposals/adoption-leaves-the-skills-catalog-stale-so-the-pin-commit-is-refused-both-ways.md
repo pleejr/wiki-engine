@@ -1,6 +1,7 @@
 ---
 slug: adoption-leaves-the-skills-catalog-stale-so-the-pin-commit-is-refused-both-ways
-outcome: open
+outcome: accepted
+reason: shipped as proposed in shape — the catalog is deferred the way the repo page is, into the tree that can commit it. What the suggested fix left open was the order, so update.sh now prints the full sequence with the pointer commit LAST. Neither gate was touched: the bind is the single commit, not either check, which is the reporter's own conclusion about not widening the guard carried through to the other side.
 received: 2026-08-13
 ---
 

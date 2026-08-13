@@ -8,6 +8,26 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.62.0] — 2026-08-13
+
+Minor — adopting a release that adds a skill no longer hands the vault a remedy that cannot work. `update.sh` reconciles a generated region it was already invalidating, and prints the order that lands it. **No gate changes**, and none needed to.
+
+### Fixed
+- **A release that ADDS A SKILL staled `index.md`'s generated catalog and reconciled it nowhere, so the one-line remedy `update.sh` printed was refused both ways.** The catalog is generated from the *pinned* engine's skills and `adopt.sh` links the new one, but no code path in the adoption route regenerated what it had just invalidated. `Proposal: adoption-leaves-the-skills-catalog-stale-so-the-pin-commit-is-refused-both-ways`
+
+  | staged set | concurrency guard | lint | result |
+  |---|---|---|---|
+  | `engine` | allows (pointer-only) | FAILS (catalog stale) | refused |
+  | `engine` + `index.md` | REFUSES (canonical) | not reached | refused |
+
+  - **Fail-closed, so nothing was lost — filed for what it trains.** Both refusals printed their reasons and exited non-zero; the cost was a detour. But the only remedies left in canonical were `WIKI_WORKTREE=0` and `--no-verify`, and the v1.52.0 carve-out exists precisely to stop a gate teaching its user to bypass it.
+  - **The bind is the SINGLE COMMIT, not either gate — so neither gate changed.** Split the change and each is satisfied on its own terms: the tracked content lands on a branch, the catalog check then passes, and what is left in canonical is a genuinely pointer-only staged set, which is the case the carve-out was built for. An earlier draft of this fix relaxed lint for a pointer-only staged set on the theory that the gate was circular. It is not circular — a legal order exists — so that draft was dropped rather than shipped. What was actually missing is the **order**, which an operator otherwise has to derive from the two-tree rule mid-adoption.
+  - **`update.sh` now prints that order**, pointer commit **last** rather than first: take a worktree, regenerate, commit it there, integrate, then commit the pin in canonical. Running `update.sh` from inside a worktree does the first two steps for you and leaves only the commit — the same treatment the engine's repo page already gets, and for the same reason: `index.md` is ordinary tracked content, so it is written in the caller's own tree, or not written at all.
+  - **CI walks the whole sequence** against a vault with the gate armed and two real tags differing by one added skill — real tags because `update.sh` advances tag-to-tag and re-execs the new tag's own copy of itself, so a fixture without them would exercise a different program. It asserts its own preconditions first, including that the pointer commit is still **refused** before the sequence runs, and ends by requiring the vault to lint clean.
+
+- **`integrate` refused a session worktree whose vault sits under a symlinked path.** git answers with the PHYSICAL path (`--show-toplevel` and `--git-common-dir` resolve symlinks) while the shell's `pwd` keeps the LOGICAL one, so the identity test compared two spellings of the same directory and concluded they were different repositories. It then printed *"integrate must run from inside a session worktree"* at a caller who was standing in exactly that — fail-closed, with a message that sends the reader looking in the wrong place, since the only thing wrong is a path spelling. `/tmp` and `$TMPDIR` on macOS are both symlinked, so this reached any vault created under them. Both sides now resolve with `pwd -P`.
+  - **Found by the sequence test above, and only after a control was added.** An earlier run of that test appeared to pass *without* this fix — because `update.sh` had silently failed to advance the pin in that fixture, so `integrate` had nothing to merge and succeeded trivially. The fixture now builds its own origin repository with a real `main` and two tags, because the workspace checkout a PR build provides is a detached merge ref with no `main` for `git fetch origin main` to resolve.
+
 ## [1.61.0] — 2026-08-13
 
 Minor — the last level of the split chain stops cutting mid-sentence. `CHUNKER_VERSION` bumps to 4, so every vault re-chunks its pages once on the next `rag-build`.
