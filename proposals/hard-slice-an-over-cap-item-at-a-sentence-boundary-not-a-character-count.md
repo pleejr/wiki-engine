@@ -1,6 +1,6 @@
 ---
 slug: hard-slice-an-over-cap-item-at-a-sentence-boundary-not-a-character-count
-outcome: open
+outcome: accepted
 received: 2026-08-13
 ---
 

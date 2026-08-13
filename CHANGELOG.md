@@ -8,6 +8,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.61.0] — 2026-08-13
+
+Minor — the last level of the split chain stops cutting mid-sentence. `CHUNKER_VERSION` bumps to 4, so every vault re-chunks its pages once on the next `rag-build`.
+
+### Fixed
+- **A single-line item over the embedder cap reached the hard slice with no boundary left to try, and cut at a character count.** Filed as an improvement, not a defect: the behaviour was documented and intended. v1.55.0 said only the last level can break mid-line, v1.56.0 said an over-cap item falls back to LINE packing first, and both are true — but for one common page shape the chain bottoms out, because LINE packing cannot reduce an item that is a *single* line. A vault whose append-only log writes each entry as one physical line gives the chunker exactly one line per item, so `## `, `### `, the item boundary and line packing all pass it through unchanged to a cut at `MAX_CHARS`. `Proposal: hard-slice-an-over-cap-item-at-a-sentence-boundary-not-a-character-count`
+  - **The slice now looks back from the cap for a sentence end** — a terminator, any closing quote or bracket, then whitespace — within a window that is a *fraction* of the budget (`SLICE_BACKOFF`, a tenth) rather than a second number to keep in step with the cap. With no boundary in that window it cuts at the cap, byte-for-byte as before; no word-boundary fallback was added, because the reporter's own acceptance criteria ask for exactly that unchanged path.
+  - **Measured on the reported page shape** — 265 one-line entries, two of them just over the cap: chunks at the cap 2 → 0, chunk count unchanged at 268, and both cuts moved back onto a completed sentence. On a real vault log with no over-cap item the output is **byte-identical**, which is the other half of the acceptance criteria and was checked rather than assumed.
+  - **The remainder is still emitted.** Dropping it would be the silent truncation v1.55.0 exists to have removed, and merging it into the following chunk would rejoin one item's tail to the whole of the next — the "several unrelated entries in one vector" problem v1.56.0 measured and fixed. Both alternatives were considered by the reporter and rejected for those reasons.
+  - **Ranked low, and shipped anyway.** 2 items in 265 is 0.8%, and `rag-build.sh` already announces every occurrence, so nothing here was silent. It ships because the fix is small, the chain is otherwise complete, and the failure recurs by construction — log entries only get longer.
+
 ## [1.60.0] — 2026-08-13
 
 Minor — `skill-candidates` gains the mode it was missing: a first run is a backlog drain and is supposed to return many. Adopt with `bin/adopt.sh` or `update.sh`.
