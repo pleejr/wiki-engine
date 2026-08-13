@@ -122,3 +122,54 @@ suggested fix as a hypothesis, not a specification. Note that I adopted nine com
 once, so I did not isolate which release first made this reachable — only that it
 reproduces at v1.57.0 with a skill-adding release. A PATCH-only bump should still commit
 pointer-only in canonical, and I did not test that path.
+
+---
+
+ADDENDUM — engine-dev, 2026-08-13. Reproduced at v1.58.0 while adopting v1.59.0, which
+adds the `skill-candidates` skill. Still open; this records a third route the report did
+not test, not a fix.
+
+Reproduction confirmed, unchanged:
+  Both refusals occurred in the order and with the wording the report gives, and the
+  mechanism still holds at v1.59.0 — `grep -n "gen-skills-index" bin/update.sh bin/adopt.sh`
+  returns nothing, so nothing in the adoption route reconciles the catalog that
+  `adopt.sh` invalidates by linking the skill. The report's table reproduces exactly.
+
+A third staged set, not measured in the report: SPLIT the commit rather than combining.
+  The bind is between the two gates only when both changes ride in ONE commit. The pin is
+  a gitlink and can only be staged in canonical; `index.md` and the repo page are ordinary
+  tracked content and belong on a branch. Committing them separately satisfies each gate
+  on its own terms:
+
+    | step | tree      | staged set            | guard                 | lint   | result |
+    | 1    | worktree  | index.md + repo page  | n/a (not canonical)   | passes | lands  |
+    | 2    | canonical | engine                | allows (gitlink-only) | passes | lands  |
+
+  Step 1 regenerates the catalog with the canonical engine pointed at the branch —
+  `gen-skills-index.sh --wiki "$WORK"` — which the report already confirmed writes
+  correctly (`generators-resolve-wiki-path-not-session-worktree`, v1.49.0). Integrate,
+  then step 2: by then `index.md` on `main` is current, so the catalog check the pointer
+  commit failed on now passes, and the staged set is genuinely pointer-only, which is the
+  case the v1.52.0 carve-out was built for.
+
+  Neither `--no-verify` nor `WIKI_WORKTREE=0` is used. That matters for the specific
+  reason the report files this at all: the two remedies otherwise on offer are both
+  bypasses of the gate, and the v1.52.0 source comment names training that bypass as the
+  outcome to avoid.
+
+This does NOT close the report. It leaves both stated expectations unmet:
+  (a) adoption still does not reconcile the region its own action invalidates; and
+  (b) the commit the engine PRINTS still fails, verbatim, as the operator's next step.
+  The route above has to be worked out by someone who knows the two-tree rule — which is
+  the knowledge the printed remedy exists to save them needing. So the cost stays a
+  detour; the addendum only shortens it, and only for a reader who finds this file.
+
+  It does narrow the suggested fix slightly, as evidence rather than as a specification:
+  since the split commit is already the correct end state, deferring the catalog the way
+  `update.sh` already defers the repo page (the report's primary suggestion) would put the
+  regenerated file in exactly the tree that lands it, and print exactly this sequence. The
+  second, wording-only option looks weaker in that light — the remedy line would have to
+  teach the whole two-tree split, not name a flag.
+
+Not tested here either: the PATCH-only path the report flags. This adoption was a MINOR
+that added a skill, the same shape as the original.
