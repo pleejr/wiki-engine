@@ -3277,6 +3277,56 @@ jobs:
 
           exit "$fail"
 
+      - name: Consecutive sessions must not re-file the same repo block
+        run: |
+          # REGRESSION: the selection window is a flat lookback (RAG_CAPTURE_SINCE hours
+          # back from the moment of capture) while the hook fires at the END OF EVERY
+          # SESSION. Those units do not divide the day the same way, so two sessions ending
+          # inside one window both look back over the whole of it and both write the same
+          # repo. Three captures over two repos produced six identical blocks and three
+          # distinct facts — the buffer grew as (sessions x repos in window) rather than as
+          # work done. Each block was true; the ATTRIBUTION was not, and this buffer feeds
+          # distillation and is indexed for recall.
+          #
+          # Declined: making the window "since the previous capture". That boundary is
+          # GLOBAL while the unit is per-session, and peer sessions are a shipped feature —
+          # whichever ended first would claim the interval and a long session ending later
+          # would report a window shorter than its own life. Over-capture is noise;
+          # under-capture loses the session the user just had.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-window"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/window"; rm -rf "$T"; mkdir -p "$T/ws"; fail=0
+          V="$T/vault"; mkdir -p "$V/raw/sessions"
+          printf -- '---\nboundary: personal\n---\n\n# v\n' > "$V/CLAUDE.md"
+          for r in alpha beta; do
+            git init -q "$T/ws/$r"
+            ( cd "$T/ws/$r"; printf 'x\n' > f; git add f; git commit -qm "work in $r" )
+          done
+
+          for i in 1 2 3; do ( cd "$T/ws" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" >/dev/null 2>&1 ) || true; done
+          buf="$(ls "$V/raw/sessions"/*.md 2>/dev/null | head -1 || true)"
+          [ -n "$buf" ] \
+            && echo "  ok   fixture: a buffer exists to measure" \
+            || { echo "  FAIL no buffer written"; exit 1; }
+          full="$(grep -cE '^## .*@main' "$buf" 2>/dev/null || true)"; full="${full:-0}"
+          [ "$full" -eq 2 ] \
+            && echo "  ok   three identical sessions file the two facts once each" \
+            || { echo "  FAIL $full full block(s) for 2 distinct facts"; grep -E '^## ' "$buf"; fail=1; }
+          [ "$(grep -c 'unchanged since' "$buf" 2>/dev/null || true)" -gt 0 ] \
+            && echo "  ok   ...and the later sessions are still evidenced, one line each" \
+            || { echo "  FAIL a session that repeated left no trace at all"; fail=1; }
+
+          ( cd "$T/ws/alpha" && printf 'y\n' > g && git add g && git commit -qm "new work" ) >/dev/null 2>&1
+          ( cd "$T/ws" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" >/dev/null 2>&1 ) || true
+          full2="$(grep -cE '^## .*alpha@main' "$buf" 2>/dev/null || true)"; full2="${full2:-0}"
+          [ "$full2" -eq 2 ] \
+            && echo "  ok   ...while genuinely new work files a fresh block" \
+            || { echo "  FAIL alpha has $full2 block(s); new work was suppressed or duplicated"; fail=1; }
+
+          exit "$fail"
+
       - name: Maintenance must not leave an access footprint the capture reads as work
         run: |
           # REGRESSION: rag-capture selects a repo when it sees a fetch or checkout inside

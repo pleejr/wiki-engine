@@ -139,7 +139,9 @@ fi
 
 # emit_repo DIR — print one reflow-safe "## <ts> — repo@branch (head)" entry with a
 # fenced metadata block (repo/branch/head, changed file names, recent commit subjects).
-emit_repo() {
+# repo_body DIR — the block body only, with no timestamp in it. Split out so the
+# repeat test compares WHAT WAS OBSERVED rather than when it was written.
+repo_body() {
   local d="$1" name branch head body changed commits
   name="$(basename "$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || echo "$d")")"
   branch="$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
@@ -157,7 +159,61 @@ $changed"
 recent commits:
 $commits"
   fi
+  printf '%s' "$body"
+}
+
+emit_repo() {
+  local d="$1" name branch head body
+  name="$(basename "$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || echo "$d")")"
+  branch="$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+  head="$(git -C "$d" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  body="$(repo_body "$d")"
   printf '\n## %s — %s@%s (%s)\n\n```\n%s\n```\n' "$TS" "$name" "$branch" "$head" "$body"
+}
+
+# --- THE BUFFER IS FILED PER SESSION; THE WINDOW IS A FLAT LOOKBACK --------------------
+# Those two units do not divide the day the same way. The window runs RAG_CAPTURE_SINCE
+# hours back from the moment of capture, and the hook fires at the END OF EVERY SESSION,
+# so two sessions ending inside one window both look back over the whole of it and both
+# write the same repo. Three consecutive captures over two repos produced six identical
+# blocks and three distinct facts: the buffer grew as (sessions x repos in window) rather
+# than as work done. Every block was true; the ATTRIBUTION was not — a block filed under a
+# session's timestamp read as a record of that session while describing a previous one's
+# work, into a buffer that feeds distillation and is indexed for recall.
+#
+# WHAT WAS NOT DONE, and why: the reporter's first shape — make the window "since the
+# previous capture" — was declined on the wrinkle they themselves named. That boundary is
+# GLOBAL while the unit is per-session, and this engine ships peer sessions on purpose, so
+# whichever session ended first would claim the interval and a long session ending later
+# would report a window shorter than its own life. That trades over-reporting for
+# under-reporting, and the engine has already made this call once, in the dirt-window
+# fallback: over-capture is noise, under-capture loses the session the user just had.
+#
+# So the window keeps its meaning and the REPEAT is what stops: a repo block whose body is
+# byte-identical to the newest one already recorded for that repo is not appended again.
+# The session still gets its evidence — the repo is named on an `unchanged since` line —
+# which is the objection the reporter raised against this shape, and it costs one line
+# instead of a duplicated block. Self-describing on purpose: the line carries the repo,
+# branch and sha, so it still reads correctly after the block it refers to has been pruned.
+#
+# Degrades safely under concurrency. Two sessions ending together may both read the buffer
+# before either writes, and the worst case is the duplicate block that used to be the only
+# case — never a lost block.
+previous_body() {   # previous_body NAME — body of the newest recorded block for NAME
+  [ -f "$FILE" ] || return 0
+  awk -v name="$1" '
+    $0 ~ "^## .* — " name "@" { inblk=1; body=""; fence=0; next }
+    inblk && /^```/ { fence++; if (fence==2) { last=body; inblk=0 }; next }
+    inblk && fence==1 { body = body $0 "\n" }
+    END { printf "%s", last }
+  ' "$FILE" 2>/dev/null
+  return 0
+}
+
+previous_stamp() {  # previous_stamp NAME — timestamp of that newest recorded block
+  [ -f "$FILE" ] || return 0
+  awk -v name="$1" '$0 ~ "^## .* — " name "@" { split($0, a, " — "); ts=$2 } END { printf "%s", ts }' "$FILE" 2>/dev/null
+  return 0
 }
 
 # ── the touch test — every clause must be bounded by the window ────────────────
@@ -248,16 +304,38 @@ touched() {
   return 1
 }
 
+# append_repo DIR — emit the block, or record an `unchanged since` line when this repo's
+# observed state is byte-identical to the newest block already recorded for it.
+unchanged_lines=""
+append_repo() {
+  local d="$1" name branch head prev now stamp
+  name="$(basename "$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || echo "$d")")"
+  now="$(repo_body "$d")"
+  prev="$(previous_body "$name")"
+  # both sides come through command substitution, which strips trailing newlines from
+  # each — so compare them as-is; adding one back to either side never matches
+  if [ -n "$prev" ] && [ "$prev" = "$now" ]; then
+    branch="$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+    head="$(git -C "$d" rev-parse --short HEAD 2>/dev/null || echo '?')"
+    stamp="$(previous_stamp "$name")"
+    unchanged_lines="$unchanged_lines  $name@$branch ($head) — unchanged since ${stamp:-the previous capture}
+"
+    return 1
+  fi
+  entries="$entries$(emit_repo "$d")"
+  return 0
+}
+
 entries=""
 if git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
   # cwd is inside a git repo — capture just it
-  entries="$(emit_repo "$REPO")"
+  append_repo "$REPO" || true
 else
   # workspace root (parent of several repos) — capture each TOUCHED child repo
   found=0
   for d in "$REPO"/*/; do
     [ -d "${d}.git" ] || continue
-    if touched "$d"; then entries="$entries$(emit_repo "$d")"; found=$((found + 1)); fi
+    if touched "$d"; then append_repo "$d" || true; found=$((found + 1)); fi
   done
   if [ "$found" -eq 0 ]; then
     # A read-only session lands here too — nothing it did is visible in repo state — so
@@ -268,7 +346,13 @@ else
 fi
 
 {
-  printf '%s\n' "$entries"
+  [ -n "$entries" ] && printf '%s\n' "$entries"
+  # The session is still evidenced even when every repo it touched was already recorded:
+  # naming them costs one line and keeps "a session happened here" true, which is what the
+  # duplicated blocks were carrying by accident.
+  if [ -n "$unchanged_lines" ]; then
+    printf '\n## %s — no new repo state\n\n```\n%s```\n' "$TS" "$unchanged_lines"
+  fi
   [ -n "$NOTE" ] && printf '\nNote (%s): %s\n' "$TS" "$NOTE"
   # Opt-in transcript POINTER (path only, never content). review-and-promote may open
   # it in-session to distill — applying the boundary/secret gate; never bulk-copy it.
