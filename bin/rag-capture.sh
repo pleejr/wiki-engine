@@ -219,6 +219,15 @@ dirt_recent() {
 # The index is deliberately NOT used, though `git diff`-shaped work refreshes it: this
 # script runs `status --porcelain` on every child repo, which rewrites a stale index —
 # so the first capture would stamp every repo in the workspace as just-accessed.
+#
+# THIS CLAUSE MEANS ACCESS — *the operator was here* — while the commit clause above means
+# CHANGE. Keep them apart: requiring the fetch to have brought something back would read as
+# the stricter test and would delete the case this exists for, since reviewing an
+# already-current repo produces a no-op fetch. The consequence lives on the WRITER side: a
+# tool that fetches on the operator's behalf must not leave this footprint, and
+# `upkeep.sh sync-clones` restores the timestamps it disturbs for exactly that reason. A
+# consumer's own `fetch --all` is indistinguishable from access and is documented, not
+# guessed at.
 access_recent() {
   local d="$1" gd f
   window_ref || return 1

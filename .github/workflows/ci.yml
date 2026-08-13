@@ -3277,6 +3277,83 @@ jobs:
 
           exit "$fail"
 
+      - name: Maintenance must not leave an access footprint the capture reads as work
+        run: |
+          # REGRESSION: rag-capture selects a repo when it sees a fetch or checkout inside
+          # its window — the mtime of FETCH_HEAD or the HEAD reflog — because a session
+          # spent READING a repo writes nothing else. `upkeep.sh sync-clones` performs that
+          # identical action on every clone it manages, for maintenance, so one sweep
+          # stamped the whole workspace as worked and the next capture recorded repos
+          # nobody had opened, into a buffer that feeds distillation and recall.
+          #
+          # Same trap v1.54.0 rejected the index mtime for — a tool perturbing the signal
+          # another tool reads as evidence — except across two verbs of one engine.
+          #
+          # The fix belongs in the WRITER: the reader cannot tell a fetch by a person from
+          # a fetch by a tool, but the tool knows what it did and restores the timestamps
+          # it disturbed. Content is untouched; only the timing footprint goes back.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-footprint"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/footprint"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          V="$T/vault"; mkdir -p "$V/raw/sessions" "$V/repos"
+          printf -- '---\nboundary: personal\n---\n\n# v\n' > "$V/CLAUDE.md"
+          WS="$T/repos"; mkdir -p "$WS"
+          for name in quiet-repo behind-repo; do
+            git init -q --bare "$T/$name.git"
+            git clone -q "$T/$name.git" "$WS/$name" 2>/dev/null
+            ( cd "$WS/$name"; printf 'x\n' > f; git add f
+              GIT_COMMITTER_DATE="2026-07-01T12:00:00" GIT_AUTHOR_DATE="2026-07-01T12:00:00" git commit -qm old
+              git push -q origin main 2>/dev/null )
+            printf -- '---\ntype: repo\nsources:\n  - repo: %s\n    ref: aaaaaaa\n    sha: aaaaaaa\n    ingested: 2026-01-01\nboundary: personal\n---\n' "$name" > "$V/repos/$name.md"
+          done
+          # an upstream commit for behind-repo, dated OLD on purpose: a fresh one fires the
+          # COMMIT clause — a change signal, and always has been — which would mask whether
+          # the ACCESS footprint under test is actually suppressed.
+          git clone -q "$T/behind-repo.git" "$T/pusher" 2>/dev/null
+          ( cd "$T/pusher"; printf 'y\n' > g; git add g
+            GIT_COMMITTER_DATE="2026-07-02T12:00:00" GIT_AUTHOR_DATE="2026-07-02T12:00:00" git commit -qm new
+            git push -q origin main 2>/dev/null )
+
+          # AGE THE CLONES. A fixture built seconds ago stamps every .git file "now", so a
+          # fix that dates something back to the repo's own last head change is
+          # indistinguishable from no fix — the reference is as fresh as what it replaces.
+          for n in quiet-repo behind-repo; do
+            rm -rf "$WS/$n/.git/logs" "$WS/$n/.git/FETCH_HEAD"
+            find "$WS/$n/.git" -exec touch -t 202607011200 {} + 2>/dev/null || true
+          done
+
+          # Keep the output of both tools. Discarding it is how the first version of this
+          # step died on the runner with NOTHING printed: a bare `x="$(grep -c ...)"` under
+          # `bash -e` aborts when the glob matches no file, and the evidence that would
+          # have explained it had been sent to /dev/null.
+          sweep="$(UPKEEP_REPOS_ROOT="$WS" WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/upkeep.sh" sync-clones 2>&1 || true)"
+          cap="$(cd "$WS" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" 2>&1 || true)"
+          buf="$(ls "$V/raw/sessions"/*.md 2>/dev/null | head -1 || true)"
+          [ -n "$buf" ] \
+            && echo "  ok   fixture: the capture wrote a buffer to measure" \
+            || { echo "  FAIL fixture wrote no buffer, so the assertions below prove nothing"; \
+                 echo "       sweep: $sweep"; echo "       capture: $cap"; exit 1; }
+          blocks="$(grep -cE '^## .*@main' "$buf" 2>/dev/null || true)"; blocks="${blocks:-0}"
+          [ "$blocks" -eq 0 ] \
+            && echo "  ok   a maintenance sweep leaves no repo looking worked-in" \
+            || { echo "  FAIL $blocks repo block(s) after a sweep"; grep -E '^## ' "$buf"; fail=1; }
+
+          # the suppression must not cost the verb its job
+          [ "$(git -C "$WS/behind-repo" log --oneline | grep -c new)" -gt 0 ] \
+            && echo "  ok   ...while still fast-forwarding the clone that was behind" \
+            || { echo "  FAIL sync-clones stopped fast-forwarding"; fail=1; }
+
+          # ...nor the clause its purpose: an operator's own fetch is still access
+          git -C "$WS/quiet-repo" fetch --quiet
+          ( cd "$WS" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" >/dev/null 2>&1 ) || true
+          grep -qE '^## .*quiet-repo@main' "$buf" \
+            && echo "  ok   ...and a fetch by the OPERATOR is still captured" \
+            || { echo "  FAIL the fix silenced genuine access too"; fail=1; }
+
+          exit "$fail"
+
       - name: The capture hook cannot hang on an stdin nobody closes
         run: |
           # REGRESSION: the hook payload was read from stdin with no bound. `[ -t 0 ]`
