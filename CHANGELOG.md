@@ -8,6 +8,21 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.59.0] — 2026-08-13
+
+Minor — a new skill, `skill-candidates`, which reads the curated record back out to find the procedures a vault has already proved it repeats. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`skill-candidates` — mine the vault's own durable record for skills worth writing.** A skill is worth writing when a procedure *repeats*, and the end of a long session is the worst possible moment to judge that: the session just finished always feels like the most significant one there has been, and from inside a single session novelty and recurrence are indistinguishable. The evidence already exists — `checkpoint` dates every session into `memory/` notes and a `log.md` line — so this skill reads it back out and reports ranked **candidates with the dated evidence behind each**. It is the inverse direction of `checkpoint`, which is why it runs *after* it and not instead of it.
+  - **The bar is three or more dated occurrences, spread over time, with stable steps and a varying subject.** Two is a coincidence. Three inside one day is one piece of work with three parts. And if the steps changed every time, what recurred was the *problem*, so the answer is a lesson note rather than a skill.
+  - **Read-only, so it takes no worktree** — the one skill here that needs no isolation, because it writes nothing for a concurrent session to clobber and has nothing to integrate. It says so explicitly, since every neighbouring skill opens with the worktree step.
+  - **It never writes a `SKILL.md`.** Detection and authoring are different jobs; keeping this one to detection is what keeps it cheap enough to run every session. Each candidate gets a verdict — build · fold into an existing skill · `CLAUDE.md` instead · **not yet**, carrying the count so far — and an overlap check against every installed skill, read from the link directory so it covers skills from any source repo.
+  - **Verdicts return through `checkpoint`** as a `type: decision` note tagged `skill-candidate`, and the skill reads those first. Without that, a declined candidate is rediscovered every run while the reason it was declined is lost — and a previous *not yet* is reconsidered only once its evidence count passes the count it was declined at.
+  - **Counting `updated:` instead of `created:` was a fail-open reading, found by dogfooding the draft.** They answer different questions: `created:` is when the thing happened, `updated:` is when the note was last touched. Amending a note is the normal way a rule gets refined — 28 of 115 notes on the vault it was tested against carry one — so `updated:` migrates toward the present and every tag cluster piles onto the last few days. The spread-over-time test then passes for *every* subject, manufacturing the evidence rather than finding it. The gap between the two dates is now read in the other direction instead: a note written weeks ago and amended recently is a rule that came back, a real second occurrence recorded inside one file where a per-note count cannot see it.
+
+### Changed
+- **`checkpoint` §2 now names what the notes it writes are later used for.** The step gains one bullet: date the notes and keep them specific about what was *done*, because a note recording only a conclusion cannot afterwards be counted as an occurrence. It also states the order — `skill-candidates` runs after, never instead of, since it judges recurrence across weeks and has nothing to read until the session's own notes land — and names the verdict route back.
+
 ## [1.58.0] — 2026-08-13
 
 Minor — `ensure-hook.sh` gains a knob it could not express, and the hook the engine documents finally states the budget it needs. Adopt with `bin/adopt.sh` or `update.sh`. **Anything already wired from the old snippet keeps the old behaviour** — add-only never edits a hook you have — so see **Migration**.
