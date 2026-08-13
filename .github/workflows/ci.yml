@@ -3324,12 +3324,21 @@ jobs:
             find "$WS/$n/.git" -exec touch -t 202607011200 {} + 2>/dev/null || true
           done
 
-          UPKEEP_REPOS_ROOT="$WS" WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/upkeep.sh" sync-clones >/dev/null 2>&1
-          ( cd "$WS" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" >/dev/null 2>&1 )
-          blocks="$(grep -cE '^## .*@main' "$V/raw/sessions"/*.md 2>/dev/null)"; blocks="${blocks:-0}"
+          # Keep the output of both tools. Discarding it is how the first version of this
+          # step died on the runner with NOTHING printed: a bare `x="$(grep -c ...)"` under
+          # `bash -e` aborts when the glob matches no file, and the evidence that would
+          # have explained it had been sent to /dev/null.
+          sweep="$(UPKEEP_REPOS_ROOT="$WS" WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/upkeep.sh" sync-clones 2>&1 || true)"
+          cap="$(cd "$WS" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" 2>&1 || true)"
+          buf="$(ls "$V/raw/sessions"/*.md 2>/dev/null | head -1 || true)"
+          [ -n "$buf" ] \
+            && echo "  ok   fixture: the capture wrote a buffer to measure" \
+            || { echo "  FAIL fixture wrote no buffer, so the assertions below prove nothing"; \
+                 echo "       sweep: $sweep"; echo "       capture: $cap"; exit 1; }
+          blocks="$(grep -cE '^## .*@main' "$buf" 2>/dev/null || true)"; blocks="${blocks:-0}"
           [ "$blocks" -eq 0 ] \
             && echo "  ok   a maintenance sweep leaves no repo looking worked-in" \
-            || { echo "  FAIL $blocks repo block(s) after a sweep"; grep -E '^## ' "$V/raw/sessions"/*.md; fail=1; }
+            || { echo "  FAIL $blocks repo block(s) after a sweep"; grep -E '^## ' "$buf"; fail=1; }
 
           # the suppression must not cost the verb its job
           [ "$(git -C "$WS/behind-repo" log --oneline | grep -c new)" -gt 0 ] \
@@ -3338,8 +3347,8 @@ jobs:
 
           # ...nor the clause its purpose: an operator's own fetch is still access
           git -C "$WS/quiet-repo" fetch --quiet
-          ( cd "$WS" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" >/dev/null 2>&1 )
-          grep -qE '^## .*quiet-repo@main' "$V/raw/sessions"/*.md \
+          ( cd "$WS" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" >/dev/null 2>&1 ) || true
+          grep -qE '^## .*quiet-repo@main' "$buf" \
             && echo "  ok   ...and a fetch by the OPERATOR is still captured" \
             || { echo "  FAIL the fix silenced genuine access too"; fail=1; }
 
