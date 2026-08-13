@@ -1,6 +1,6 @@
 ---
 slug: chunk-a-flat-list-on-item-boundaries-not-on-size
-outcome: open
+outcome: accepted
 received: 2026-08-12
 ---
 

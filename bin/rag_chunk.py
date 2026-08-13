@@ -24,7 +24,7 @@ from rag_embed import MAX_CHARS
 # Bump when the split changes shape. Records carry it and rag-build refuses to reuse
 # vectors produced by an older chunker — without that, this fix would be inert on
 # every existing vault until each file happened to change for some other reason.
-CHUNKER_VERSION = 2
+CHUNKER_VERSION = 3
 
 
 def _trim(pairs):
@@ -79,6 +79,77 @@ def _split_size(pairs, limit):
     return out
 
 
+# LIST_PACK is deliberately well below MAX_CHARS. A flat list page — an append-only log of
+# dated entries, one `# ` title and no sections — has no structure for the two heading levels
+# to find, so it fell through to size packing and filled every chunk to the embedder's cap.
+# Measured on a real log: 187 self-contained entries, median 1,475 characters, packed ~2.9 to
+# a chunk at a median 5,115. Nothing was lost — every character was embedded — but one vector
+# then had to represent three unrelated days, and the lead entry dominated it, so a query
+# phrased from memory ranked the diluted chunk below shorter topical pages. Present in the
+# index, unreachable in practice.
+#
+# The entries were already the right retrieval unit; the splitter had no rule that saw them.
+# Packing to a smaller budget rather than one-item-per-chunk keeps a page of many tiny bullets
+# from exploding into a chunk each, while an ordinary long entry still stands alone.
+LIST_PACK = 2000
+
+_LIST_START = ("- ", "* ", "+ ")
+
+
+def _is_item_start(line):
+    if line.startswith(_LIST_START):
+        return True
+    # ordered items: "1. " / "12) "
+    head = line.split(" ", 1)[0]
+    return len(head) > 1 and head[:-1].isdigit() and head[-1] in ".)"
+
+
+def _split_items(pairs):
+    """Split a flat list into runs, each beginning at a TOP-LEVEL item.
+
+    Returns None when the block is not a flat list, so the caller falls through to
+    size packing unchanged. A continuation — an indented line, a nested bullet, a
+    fenced block, a blank line inside an item — stays with the item it belongs to,
+    which is why this tracks fences rather than splitting on every matching line.
+    """
+    runs, cur, seen, fenced = [], [], 0, False
+    for p in pairs:
+        line = p[1]
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            fenced = not fenced
+        starts = (not fenced) and (not line[:1].isspace()) and _is_item_start(line)
+        if starts:
+            seen += 1
+            if cur:
+                runs.append(cur)
+            cur = [p]
+        else:
+            if not cur:
+                cur = [p]       # preamble before the first item rides with it
+            else:
+                cur.append(p)
+    if cur:
+        runs.append(cur)
+    # Not a list unless it is mostly items: two or more, and no huge non-item preamble.
+    if seen < 2:
+        return None
+    return runs
+
+
+def _pack_runs(runs, limit):
+    """Greedy-pack whole runs up to `limit`, never splitting a run."""
+    out, cur, n = [], [], 0
+    for r in runs:
+        size = sum(len(t) + 1 for _, t in r)
+        if cur and n + size > limit:
+            out.append(cur); cur, n = list(r), size
+        else:
+            cur.extend(r); n += size
+    if cur:
+        out.append(cur)
+    return out
+
 def _chunk(pairs, heading, limit):
     pairs = _trim(pairs)
     if not pairs:
@@ -98,8 +169,14 @@ def _chunk(pairs, heading, limit):
     if subs and subs[0][0]:
         heading = subs[0][0]     # one `###` covering the whole section — keep its name
 
+    # A flat list splits on ITEM boundaries before it splits on size: the item is the
+    # self-contained unit a reader would break the page at, and the size fallback below
+    # cannot see it.
+    runs = _split_items(pairs)
+    pieces = _pack_runs(runs, min(LIST_PACK, limit)) if runs else _split_size(pairs, limit)
+
     out = []
-    for i, piece in enumerate(_split_size(pairs, limit)):
+    for i, piece in enumerate(pieces):
         piece = _trim(piece)
         if not piece:
             continue
@@ -107,6 +184,24 @@ def _chunk(pairs, heading, limit):
         h = heading if i == 0 else "%s (cont. %d)" % (heading, i + 1)
         if len(t) <= limit:
             out.append((h, ln, t))
+            continue
+        # An over-cap piece must fall back to LINE packing before it is ever sliced.
+        # A list run is never split by _pack_runs, so a single enormous item arrives
+        # here as many lines — and hard-slicing it would break mid-line where the old
+        # size fallback would not have. Measured: one page's largest chunk went 4,021
+        # -> 6,000 characters before this, i.e. the list level made a chunk WORSE.
+        if len(piece) > 1:
+            for j, sub in enumerate(_split_size(piece, limit)):
+                sub = _trim(sub)
+                if not sub:
+                    continue
+                st, sln = _text(sub), sub[0][0]
+                sh = h if j == 0 else "%s (cont. %d)" % (h, j + 1)
+                if len(st) <= limit:
+                    out.append((sh, sln, st))
+                else:
+                    for k in range(0, len(st), limit):
+                        out.append((sh if k == 0 else "%s (cont.)" % sh, sln, st[k:k + limit]))
             continue
         # A single line longer than the whole budget: the only case where a chunk
         # boundary cannot fall on a line boundary. Every slice keeps that line's
