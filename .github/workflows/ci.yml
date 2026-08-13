@@ -3520,7 +3520,10 @@ jobs:
           # only "exit 2" would pass on a build where --timeout was never implemented.
           for bad in 0 -5 abc 1.5 ''; do
             printf '%s' '{}' > "$T/bad.json"; keep="$(cat "$T/bad.json")"
-            out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout "$bad" --settings "$T/bad.json" 2>&1)"; rc=$?
+            # `&& rc=0 || rc=$?` and not `; rc=$?`: this step runs under `bash -e`, where a
+            # bare assignment from a command that exits non-zero kills the step before the
+            # assertion is ever read. The first version did exactly that.
+            out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout "$bad" --settings "$T/bad.json" 2>&1)" && rc=0 || rc=$?
             { [ "$rc" = "2" ] && [ "$keep" = "$(cat "$T/bad.json")" ] \
                 && printf '%s' "$out" | grep -q 'timeout must be'; } \
               && echo "  ok   --timeout '$bad' refused (exit 2), file untouched" \
@@ -3531,7 +3534,7 @@ jobs:
           # copied the old snippet. No write, exit 0, and it must SAY so.
           printf '%s' '{"hooks":{"TestEvent":[{"hooks":[{"type":"command","command":"echo SLOW"}]}]}}' > "$T/stale.json"
           keep="$(cat "$T/stale.json")"
-          out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout 30 --settings "$T/stale.json" 2>&1)"; rc=$?
+          out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout 30 --settings "$T/stale.json" 2>&1)" && rc=0 || rc=$?
           printf '%s\n' "$out"
           printf '%s' "$out" | grep -q 'wired without a timeout' \
             && echo "  ok   an already-wired timeout-less hook is reported" \
@@ -3570,7 +3573,7 @@ jobs:
             && { echo "  FAIL the fixture did not remove the timeout — the red below proves nothing"; fail=1; } \
             || echo "  ok   fixture applied: the snippet now states no timeout"
 
-          out="$(./bin/lint-docs.sh 2>&1)"; rc=$?
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
           cp "$RUNNER_TEMP/USAGE.keep" USAGE.md
           printf '%s\n' "$out" | grep -q 'no "timeout"' \
             && echo "  ok   ...and lint-docs names the file and line" \
