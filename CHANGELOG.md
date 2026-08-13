@@ -8,6 +8,20 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.63.0] — 2026-08-13
+
+Minor — a new skill, `prove-the-test-can-fail`, which runs a new check against a broken subject instead of trusting that it works. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`prove-the-test-can-fail` — a check nobody has seen fail is a hypothesis.** A quiet check and a satisfied check are indistinguishable; the only evidence separating them is watching it reject something. The skill breaks the thing the check watches, runs it, requires a real red, restores, requires green, and then feeds it a near-miss it must also reject.
+  - **Written because the rule was already written and did not transfer.** `lesson-a-constant-check-is-not-a-check` dates from 2026-07-27 and has been amended twice, and the same defect still shipped four more times in three weeks: v1.57.0's coverage check satisfied by the word *drainable*, v1.58.0's gate that could not go red because a stray backtick made it read a snippet as prose, the v1.62.0 fixture that passed trivially because the step it tested had silently done nothing, and v1.62.1's mode query that read a mention as a verdict. A rule you must remember is weaker than a procedure you run.
+  - **Break the SUBJECT, never the assertion.** Deleting an assertion and watching the complaint stop proves only that you deleted it. The question is whether the check notices a real violation, which can only be answered by producing one — and the skill refuses to tune the mutation until the check goes red, since that fits the check to the test rather than to its subject.
+  - **A red must clear three bars, each of which has failed alone here**: a non-zero exit (a step that never ran reports nothing, which reads exactly like a pass), a message naming the subject that was broken (a red for the wrong reason is not evidence), and proof the mutation took effect (the v1.62.0 sequence test passed because the step it depended on had quietly done nothing). Then restore and require green, because a check that is red on a mutation *and* red after restore is stuck rather than working.
+  - **The near-miss step is the one the obvious procedure omits.** A check can go red correctly on a blatant break and still pass on a coincidence, and steps that only ever feed it genuine violations can never reveal that. Four concrete shapes are named from real defects: a longer word containing a grepped name (*drainable*), a same-prefix tag (`skill-candidates-meta` satisfying a query for `skill-candidate`), a member that inflates a count without belonging (`ci` matching inside "decision" — 112 of 117 notes against 9 real), and a version that never changes.
+  - **Refuses outright on a dirty working tree**, which is a precondition rather than a preference: restore is `git checkout -- <path>`, so with uncommitted work in the way, restoring correctly and clobbering silently are the same command. It restores by explicit path, never `git add -A` or `git checkout .`, confirms the tree is clean afterwards, and stops loudly if restore fails rather than proceeding with an unrestored mutation. Outside a git repository it copies to scratch first and says which mechanism it is using.
+  - **Reports both exit statuses and the red message as evidence**, on the ground that the verdict is an inference from them and worth less than they are. "It passed" is not a report, and a green with no red before it is recorded as *unproven* rather than as passing.
+  - Proposed by `skill-candidates` on its first run and accepted on review; the evidence and the decision are recorded in the consuming vault rather than here.
+
 ## [1.62.1] — 2026-08-13
 
 Patch — `skill-candidates` asked its two most important questions of the file text instead of the frontmatter, and both failed toward a confident wrong answer. Found on the skill's own first real run.
