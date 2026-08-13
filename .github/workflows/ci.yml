@@ -1585,6 +1585,116 @@ jobs:
           ./bin/lint.sh --wiki "$VAULT"
           ./bin/adopt.sh --check --wiki "$VAULT"
 
+      - name: The order update.sh prints lands both the catalog and the pin
+        run: |
+          # THE BIND: index.md's skills catalog is generated from the PINNED engine, so a release
+          # that ADDS a skill stales it — and the one-line remedy update.sh printed could not work.
+          # Gitlink-only is allowed by the concurrency guard and fails lint on the drift; gitlink +
+          # index.md is refused by the guard as a canonical commit. Neither staged set commits, and
+          # the only remedies left were WIKI_WORKTREE=0 and --no-verify, which is a gate teaching
+          # its user to bypass it.
+          #
+          # The bind is the SINGLE COMMIT, not either gate. Split it and each gate is satisfied on
+          # its own terms, so NOTHING here relaxes a check — what was missing is the order, and this
+          # asserts the printed order actually works, step by step, ending in a clean lint.
+          RUNNER_TEMP="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+          fail=0
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-seq"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-seq.json"
+          # A SELF-CONTAINED probe engine to clone from. The workspace checkout cannot serve as
+          # origin here: `update.sh` runs `git fetch origin main --tags`, and a PR build checks out a
+          # detached merge ref with no `main` for that fetch to resolve — the fetch failed, update
+          # never advanced, and every step below then failed for a reason that had nothing to do with
+          # the defect. Building the origin also keeps the probe tags out of the real repository.
+          PE="$RUNNER_TEMP/probe-engine"; rm -rf "$PE"
+          git clone -q "$PWD" "$PE"
+          git -C "$PE" checkout -q -B main
+          # TWO releases differing by ONE ADDED SKILL — the only release shape that stales the
+          # catalog. Real tags, because update.sh advances tag-to-tag and RE-EXECS the new tag's own
+          # copy of itself, so a fixture without them would exercise a different program. The base
+          # tag gets its OWN commit: tagging the checked-out HEAD can land v90.0.0 on a commit that
+          # already carries a real release tag, and `git describe` then reports THAT one, so update
+          # compared v1.x to v90.x, called it a MAJOR bump and refused.
+          git -C "$PE" commit -q --allow-empty -m "probe base"
+          git -C "$PE" tag -f v90.0.0 >/dev/null
+          mkdir -p "$PE/skills/zzprobeskill"
+          printf -- '---\nname: zzprobeskill\ndescription: probe\nsummary: probe\n---\n# probe\n' \
+            > "$PE/skills/zzprobeskill/SKILL.md"
+          git -C "$PE" add skills/zzprobeskill/SKILL.md
+          git -C "$PE" commit -q -m "probe release: add a skill"
+          git -C "$PE" tag -f v90.1.0 >/dev/null
+
+          V="$RUNNER_TEMP/seqvault"; rm -rf "$V"
+          ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
+            --engine-url "$PE" --no-link-skills --no-rag >/dev/null 2>&1
+
+          [ -x "$V/.githooks/pre-commit" ] && [ -n "$(git -C "$V" config --get core.hooksPath)" ] \
+            && echo "  ok   fixture: the write-time gate is armed" \
+            || { echo "  FAIL fixture: no armed pre-commit — the bind cannot reproduce"; exit 1; }
+
+          E="$V/engine"
+          git -C "$E" checkout -q v90.0.0
+          "$E/bin/gen-skills-index.sh" --wiki "$V" >/dev/null
+          git -C "$V" add engine index.md
+          git -C "$V" -c core.hooksPath=/dev/null commit -q -m "pin v90.0.0, catalog matching" >/dev/null 2>&1 || true
+          "$E/bin/gen-skills-index.sh" --check --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   fixture: baseline pinned at v90.0.0 with a matching catalog" \
+            || { echo "  FAIL fixture: baseline already drifted, so nothing below is a test"; exit 1; }
+
+          out="$("$E/bin/update.sh" --wiki "$V" 2>&1)" || true
+          printf '%s\n' "$out" | grep -q 'v90.0.0 -> v90.1.0' \
+            && echo "  ok   update advanced the pin to the skill-adding release" \
+            || { echo "  FAIL update did not advance: $(printf '%s' "$out" | head -3)"; fail=1; }
+
+          printf '%s' "$out" | grep -qi 'catalog' \
+            && echo "  ok   ...and names the catalog it just invalidated" \
+            || { echo "  FAIL update said nothing about the catalog"; fail=1; }
+
+          git -C "$V" diff --name-only | grep -q '^index.md$' \
+            && { echo "  FAIL index.md was written into gated canonical"; fail=1; } \
+            || echo "  ok   ...without writing it into gated canonical"
+
+          # THE PRECONDITION FOR EVERYTHING BELOW: the pointer commit must still be refused here.
+          # If it were not, the printed sequence would be pointless and the steps would pass for a
+          # reason unrelated to the order they encode.
+          git -C "$V" commit engine -m "premature" >/dev/null 2>&1 \
+            && { echo "  FAIL the pointer commit succeeded BEFORE the catalog landed"; fail=1; } \
+            || echo "  ok   the pointer commit is refused while the catalog is stale"
+
+          echo "  -- running the printed sequence --"
+          WORK="$(WIKI_PATH="$V" "$E/bin/vault-worktree.sh" ensure 2>/dev/null | tail -1)" || WORK=""
+          { [ -n "$WORK" ] && [ -d "$WORK" ]; } \
+            && echo "  ok   step 1: took a worktree" \
+            || { echo "  FAIL step 1: no worktree"; exit "$((fail | 1))"; }
+
+          "$E/bin/gen-skills-index.sh" --wiki "$WORK" >/dev/null 2>&1 \
+            && echo "  ok   step 2: regenerated the catalog in the worktree" \
+            || { echo "  FAIL step 2: could not regenerate in the worktree"; fail=1; }
+
+          git -C "$WORK" commit -q index.md -m "Regenerate skills catalog" >/dev/null 2>&1 \
+            && echo "  ok   step 3: committed it there" \
+            || { echo "  FAIL step 3: the worktree commit was refused"; fail=1; }
+
+          int_out="$( (cd "$WORK" && WIKI_PATH="$V" "$E/bin/vault-worktree.sh" integrate 2>&1) )" && irc=0 || irc=$?
+          [ "$irc" = "0" ] \
+            && echo "  ok   step 4: integrated to main" \
+            || { echo "  FAIL step 4: integrate refused: $(printf '%s' "$int_out" | head -2)"; fail=1; }
+
+          git -C "$V" add engine 2>/dev/null || true
+          git -C "$V" commit engine -m "Bump engine to v90.1.0" >/dev/null 2>&1 \
+            && echo "  ok   step 5: the pointer commit is accepted once the catalog has landed" \
+            || { echo "  FAIL step 5: the pointer commit is still refused after the sequence"; fail=1; }
+
+          # ...and the vault ends clean, which is the whole claim.
+          "$E/bin/lint.sh" --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   the vault lints clean at the end of the sequence" \
+            || { echo "  FAIL the vault is still failing lint after the full sequence"; fail=1; }
+
+          exit "$fail"
+
+
       - name: Skill-coverage matches the documented name, not an incidental word
         run: |
           # The coverage check was an unanchored `grep -q "$name"` over USAGE.md, so a skill

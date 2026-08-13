@@ -176,12 +176,20 @@ exclude_default_root() {
 }
 
 # Is $1 a path inside a worktree of THIS vault's repo (shared .git common dir)?
+# `pwd -P` on BOTH sides, and a physical form of $WIKI to compare against. git answers with
+# the PHYSICAL path (`--show-toplevel` and `--git-common-dir` resolve symlinks) while the
+# shell's `pwd` keeps the LOGICAL one, so the two disagree by exactly the symlinked prefix
+# whenever the vault sits under one — `/tmp` and `$TMPDIR` on macOS both do. The comparison
+# then failed for a vault that genuinely is one repo, and `integrate` refused with "must run
+# from inside a session worktree" while the caller was standing in it. Fail-closed, and the
+# message actively misleads: the only thing wrong is how the path is spelled.
 same_repo_worktree() {
-  local top common main_common
+  local top common main_common wiki_phys
   top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
-  [ "$top" != "$WIKI" ] || return 1
-  common="$(cd "$top" && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd)" || return 1
-  main_common="$(cd "$WIKI" && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd)" || return 1
+  wiki_phys="$(cd "$WIKI" 2>/dev/null && pwd -P)" || wiki_phys="$WIKI"
+  [ "$top" != "$wiki_phys" ] || return 1
+  common="$(cd "$top" && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || return 1
+  main_common="$(cd "$WIKI" && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" || return 1
   [ "$common" = "$main_common" ]
 }
 

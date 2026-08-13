@@ -188,15 +188,72 @@ if [ -n "$engine_repo" ] && [ -n "$new_sha" ] && [ -d "$WIKI/repos" ]; then
   done
 fi
 
+# --- the skills catalog, which THIS run just invalidated -------------------------------
+# `adopt.sh` above links the release's skills, and index.md's catalog is generated from
+# them — so a release that ADDS a skill leaves the catalog stale, and nothing in the
+# adoption route reconciled it. The vault was then handed a one-line remedy that could not
+# work: gitlink-only is allowed by the guard and fails lint on the drift, and gitlink +
+# index.md is refused by the guard as a canonical commit. Neither staged set commits.
+#
+# THE BIND IS THE SINGLE COMMIT, NOT EITHER GATE. Split the change and each gate is
+# satisfied on its own terms: the tracked content goes in on a branch, and once it has
+# landed the catalog check passes, which leaves a genuinely pointer-only staged set — the
+# exact case v1.52.0's carve-out was built for. So neither gate is touched here; what was
+# missing is the ORDER, and the order is now written down instead of having to be derived
+# from the two-tree rule by an operator who is mid-adoption.
+#
+# Same treatment as the repo page above, and for the same reason — index.md is ordinary
+# TRACKED content. Write it in the caller's own worktree when they are in one; when a
+# canonical commit would be refused, do not write it, and print the sequence.
+catalog=""
+if [ -x "$ENGINE/bin/gen-skills-index.sh" ] && [ -f "$PAGE_TREE/index.md" ] \
+   && ! "$ENGINE/bin/gen-skills-index.sh" --check --wiki "$PAGE_TREE" >/dev/null 2>&1; then
+  if [ "$defer_page" = "1" ]; then
+    catalog="deferred"
+  elif "$ENGINE/bin/gen-skills-index.sh" --wiki "$PAGE_TREE" >/dev/null 2>&1; then
+    git -C "$PAGE_TREE" add index.md 2>/dev/null || true
+    catalog="staged"
+  fi
+fi
+
 # The remedy names the PATH, never `-am`. In a shared checkout `-am` stages every modified
 # tracked file, including a concurrent session's — the precise clobber the guard exists to
-# refuse, printed as an instruction. `commit engine` cannot do that, and the guard now
-# permits it because a gitlink-only commit is the one commit no worktree can make.
-cat <<EOF
+# refuse, printed as an instruction. `commit engine` cannot do that, and the guard permits
+# it because a gitlink-only commit is the one commit no worktree can make.
+if [ "$catalog" = "deferred" ]; then
+  # The pointer commit is printed LAST here, not first: it is the step that fails until the
+  # catalog has landed, and printing it first is what sent an operator into a refusal.
+  cat <<EOF
+
+Staged: engine -> $latest, and this release CHANGED THE ENGINE'S SKILLS — so index.md's
+generated catalog is now stale. It is tracked content, which this vault will not let you
+commit in canonical, and the pointer commit fails lint while the drift is there. Land them
+in this order and every gate passes on its own terms:
+
+  1. WORK="\$($WIKI/engine/bin/vault-worktree.sh ensure)"
+  2. $WIKI/engine/bin/gen-skills-index.sh --wiki "\$WORK"
+  3. git -C "\$WORK" commit index.md -m "Regenerate skills catalog for $latest"
+  4. (cd "\$WORK" && $WIKI/engine/bin/vault-worktree.sh integrate)
+  5. git -C "$WIKI" commit engine -m "Bump engine to $latest"
+
+Review the CHANGELOG before step 5. Running update.sh from INSIDE a worktree does steps
+1-2 for you, and leaves only the commit.
+EOF
+else
+  cat <<EOF
 
 Staged: engine -> $latest. Review the CHANGELOG, then commit the POINTER ONLY:
   git -C "$WIKI" commit engine -m "Bump engine to $latest"
 EOF
+fi
+
+if [ "$catalog" = "staged" ]; then
+  cat <<EOF
+Also staged: index.md skills catalog, regenerated for $latest, in $PAGE_TREE.
+  This release changed the engine's skills, so the generated catalog moved with them.
+  Commit it on this branch; the pointer commit above is a separate, canonical-only step.
+EOF
+fi
 
 if [ -n "$bumped" ]; then
   cat <<EOF
