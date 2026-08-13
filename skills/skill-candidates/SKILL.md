@@ -33,6 +33,15 @@ The buffer is a weak, recent, disposable source — a session captured there may
 
 Detecting which mode you are in is free, and needs no new state: **if no `skill-candidate` verdict note exists, this is a first run.** The vault has never been mined, so the whole record is unexamined.
 
+Ask that question of the **frontmatter**, never of the file text:
+
+```sh
+grep -l '^type: decision' "$WIKI_PATH"/memory/*.md \
+  | xargs grep -lE '^tags:.*(\[|, )skill-candidate(,|\])' 2>/dev/null
+```
+
+A bare `grep -l 'skill-candidate'` over the notes is wrong in the direction that costs most. Every note *about* this skill contains its name — including the ones written the day it shipped — so a mention counts as a verdict, the run reports steady state on a vault that has never been mined, and it then expects none-or-one where the honest answer is a backlog. That is the under-reporting this whole section exists to prevent, re-entering through the query rather than through the rule. The `type:` test and the delimited tag are both load-bearing: the first rejects a lesson that discusses the skill, the second rejects a near-miss tag that merely starts with the same letters.
+
 - **Backlog mode** — sweep the entire record, oldest to newest. Expect many. Rank hard, because with a long list the ranking carries the whole value (§4).
 - **Steady state** — sweep forward from the date of the newest verdict note, and re-check anything previously marked *not yet*. Expect zero or one. Zero is the run working, not the run failing.
 
@@ -62,7 +71,9 @@ grep -h '^tags:' "$WIKI_PATH"/memory/*.md | sed 's/^tags: *\[//; s/\]$//' \
   | tr ',' '\n' | sed 's/^ *//; s/ *$//' | sort | uniq -c | sort -rn | head -25
 
 # The notes behind one cluster, by the date each was FIRST written — the recurrence test.
-grep -l '<tag>' "$WIKI_PATH"/memory/*.md | xargs grep -H '^created:'
+# Match the TAGS LINE, not the file: a bare grep for a short tag matches it inside ordinary
+# words (`ci` inside "decision"), which silently inflates every count and date span.
+grep -lE '^tags:.*(\[|, )<tag>(,|\])' "$WIKI_PATH"/memory/*.md | xargs grep -H '^created:'
 
 # Notes amended long after they were written: a rule re-learned, which is an occurrence too.
 grep -H '^created:\|^updated:' "$WIKI_PATH"/memory/*.md | paste - - | awk '$2 != $4'
@@ -139,10 +150,11 @@ Record the verdict so it is not re-litigated. This skill writes nothing itself �
 - **Declined** — record it with the reason and the count it was declined at. Without this, the same candidate is rediscovered every run, and the reason it was rejected is lost while the evidence for it keeps accumulating.
 - **Accepted** — record what it was built from, so the skill's own provenance points back at the notes that justified it.
 
-Read those notes at the start of the next run (`grep -l 'skill-candidate' "$WIKI_PATH"/memory/*.md`) and skip anything already declined — unless its evidence count has grown past the count in the decline, which is precisely when a previous "not yet" becomes a "yes".
+Read those notes at the start of the next run — with the frontmatter query from **Two modes**, not a bare name grep — and skip anything already declined — unless its evidence count has grown past the count in the decline, which is precisely when a previous "not yet" becomes a "yes".
 
 ## Rules
 
 - **In-session, on demand.** Never wire this to a session-lifecycle hook. It runs after `checkpoint`, and it reads the notes checkpoint just wrote — running it from a hook re-fires the event that spawned it, which is the structure the engine's `CLAUDE.md` bans.
 - **Never propose a skill from the current session alone.** The session in progress is the one input with no dated history behind it, and it is the one that always feels sufficient.
+- **Query the frontmatter, never the prose.** Every note *about* a subject contains its name, so a bare `grep` for a tag or a slug counts discussion as evidence — and short tags additionally match inside ordinary words. Both directions fail toward a confident wrong answer: the mode check reads a mention as a verdict, and a cluster count inflates. Anchor on `^tags:` / `^type:` with the tag delimited.
 - **Filter on the bar, never on the count.** A catalogue full of thinly-justified skills triggers worse than a small one, so nothing that fails §1 is reported — but a long list of candidates that each *clear* §1 is a real backlog, not a filter that stopped working. Trimming it to look disciplined discards evidence the record earned. Control the number you recommend **building**, not the number you report.

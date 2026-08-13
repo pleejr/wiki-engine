@@ -8,6 +8,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.62.1] — 2026-08-13
+
+Patch — `skill-candidates` asked its two most important questions of the file text instead of the frontmatter, and both failed toward a confident wrong answer. Found on the skill's own first real run.
+
+### Fixed
+- **The first-run detector counted a *mention* of the skill as a verdict, so it declared steady state on a vault that had never been mined.** Mode was decided by `grep -l 'skill-candidate' memory/*.md` — but every note *about* this skill contains its name, including the two written the day it shipped. The run therefore expected none-or-one candidate where the honest answer was a backlog, which is exactly the under-reporting v1.60.0 added the backlog mode to prevent, re-entering through the query rather than through the rule. Mode now tests `^type: decision` **and** a delimited `skill-candidate` in `^tags:`; both halves are load-bearing, the first rejecting a lesson that discusses the skill and the second a near-miss tag that merely starts with the same letters.
+  - **Driven red before green on a three-note fixture**: a mention-only lesson, a real verdict note, and a decoy tagged `skill-candidates-meta`. The old query returns all three, the new one returns only the verdict. Verified afterwards against a real 117-note vault, where the corrected query returns 0 — a genuine first run, which the old query had reported as steady state.
+- **The cluster query had the same defect and inflated every count**, silently. `grep -l '<tag>' memory/*.md` matches the tag anywhere in the file, including inside ordinary words: on that same vault `ci` matched **112 of 117 notes** — it is inside "de**ci**sion" and "spe**ci**fic" — against 9 real ones, and `verification` matched 13 against 12. A twelvefold inflation makes the date spans it feeds meaningless, and nothing in the output looks wrong. Now anchored on the tags line with the tag delimited.
+  - Fixed as the **class**, not the instance: a new rule states the general form — query the frontmatter, never the prose, since every note about a subject contains its name and short tags additionally match inside words.
+  - **This is the vault's own `a-constant-check-is-not-a-check`, third shape** — the unanchored grep that let *drainable* satisfy documentation coverage for `drain` in v1.57.0. Reproduced verbatim in a skill written days later, which is the argument for the check being a habit rather than a memory.
+
 ## [1.62.0] — 2026-08-13
 
 Minor — adopting a release that adds a skill no longer hands the vault a remedy that cannot work. `update.sh` reconciles a generated region it was already invalidating, and prints the order that lands it. **No gate changes**, and none needed to.
