@@ -3966,6 +3966,62 @@ jobs:
 
           exit "$fail"
 
+      - name: Capture must not scale with a harness's fan-out
+        run: |
+          # REGRESSION, reported separately from the step above and fixed by the same
+          # change (51ef084, v1.65.0) before the report was intaken. Pinned rather than
+          # closed on paper, because "it does not reproduce" is a statement about today.
+          #
+          # The shape here is NOT the one above and that is the whole point. The step above
+          # fans out over a workspace whose repos exist but are unchanged; this one fans out
+          # over throwaway directories containing no repository AT ANY DEPTH, outside the
+          # vault — what a harness that runs one headless one-shot per query actually
+          # creates. Both reach the suppression, by different routes through the selection
+          # logic, and only one of them was covered.
+          #
+          # Reported consequence was downstream: rag-build indexes raw/sessions, so the
+          # blocks became chunks competing with curated notes — 144 chunks, 9.4% of one
+          # vault's whole index, from a single day. That is asserted here at the BUFFER
+          # layer: no block written is no chunk to index, and the embedding pass needs a
+          # venv and a model download that do not belong in this job.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-fanout"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          CAP="$GITHUB_WORKSPACE/bin/rag-capture.sh"
+          T="$RUNNER_TEMP/fanout"; rm -rf "$T"; mkdir -p "$T"; fail=0
+          V="$T/vault"; mkdir -p "$V/raw/sessions"
+          printf -- '---\nboundary: personal\n---\n\n# v\n' > "$V/CLAUDE.md"
+
+          # PRECONDITION: a session with a real repo must still file a block. Without it,
+          # "0 blocks" below is satisfied by a capture that is simply broken — and a
+          # never-worked capture and a fixed one look identical from an empty buffer.
+          mkdir -p "$T/work/real"; git init -q "$T/work/real"
+          ( cd "$T/work/real"; printf 'x\n' > f; git add f; git commit -qm "real work" )
+          ( cd "$T/work" && WIKI_PATH="$V" "$CAP" >/dev/null 2>&1 ) || true
+          buf="$(ls "$V/raw/sessions"/*.md 2>/dev/null | head -1 || true)"
+          base="$(grep -c '^## ' "${buf:-/dev/null}" 2>/dev/null || true)"; base="${base:-0}"
+          [ "$base" -eq 1 ] \
+            && echo "  ok   fixture: real repo work files a block, so 0 below means suppressed" \
+            || { echo "  FAIL fixture cannot discriminate: real work filed $base block(s)"; exit 1; }
+
+          # THE REPORTED SHAPE: N ephemeral harness dirs, no repo at any depth
+          for i in $(seq 1 30); do
+            d="$T/harness-cwd-$i"; mkdir -p "$d"
+            ( cd "$d" && WIKI_PATH="$V" "$CAP" >/dev/null 2>&1 ) || true
+          done
+          after="$(grep -c '^## ' "${buf:-/dev/null}" 2>/dev/null || true)"; after="${after:-0}"
+          [ "$after" -eq "$base" ] \
+            && echo "  ok   30 ephemeral harness invocations add 0 blocks (was +1 each)" \
+            || { echo "  FAIL buffer scaled with fan-out: $base -> $after"; fail=1; }
+
+          # and specifically none of the shape the report counted 110 of
+          [ "$(grep -c 'no repo activity found' "${buf:-/dev/null}" 2>/dev/null || true)" -eq 0 ] \
+            && echo "  ok   ...and none of them is the content-free shape the report counted" \
+            || { echo "  FAIL content-free blocks present"; grep -E '^## ' "$buf"; fail=1; }
+
+          exit "$fail"
+
       - name: A verdict must be about the tree the operator is standing in
         run: |
           # REGRESSION: a tool whose whole output is a VERDICT bound $WIKI_PATH directly, so a bare

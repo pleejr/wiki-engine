@@ -1,7 +1,9 @@
 ---
 slug: capture-scales-with-harness-fanout
-outcome: open
+outcome: accepted
+release: v1.65.0
 received: 2026-08-13
+reason: "real, and ALREADY FIXED when this was intaken — by 51ef084 (v1.65.0), which shipped an hour earlier in the same drain for a separate report of the same phenomenon. Not closed on paper: reproduced in this report's own shape at the pin it names, 30 ephemeral no-repo directories adding +30 blocks at v1.64.0 and +0 at v1.66.0, with a real repo still filing one block in both runs as the control. Then pinned with its own CI gate, because 'it does not reproduce' is a statement about today. The gate is separate from the sibling one on purpose: that one fans out over a workspace whose repos exist but are unchanged, this one over directories containing no repository at any depth and outside the vault. Both reach the suppression by different routes through the selection logic, and only the first was covered. The report's open question — capture layer or embedding layer? — is answered as CAPTURE: a block never written cannot become a chunk, whereas excluding content-free blocks only at embed time would leave the buffer full of filler for the human distillation pass, which is the cost the sibling report measured. The suggested first shape (skip when no repo at any depth AND outside the vault) was not built as stated: keying on the BLOCK's emptiness subsumes it, needs no vault-relative path test, and also covers an interactive session that did nothing. The environment opt-out was declined for the reason the report itself gives — it relies on every harness author knowing to set it. One residue this does not address, and it is not an engine defect: content-free blocks already sitting in a consumer's buffer and index remain until pruned and reindexed once, by hand."
 ---
 
 HANDOFF — engine defect report
