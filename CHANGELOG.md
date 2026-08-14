@@ -4,6 +4,15 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.66.1] — 2026-08-14
+
+Patch — v1.65.0's own documentation overstated what it removed, in `SCHEMA.md` and in the script's comment. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **The `unchanged since` line is not gone; it is only unreachable when it would be the whole block.** v1.65.0 suppressed the capture when a run observed nothing, and both its documents described that as removing the line outright. A **mixed** session — one repository with new state, another already recorded — still names the second on its `unchanged since` line, because there the attribution rides *alongside* content rather than *instead of* it. `SCHEMA.md` and the comment above the emitter now say so.
+  - **Found by a verify pass on a consuming vault's repo page, not by any gate.** A stale comment fails nothing, and the prose that was wrong was written in the same release as the code it described — which is the case a verify pass exists for and the one an author is worst placed to catch.
+  - **The behaviour is now pinned**, since nothing asserted it: a mixed session must still emit the line. Proven able to fail by breaking the emitter and watching only that assertion go red — the first mutation attempt hit the *wrong* one of two identical `if [ -n "$unchanged_lines" ]` lines and the gate stayed green, which would have recorded a false pass as evidence.
+
 ## [Unreleased]
 
 ### Added

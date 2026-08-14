@@ -393,9 +393,15 @@ fi
 ensure_file
 {
   [ -n "$entries" ] && printf '%s\n' "$entries"
-  # The session is still evidenced even when every repo it touched was already recorded:
-  # naming them costs one line and keeps "a session happened here" true, which is what the
-  # duplicated blocks were carrying by accident.
+  # Reached only on a MIXED session — at least one repo filed a real block (or a --note
+  # did), while another was already recorded. Naming the second costs one line and keeps
+  # the attribution honest, which is what the duplicated blocks were carrying by accident.
+  #
+  # It no longer covers the all-unchanged session, which v1.65.0 suppresses above before
+  # reaching here. This comment used to say "even when EVERY repo it touched was already
+  # recorded" and stopped being true the moment that suppression landed — found by the
+  # verify pass on the consuming vault's page, not by any gate, because a stale comment
+  # fails nothing.
   if [ -n "$unchanged_lines" ]; then
     printf '\n## %s — no new repo state\n\n```\n%s```\n' "$TS" "$unchanged_lines"
   fi
