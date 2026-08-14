@@ -132,10 +132,14 @@ mkdir -p "$SESS_DIR"
 FILE="$SESS_DIR/$(date +%Y-%m).md"
 TS="$(date +%Y-%m-%dT%H:%M:%S%z)"
 
-if [ ! -f "$FILE" ]; then
+# The buffer file is created LAZILY, immediately before the first append (see
+# ensure_file below). Creating it here made a fully-suppressed run leave a header behind
+# in a fresh month, which is a file whose whole content is the promise of content.
+ensure_file() {
+  [ -f "$FILE" ] && return 0
   printf -- '---\ntype: raw\nboundary: %s\n---\n\n# Session capture — %s\n\nAuto-captured session metadata (disposable). Promote keepers to `memory/`, then prune. Never contains file contents or secrets.\n' \
     "$BOUND" "$(date +%Y-%m)" > "$FILE"
-fi
+}
 
 # emit_repo DIR — print one reflow-safe "## <ts> — repo@branch (head)" entry with a
 # fenced metadata block (repo/branch/head, changed file names, recent commit subjects).
@@ -191,10 +195,13 @@ emit_repo() {
 #
 # So the window keeps its meaning and the REPEAT is what stops: a repo block whose body is
 # byte-identical to the newest one already recorded for that repo is not appended again.
-# The session still gets its evidence — the repo is named on an `unchanged since` line —
-# which is the objection the reporter raised against this shape, and it costs one line
-# instead of a duplicated block. Self-describing on purpose: the line carries the repo,
-# branch and sha, so it still reads correctly after the block it refers to has been pruned.
+#
+# v1.65.0: that repeat now files NOTHING, where it used to leave an `unchanged since` line
+# so "a session happened here" stayed true. The line was the right answer to a duplicated
+# BLOCK and the wrong rate once a harness fans out headless one-shots — one line per
+# one-shot, none of them carrying anything. The session is still evidenced, on stdout at
+# the moment it is suppressed, where the operator is; the buffer is for what a later
+# distillation pass would want to read, and a run that observed nothing is not that.
 #
 # Degrades safely under concurrency. Two sessions ending together may both read the buffer
 # before either writes, and the worst case is the duplicate block that used to be the only
@@ -323,10 +330,16 @@ append_repo() {
     return 1
   fi
   entries="$entries$(emit_repo "$d")"
+  substantive=1
   return 0
 }
 
 entries=""
+# substantive — did this run observe anything a reader could not reconstruct from the
+# buffer it already has? Only a real repo block, an explicit --note, or a transcript
+# pointer count. The two content-free shapes ("no repo activity found", "no new repo
+# state") deliberately do NOT, which is what lets a fan-out of one-shots append nothing.
+substantive=0
 if git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
   # cwd is inside a git repo — capture just it
   append_repo "$REPO" || true
@@ -345,6 +358,39 @@ else
   fi
 fi
 
+[ -n "$NOTE" ] && substantive=1
+[ "${RAG_CAPTURE_TRANSCRIPT_PATH:-0}" = "1" ] && [ -n "$TRANSCRIPT" ] && substantive=1
+
+# A block that carries nothing is not appended at all. One SessionEnd per session is the
+# right rate for interactive work, and wrong the moment anything fans out headless
+# one-shots: each ends, fires the hook, and files a block that a one-shot touching no repo
+# cannot fill. Measured on a consuming vault, 65 of 79 blocks in a 21-minute window were
+# these two shapes, and the 14 keepers had to be separated from them by hand. The buffer's
+# whole design is a small scratch space a distillation pass drains cheaply; at that ratio
+# the drain stops being cheap and the reader is scanning filler for a keeper, which is the
+# failure disposability was meant to prevent.
+#
+# Keyed on the block's own EMPTINESS rather than on a session attribute: the harness may
+# not expose interactive-vs-headless in the hook environment at all, and emptiness also
+# suppresses an interactive session that genuinely did nothing. It costs the "a session
+# happened here" line that v1.43.0 added for attribution — that line was the right fix for
+# DUPLICATED blocks, and it is not worth one block per one-shot. Attribution survives where
+# it is actionable: a repeat run that observes new state still files a full block, and a
+# session worth keeping can force one with --note.
+#
+# NOT silent. "nothing was captured" and "the hook is broken" must not look identical, so a
+# suppressed run says so on stdout and names why, with exit 0.
+if [ "$substantive" -eq 0 ]; then
+  if [ -n "$unchanged_lines" ]; then
+    why="every repo it touched was already recorded"
+  else
+    why="no repo activity found in the last ${RAG_CAPTURE_SINCE:-12}h"
+  fi
+  echo "rag-capture: nothing to append — $why. Buffer unchanged (use --note to file this session anyway)."
+  exit 0
+fi
+
+ensure_file
 {
   [ -n "$entries" ] && printf '%s\n' "$entries"
   # The session is still evidenced even when every repo it touched was already recorded:

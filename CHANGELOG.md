@@ -8,6 +8,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.65.0] — 2026-08-13
+
+Minor — the SessionEnd capture stops filing blocks that carry nothing, so a harness fanning out headless one-shots no longer floods the raw buffer. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Changed
+- **A capture that observed nothing appends nothing.** One block per session is the right rate for interactive work and the wrong one the moment anything spawns headless one-shots — a benchmark, a trigger evaluator, any fan-out running one query per process. A one-shot touches no repository, so the block it files is *structurally* empty. Measured on a consuming vault: **79 blocks in a 21-minute window, 65 of them content-free**, crowding out the 14 that carried a keeper and turning the distillation pass into manual separation. The buffer is designed as a small scratch space a periodic drain empties cheaply; at that ratio it stops being either.
+  - **Keyed on the block's own emptiness, not on the session.** The alternative axis — ask whether the session was a non-interactive one-shot — depends on the harness exposing that in the hook environment, which it may not. Emptiness needs nothing from the host, and additionally suppresses an interactive session that genuinely did nothing.
+  - **Not silent, because "nothing was captured" and "the hook is broken" must not look alike.** A suppressed run prints its reason — no repo activity in the window, or every repo already recorded — and exits 0. The session is still evidenced, on stdout where the operator is, rather than in a buffer written for a later reader who did not want it.
+  - **`--note` and the transcript pointer still count as content**, so a session worth keeping can force a block. Suppression would otherwise have swallowed the escape hatch the tool already had for read-only work it cannot see.
+  - **The buffer file is now created lazily**, immediately before the first append. It was created up front, so a fully-suppressed run in a fresh month left behind a file whose entire content was the promise of content.
+- **One CI assertion is deliberately inverted.** It required the `unchanged since` line that a repeat session used to leave, so "a session happened here" stayed true at one line rather than a duplicated block. That was the right trade against **duplication** (v1.43.0) and the wrong one against **fan-out**: one empty line per one-shot. The test now asserts the opposite and carries the trade in a comment next to it, rather than being quietly deleted — and the assertions around it that protect the original duplication defect are untouched.
+  - Reported from a consuming vault as `rag-capture-skip-headless-one-shots`; accepted, built on the second of the two axes the report offered.
+
 ## [1.64.1] — 2026-08-13
 
 Patch — `prove-the-test-can-fail` advertised a scope wider than its method covers, so a neighbouring case had nowhere to go. Adopt with `bin/adopt.sh` or `update.sh`.

@@ -3888,9 +3888,15 @@ jobs:
           [ "$full" -eq 2 ] \
             && echo "  ok   three identical sessions file the two facts once each" \
             || { echo "  FAIL $full full block(s) for 2 distinct facts"; grep -E '^## ' "$buf"; fail=1; }
-          [ "$(grep -c 'unchanged since' "$buf" 2>/dev/null || true)" -gt 0 ] \
-            && echo "  ok   ...and the later sessions are still evidenced, one line each" \
-            || { echo "  FAIL a session that repeated left no trace at all"; fail=1; }
+          # INVERTED at v1.65.0. This asserted the opposite — that a repeat session left an
+          # `unchanged since` line so "a session happened here" stayed true. That line was
+          # the right answer to DUPLICATED blocks, and the wrong rate once anything fans out
+          # headless one-shots: one block per one-shot, each structurally empty. The session
+          # is now evidenced on stdout at the moment it is suppressed instead of in a buffer
+          # nobody wants to read. Do not restore this without re-reading that trade.
+          [ "$(grep -c 'unchanged since' "$buf" 2>/dev/null || true)" -eq 0 ] \
+            && echo "  ok   ...and a repeat that observed nothing new appends nothing at all" \
+            || { echo "  FAIL a content-free repeat still filed a block"; grep -E '^## ' "$buf"; fail=1; }
 
           ( cd "$T/ws/alpha" && printf 'y\n' > g && git add g && git commit -qm "new work" ) >/dev/null 2>&1
           ( cd "$T/ws" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" >/dev/null 2>&1 ) || true
@@ -3898,6 +3904,65 @@ jobs:
           [ "$full2" -eq 2 ] \
             && echo "  ok   ...while genuinely new work files a fresh block" \
             || { echo "  FAIL alpha has $full2 block(s); new work was suppressed or duplicated"; fail=1; }
+
+          exit "$fail"
+
+      - name: A capture carrying nothing appends nothing, and says so
+        run: |
+          # REGRESSION: SessionEnd fires once per session, which is the right rate for
+          # interactive work and wrong the moment a harness fans out headless one-shots. A
+          # one-shot that runs a single query touches no repo, so the block it files is
+          # structurally empty. Measured on a consuming vault: 79 blocks in 21 minutes, 65
+          # of them the two content-free shapes, crowding out the 14 that carried a keeper.
+          #
+          # The gate keys on the block's EMPTINESS, not on a session attribute the harness
+          # may not expose. Every assertion below has a stated precondition, because
+          # "appended nothing" and "the script died before writing" look identical from the
+          # buffer alone — so the substantive cases run in the SAME fixture as the
+          # suppressed ones, and a run that suppressed must still say so on stdout.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-empty"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          CAP="$GITHUB_WORKSPACE/bin/rag-capture.sh"
+          T="$RUNNER_TEMP/emptyblock"; rm -rf "$T"; mkdir -p "$T/ws"; fail=0
+          V="$T/vault"; mkdir -p "$V/raw/sessions"
+          printf -- '---\nboundary: personal\n---\n\n# v\n' > "$V/CLAUDE.md"
+          blocks() { grep -c '^## ' "$1" 2>/dev/null || echo 0; }
+
+          # 1. nothing touched -> no block, no buffer file, and an explicit reason
+          out="$(cd "$T/ws" && WIKI_PATH="$V" "$CAP" 2>&1)" || true
+          [ "$(ls -1 "$V/raw/sessions" 2>/dev/null | wc -l)" -eq 0 ] \
+            && echo "  ok   a session with no repo activity writes no buffer at all" \
+            || { echo "  FAIL a content-free run created a buffer: $out"; fail=1; }
+          case "$out" in
+            *"nothing to append"*) echo "  ok   ...and says so, so silence is not mistaken for a broken hook" ;;
+            *) echo "  FAIL suppression was silent: [$out]"; fail=1 ;;
+          esac
+
+          # 2. PRECONDITION for every assertion above: real work must still file a block.
+          #    Without this the whole step would pass on a script that appends nothing ever.
+          git init -q "$T/ws/alpha"
+          ( cd "$T/ws/alpha"; printf 'x\n' > f; git add f; git commit -qm "real work" )
+          ( cd "$T/ws" && WIKI_PATH="$V" "$CAP" >/dev/null 2>&1 ) || true
+          buf="$(ls "$V/raw/sessions"/*.md 2>/dev/null | head -1 || true)"
+          [ -n "$buf" ] && [ "$(grep -cE '^## .*alpha@main' "$buf" 2>/dev/null || true)" -eq 1 ] \
+            && echo "  ok   real repo state still files a full block, unchanged" \
+            || { echo "  FAIL the fixture cannot discriminate: real work filed nothing"; fail=1; }
+
+          # 3. the reported case: fan-out of one-shots over an unchanged tree adds zero
+          before="$(blocks "$buf")"
+          for i in 1 2 3 4 5; do ( cd "$T/ws" && WIKI_PATH="$V" "$CAP" >/dev/null 2>&1 ) || true; done
+          after="$(blocks "$buf")"
+          [ "$before" -eq "$after" ] \
+            && echo "  ok   5 further content-free runs add 0 blocks (was +1 each)" \
+            || { echo "  FAIL fan-out grew the buffer $before -> $after"; fail=1; }
+
+          # 4. --note is real content: a session worth keeping can still force a block
+          ( cd "$T/ws" && WIKI_PATH="$V" "$CAP" --note "keeper" >/dev/null 2>&1 ) || true
+          [ "$(grep -c '^Note (' "$buf" 2>/dev/null || true)" -eq 1 ] \
+            && echo "  ok   ...while --note still files a session that touched no repo" \
+            || { echo "  FAIL --note was suppressed along with the empty block"; fail=1; }
 
           exit "$fail"
 
