@@ -1,7 +1,8 @@
 ---
 slug: rag-capture-skip-headless-one-shots
-outcome: open
+outcome: accepted
 received: 2026-08-13
+reason: "built on the second axis the report named as the more robust one — the block's own emptiness, not a session attribute the harness may not expose. Reproduced with a fixture before designing: five content-free runs added five blocks, and the same fixture with a repo carrying real work still filed one, which is the control that proves the fixture can discriminate. After the fix the same five runs add zero. The first axis (detect a headless one-shot) was not built and is not needed: emptiness subsumes it and also suppresses an interactive session that did nothing. Three things the report did not ask for, each with a reason. (1) The buffer file is now created lazily, so a suppressed run in a fresh month leaves no header-only file — 'adds zero blocks' should mean zero bytes. (2) --note and the transcript pointer count as substantive, so a session worth keeping can still force a block; without that, suppression would have swallowed the one escape hatch the tool already had. (3) An existing CI assertion had to be INVERTED — it required the `unchanged since` line this change removes. That line was v1.43.0's correct answer to duplicated blocks; it is the wrong rate against fan-out, one empty line per one-shot. The inversion is recorded in the test with the trade written next to it, not quietly deleted, and the surrounding assertions that protect the original duplication defect are untouched."
 ---
 
 HANDOFF — engine improvement proposal
