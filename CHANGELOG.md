@@ -6,7 +6,12 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **A gate pinning the harness fan-out shape** (CI only — no consumed component changed, so this rides into the next functional release). `capture-scales-with-harness-fanout` was reported independently of `rag-capture-skip-headless-one-shots` and described the same phenomenon from the other end: not the block's emptiness but the buffer's *size becoming a function of fan-out*, with the downstream cost measured — `rag-build` indexes `raw/sessions`, so 144 content-free chunks, **9.4% of one vault's whole index**, came from a single day.
+  - **It was already fixed when it was intaken**, by 51ef084 (v1.65.0), which shipped an hour earlier in the same drain. It is pinned rather than closed on paper, because "it does not reproduce" is a statement about today: at v1.64.0 thirty ephemeral directories add **+30** blocks, at v1.66.0 they add **0**, and a real repo files one block in both runs — the control that keeps an empty buffer from being mistaken for a fixed one.
+  - **Deliberately a second gate, not an extra assertion in the first.** The existing one fans out over a workspace whose repositories exist but are unchanged; this one over directories containing no repository *at any depth*, outside the vault — what a harness running one headless one-shot per query actually creates. The two reach the suppression by different routes through the selection logic, and only one of them was covered.
+  - **The report's open question is answered as *capture*, not *embedding*.** A block never written cannot become a chunk; suppressing only at embed time would leave the buffer full of filler for the human distillation pass, which is the cost the sibling report measured. Its suggested shape — skip when no repository exists at any depth *and* the directory is outside the vault — was not built as stated: keying on the block's own emptiness subsumes it, needs no vault-relative path test, and also covers an interactive session that did nothing.
+  - Not addressed, and not an engine defect: content-free blocks already in a consumer's buffer and index stay until pruned and reindexed once, by hand.
 
 ## [1.66.0] — 2026-08-13
 
