@@ -30,7 +30,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
-WIKI="${WIKI_PATH:-}"
+WIKI=""   # explicit --wiki only; the default is resolved below, not here
 STRICT=0
 
 while [ $# -gt 0 ]; do
@@ -41,6 +41,12 @@ while [ $# -gt 0 ]; do
     *) echo "unknown arg: $1" >&2; exit 1;;
   esac
 done
+
+# Same verdict-about-the-wrong-tree defect as lint.sh: bound to $WIKI_PATH, a bare
+# run from inside a session worktree answered confidently about canonical. Only
+# tools whose target is TRACKED VAULT CONTENT resolve this way (wiki-root-lib.sh);
+# this one's is, and an explicit --wiki is still never second-guessed.
+WIKI="$(resolve_wiki_root "$WIKI")" || exit 1
 
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }

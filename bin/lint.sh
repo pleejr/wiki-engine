@@ -34,14 +34,18 @@
 # Exit 1 if any check fails.
 #
 # Usage:
-#   lint.sh                 lint $WIKI_PATH
-#   lint.sh --wiki DIR      lint DIR
+#   lint.sh                 lint the working tree cwd is in when that is a different
+#                           working tree of the SAME repository as $WIKI_PATH (a session
+#                           worktree); otherwise lint $WIKI_PATH. A retarget says so on
+#                           stderr. See resolve_wiki_root in bin/wiki-root-lib.sh.
+#   lint.sh --wiki DIR      lint DIR — never second-guessed; --wiki "$WIKI_PATH" forces
+#                           canonical from anywhere
 #   lint.sh --strict        pass --strict through to lint-memory (warnings fail)
 set -uo pipefail   # deliberately not -e: run all checks, then aggregate
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
-WIKI="${WIKI_PATH:-}"
+WIKI=""   # explicit --wiki only; the default is resolved below, not here
 STRICT=""
 
 while [ $# -gt 0 ]; do
@@ -52,6 +56,20 @@ while [ $# -gt 0 ]; do
     *) echo "unknown arg: $1" >&2; exit 1;;
   esac
 done
+
+# This tool's whole output is a VERDICT the operator acts on, so it must be a verdict
+# about the tree they are standing in. Binding $WIKI_PATH directly made a bare run from
+# inside a session worktree print `lint: all checks passed` — exit 0, nothing on stderr —
+# about the CANONICAL checkout, while the worktree it was run from went unexamined. The
+# `pre-commit` hook meanwhile lints the committed tree (`lint.sh --wiki "$ROOT"`), so the
+# hook could fail on a violation this tool had just called clean, which reads as a broken
+# hook rather than as two tools answering about two trees.
+#
+# Nothing else here needed changing: the seam reads below already go through
+# resolve_seam_file precisely so an ignored patterns file still resolves from canonical
+# when the linted tree is a worktree. This tool was built to lint a worktree; only its
+# root resolution was left behind.
+WIKI="$(resolve_wiki_root "$WIKI")" || exit 1
 
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }

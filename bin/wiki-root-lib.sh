@@ -43,6 +43,15 @@
 # any repo, cwd in the canonical checkout itself, $WIKI_PATH not a repo, git absent
 # — all fall through to $WIKI_PATH, so no existing caller changes behaviour.
 #
+# WHO USES THIS. Every tool whose target is tracked vault content: the two index
+# generators, and (v1.66.0) the tools that issue a VERDICT about that content —
+# lint.sh, lint-links.sh, lint-memory.sh, verify-status.sh, lint-summary-volatility.sh.
+# The verdict tools were the original omission: they bound $WIKI_PATH directly, so a bare
+# run from a session worktree reported on canonical and said nothing about the choice.
+# lint-summary-volatility.sh was the worst of them — `--seed-baseline` WRITES, and the
+# comment beside that write already cited this function as its protection while never
+# calling it.
+#
 # WHAT DELIBERATELY DOES NOT USE THIS. Only tools whose target is TRACKED VAULT
 # CONTENT should resolve this way. Two families must keep resolving $WIKI_PATH:
 #
