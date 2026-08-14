@@ -182,6 +182,22 @@ The other end of the handoff. A proposal arrives as a `HANDOFF` block; it is the
 - **The reporter's suggested fix may be wrong while the bug is real.** Treat it as a hypothesis. Judge it against the *observation*, never adopt it because the report sounded confident. One filed prescription in this engine's history would have rejected payloads that were provably intact.
 - **The reported symptom may not be the defect.** Reproduce, then find the mechanism; report and mechanism agree less often than they appear to. Only once you have the mechanism is the shape decision a design question at all.
 
+**Read the report as FOUR separable claims, and check each on its own.** They arrive as one message and read as one voice, so belief in the half the reporter can see carries into the half they cannot. Each part fails in its own direction:
+
+| part | what it is | how it fails |
+|---|---|---|
+| **Observation** | what they saw | usually right — they hit it |
+| **Mechanism** | why they think it happens | a hypothesis written by someone who stopped investigating |
+| **Expected** | the behaviour they want | the most reliable part, and the least read |
+| **Acceptance criteria** | what "done" means | prescription wearing neutral clothes |
+
+Two consequences worth stating, because both have decided a shape here:
+
+- **An acceptance criterion is a claim about the system — go falsify it.** "X would happen if we don't do Y" is checkable, and one such criterion, flagged by its reporter as the part most likely to be dropped, was simply **false**; building to it would have added a mechanism to guarantee a property that already held. A property that already holds gets a **regression test, not machinery** — and say in the record that you rejected it and why, or the next reader re-derives the same fear and reads the absence as an oversight.
+- **Check the Expected clause against the suggested fix.** They can contradict each other, and when they do the Expected wins — it is the behaviour actually wanted, while the fix is a guess at how to reach it. If the suggested fix *cannot produce* the stated Expected, the report has settled its own design question and what looks like a fork is not one. A reporter naming an alternative and declining it is not a prohibition either; they declined it from outside the internals.
+
+Deviating from a specified shape still needs a technical reason, never a cosmetic one — but "your stated Expected is unreachable by your stated fix" is one. Record it in the outcome's `reason:` so it travels back to the reporter.
+
 A defect that reproduces and has an obvious, contained fix does **not** need the full design pass below — go fix it, with a test that fails first.
 
 **How to review.** Use a rigorous critique skill if this vault has one installed — check `~/.claude/skills/scrutinize` (this vault's is `scrutinize`; a vault may install it under another name, and the engine depends on none of them):
