@@ -42,7 +42,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
-WIKI="${WIKI_PATH:-}"
+WIKI=""   # explicit --wiki only; the default is resolved below, not here
 SEED=0
 QUIET=0
 
@@ -55,6 +55,15 @@ while [ "$#" -gt 0 ]; do
     *) echo "unknown arg: $1" >&2; exit 1;;
   esac
 done
+
+# This one is a WRITE, not just a verdict: `--seed-baseline` writes the baseline into
+# $WIKI. The comment further down already argued that resolving that write to canonical
+# "would land outside the branch being committed and dirty a tree other sessions share —
+# the bug resolve_wiki_root exists to fix" — but the call it described was never made, so
+# the protection was asserted and not applied. Run standalone from a worktree, the seed
+# wrote to canonical. Under the umbrella lint it was unaffected, since lint.sh passes an
+# explicit --wiki, which is what kept it hidden.
+WIKI="$(resolve_wiki_root "$WIKI")" || exit 1
 
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }

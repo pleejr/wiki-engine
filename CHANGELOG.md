@@ -8,6 +8,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.66.0] — 2026-08-13
+
+Minor — the tools that issue a verdict about vault content now resolve the tree the operator is standing in, like the generators already did. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **A verdict is now about the tree you are standing in.** `lint.sh` bound `$WIKI_PATH` directly, so a bare run from inside a session worktree printed `lint: all checks passed` — exit 0, **nothing on stderr** — about the *canonical* checkout, while the worktree it was run from went unexamined. Fail-open, and disguised: `pre-commit` lints the committed tree (`lint.sh --wiki "$ROOT"`), so the hook could fail on a violation the hand-run had just called clean, which reads as a broken hook rather than as two tools answering about two trees.
+  - **The reported fix was declined, for a reason the report could not have had.** It asked for "the same unprompted stderr announcement `gen-projects-index.sh` already emits". That sibling does not merely announce — it **retargets**, and its line reads *targeting `<worktree>` — the working tree cwd is in, not `$WIKI_PATH`*. Only a tool that switched trees can say that truthfully, so the report's own Expected output is unreachable by announcement alone, and announcing "targeting canonical" would leave the two tools disagreeing exactly as before.
+  - **This is not a new convention; it is the documented one, applied.** `wiki-root-lib.sh` already says only tools whose target is *tracked vault content* resolve this way. `lint.sh`'s seam reads already go through `resolve_seam_file`, with a comment noting that `pre-commit` lints the worktree. It was built to lint a worktree — only its root resolution was left behind.
+  - **Blast radius measured rather than asserted.** Explicit `--wiki`, cwd in the canonical checkout, and cwd in an unrelated repository are byte-identical and silent, each proven by an assertion paired against its opposite. The retarget fires only in the reported case.
+- **Four siblings had the same defect; one of them was a WRITE.** `lint-summary-volatility.sh` bound `$WIKI_PATH` while `--seed-baseline` writes a tracked baseline file — and the comment beside that write cited `resolve_wiki_root` as its protection *without the code ever calling it*. Run standalone from a worktree it seeded the **canonical** tree, dirtying the shared checkout that worktrees exist to protect. Demonstrated live: against the pre-fix code the new gate reports the seed landing in canonical. `lint-links.sh`, `lint-memory.sh` and `verify-status.sh` had the read-side gap. The umbrella lint hid all four, because it passes an explicit `--wiki` to its children.
+  - The RAG family and the machine/engine-wiring family (including `upkeep`) are deliberately untouched, per the exclusion list in `wiki-root-lib.sh`: `.rag/` and `engine/` exist only in the canonical checkout, so retargeting them would invent a bug rather than fix one.
+  - Reported from a consuming vault as `lint-announce-resolved-vault`; **partially accepted** — the observation confirmed, the prescription replaced, and the class swept.
+
 ## [1.65.0] — 2026-08-13
 
 Minor — the SessionEnd capture stops filing blocks that carry nothing, so a harness fanning out headless one-shots no longer floods the raw buffer. Adopt with `bin/adopt.sh` or `update.sh`.

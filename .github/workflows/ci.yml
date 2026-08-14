@@ -3966,6 +3966,112 @@ jobs:
 
           exit "$fail"
 
+      - name: A verdict must be about the tree the operator is standing in
+        run: |
+          # REGRESSION: a tool whose whole output is a VERDICT bound $WIKI_PATH directly, so a bare
+          # run from inside a session worktree answered confidently about the CANONICAL checkout and
+          # said nothing about which tree it had chosen. `lint.sh` printed `lint: all checks passed`,
+          # exit 0, empty stderr, while the worktree it was run from carried a real violation — and
+          # `pre-commit` lints the committed tree (`lint.sh --wiki "$ROOT"`), so the hook failed on
+          # what the hand-run had just called clean. That reads as a broken hook, not as two tools
+          # answering about two trees.
+          #
+          # wiki-root-lib.sh already states the rule: only tools whose target is TRACKED VAULT
+          # CONTENT resolve through resolve_wiki_root. These four are; they had simply never been
+          # converted. The last of them WRITES, and its own comment claimed a protection its code
+          # never invoked.
+          #
+          # Every assertion below is paired with its opposite, because "targets the worktree" and
+          # "targets canonical" are each provable only against the other.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-tree"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          BIN="$GITHUB_WORKSPACE/bin"
+          T="$RUNNER_TEMP/treeresolve"; rm -rf "$T"; mkdir -p "$T"; fail=0
+
+          # a vault that is a git repo, with one linked worktree of itself
+          V="$T/vault"; mkdir -p "$V/memory" "$V/projects" "$V/repos"
+          printf -- '---\nboundary: personal\n---\n\n# v\n' > "$V/CLAUDE.md"
+          # three notes, each linking the other two: memory lint requires >=2 outbound links, and
+          # mutual links keep the link gate clean so the ONLY violation in play is the planted one
+          for n in a b c; do
+            case "$n" in a) l1=b; l2=c;; b) l1=a; l2=c;; c) l1=a; l2=b;; esac
+            printf -- '---\ntitle: %s\ntype: memory\nstatus: current\nboundary: personal\n---\n\n# %s\n\nbody linking [[%s]] and [[%s]].\n' "$n" "$n" "$l1" "$l2" > "$V/memory/$n.md"
+          done
+          printf -- '# index\n\n<!-- skills:start -->\n<!-- skills:end -->\n\n<!-- projects:start -->\n<!-- projects:end -->\n' > "$V/index.md"
+          ( cd "$V" && WIKI_PATH="$V" "$BIN/gen-skills-index.sh" >/dev/null 2>&1; WIKI_PATH="$V" "$BIN/gen-projects-index.sh" >/dev/null 2>&1 ) || true
+          git init -q "$V"
+          ( cd "$V" && git add -A && git commit -qm init )
+          WT="$T/wt"; ( cd "$V" && git worktree add -q "$WT" -b wt/test )
+
+          # plant a violation in the WORKTREE only — canonical stays clean, so a verdict of
+          # "all checks passed" is TRUE of canonical and FALSE of the tree cwd is in
+          sed -i.bak 's/^boundary: personal$/boundary: work/' "$WT/memory/a.md" && rm -f "$WT/memory/note.md.bak"
+
+          # 1. PRECONDITION: canonical really is clean, or every assertion below is vacuous
+          ( cd "$V" && WIKI_PATH="$V" "$BIN/lint.sh" >/dev/null 2>"$T/e1" ) && canon_ok=1 || canon_ok=0
+          [ "$canon_ok" = "1" ] && [ ! -s "$T/e1" ] \
+            && echo "  ok   fixture: canonical passes, and says nothing about targeting" \
+            || { echo "  FAIL fixture: canonical does not pass cleanly"; cat "$T/e1"; exit 1; }
+
+          # 2. the reported defect: a bare run from the worktree must judge THE WORKTREE
+          out="$( cd "$WT" && WIKI_PATH="$V" "$BIN/lint.sh" 2>"$T/e2" )" && rc=0 || rc=1
+          [ "$rc" = "1" ] \
+            && echo "  ok   a bare run from a worktree fails on that worktree's violation" \
+            || { echo "  FAIL bare run reported success about a different tree"; echo "$out" | tail -3; fail=1; }
+          case "$out" in
+            *"boundary: work, but this vault declares personal"*)
+              echo "  ok   ...red for the RIGHT reason — the violation planted in that worktree" ;;
+            *) echo "  FAIL red, but not for the planted violation"; echo "$out" | tail -5; fail=1 ;;
+          esac
+          grep -q "targeting $WT" "$T/e2" \
+            && echo "  ok   ...and names the tree it chose, unprompted, on stderr" \
+            || { echo "  FAIL no announcement: [$(cat "$T/e2")]"; fail=1; }
+
+          # 3. explicit --wiki is never second-guessed, from the same cwd
+          ( cd "$WT" && WIKI_PATH="$V" "$BIN/lint.sh" --wiki "$V" >/dev/null 2>"$T/e3" ) \
+            && echo "  ok   --wiki still wins from inside a worktree, silently" \
+            || { echo "  FAIL --wiki no longer targets what it names"; cat "$T/e3"; fail=1; }
+
+          # 4. an UNRELATED repo must not retarget — engine dev happens with $WIKI_PATH exported
+          ( cd "$GITHUB_WORKSPACE" && WIKI_PATH="$V" "$BIN/lint.sh" >/dev/null 2>"$T/e4" ) \
+            && [ ! -s "$T/e4" ] \
+            && echo "  ok   cwd in an unrelated repo still targets \$WIKI_PATH, silently" \
+            || { echo "  FAIL retargeted (or announced) outside the vault's own repo"; cat "$T/e4"; fail=1; }
+
+          # 5. the same defect in the sibling that WRITES. --seed-baseline only writes when there is
+          #    something to grandfather, so plant one; without it the write never fires and the
+          #    assertion passes against a tool that did nothing.
+          mkdir -p "$WT/projects" "$V/projects"
+          cat > "$WT/projects/p.md" <<'EOF'
+          ---
+          title: p
+          type: project
+          status: active
+          summary: "shipping v1.2.3 this week"
+          boundary: personal
+          ---
+
+          # p
+          EOF
+          cp "$WT/projects/p.md" "$V/projects/p.md"
+          ( cd "$WT" && WIKI_PATH="$V" "$BIN/lint-summary-volatility.sh" --seed-baseline --quiet >"$T/o5" 2>&1 ) || true
+          [ -f "$WT/.wiki-gates-summary-baseline" ] \
+            && echo "  ok   --seed-baseline writes into the worktree it was run from" \
+            || { echo "  FAIL the seed did not land in the worktree: $(cat "$T/o5")"; fail=1; }
+          [ ! -f "$V/.wiki-gates-summary-baseline" ] \
+            && echo "  ok   ...and not into the shared canonical tree" \
+            || { echo "  FAIL a worktree seed dirtied canonical — the clobber worktrees prevent"; fail=1; }
+
+          # 6. the verdict tool the drain loop itself runs
+          ( cd "$WT" && WIKI_PATH="$V" "$BIN/verify-status.sh" >/dev/null 2>"$T/e6" ) || true
+          grep -q "targeting $WT" "$T/e6" \
+            && echo "  ok   verify-status resolves and announces the same way" \
+            || { echo "  FAIL verify-status still answers about \$WIKI_PATH silently"; fail=1; }
+
+          exit "$fail"
+
       - name: Maintenance must not leave an access footprint the capture reads as work
         run: |
           # REGRESSION: rag-capture selects a repo when it sees a fetch or checkout inside
