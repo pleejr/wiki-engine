@@ -29,10 +29,11 @@ Collect the improvement, the motivating use case, and why it surfaced now. Keep 
 
 A consumer vault is where engine bugs actually get hit — it is the thing running the engine all day. It is also the one place that **cannot fix them**: engine development does not happen there, and a local edit inside `engine/` is not a fix but a time bomb, because the submodule is pinned and the next `update.sh` moves the pointer straight past your change. So a defect found in a consumer vault travels the *same* upstream channel as an idea; only the block's contents differ.
 
-Four things a defect report needs that an improvement proposal does not:
+Five things a defect report needs that an improvement proposal does not:
 
 - **Confirm it is still live at the pin you are running — do not assume.** A bug can be fixed *incidentally* by unrelated work and stay open on paper for days, because the change that fixed it never cited it. State the engine version you reproduced against; the engine-dev end cannot tell a live defect from a stale one otherwise, and re-deriving that costs more than reporting it.
 - **Separate what you OBSERVED from what you PROPOSE.** The observation is evidence; the fix is a hypothesis, and a reporter's hypothesis can be wrong while the bug is entirely real. A worked example from this engine's own history: a report correctly identified that a lost terminator line dropped the last item, and prescribed treating the missing terminator as an integrity failure — which would have *rejected a payload whose hash matched*, forcing another paste over exactly the lossy channel the tool exists to survive. The defect was real; the prescription would have made it worse. Report the first with confidence, offer the second loosely.
+- **Then read your own Expected against your own suggested fix, before you send it.** They are separate fields, so nothing in the block makes you compare them — and the most common way an Expected goes wrong is that the fix written beside it cannot produce it. Ask it directly: *if engine-dev did exactly what I suggested, would I get exactly what I wrote under Expected?* If the answer is no, say so and say which of the two you would keep. **When a precedent supplies your Expected, cite the behaviour that earns the output, not the output itself.** A sibling tool's printed line is normally the only part of it you ever see — you run the tools, you do not read their internals — so "cite a precedent" and "quote what the precedent prints" feel identical from your chair, and only the second one can specify something unreachable. This engine's own `lint-announce-resolved-vault` turned on exactly that: the report quoted a sibling's unprompted announcement as the output wanted, but that sibling can print its line only because it RETARGETS, so the stated fix — announce, as the sibling does — could not produce the stated Expected. Intake declined the prescription and shipped the retarget that does produce it; the observation was confirmed in full, and the round trip was the only cost.
 - **Say which failure shape it is** — this, not severity adjectives, is what sets urgency:
   - **fail-closed** — it refuses, nothing is lost. Annoying, rarely urgent.
   - **fail-open** — it proceeds while *looking* correct. Severe, because nothing surfaces it. A boundary filter that silently disabled itself on an unrecognized value, a write-time gate that skipped every commit taking the intended path, and an isolation helper that handed back the shared tree with exit 0 were all this shape.
@@ -55,6 +56,8 @@ Still live at that pin: <how you confirmed — a bug can be fixed incidentally a
 
 Observed: <what happened, with scrubbed evidence>
 Expected: <what should have happened, and why you believe that>
+  If you copied this from another tool's output, name what that tool DOES that
+  lets it say this — and check that the fix below can actually produce it.
 
 Reproduction (generic):
   1. <step>
