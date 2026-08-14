@@ -13,6 +13,17 @@ Patch — v1.65.0's own documentation overstated what it removed, in `SCHEMA.md`
   - **Found by a verify pass on a consuming vault's repo page, not by any gate.** A stale comment fails nothing, and the prose that was wrong was written in the same release as the code it described — which is the case a verify pass exists for and the one an author is worst placed to catch.
   - **The behaviour is now pinned**, since nothing asserted it: a mixed session must still emit the line. Proven able to fail by breaking the emitter and watching only that assertion go red — the first mutation attempt hit the *wrong* one of two identical `if [ -n "$unchanged_lines" ]` lines and the gate stayed green, which would have recorded a false pass as evidence.
 
+## [1.67.0] — 2026-08-14
+
+Minor — `engine-proposal`'s intake pass now reads an arriving report as four separable claims instead of two. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Changed
+- **Intake enumerates what a report is made of: observation, mechanism, Expected, acceptance criteria.** It already warned that the *mechanism* may be wrong while the observation is real. The two halves it never named are the ones that have actually decided shapes here, and both read as neutral — which is why they slip past the scepticism the suggested fix receives.
+  - **An acceptance criterion is a claim about the system, so falsify it.** One, flagged by its own reporter as the part most likely to be dropped, was false; building to it would have added a mechanism — and a change to an on-disk contract — to guarantee a property that already held. A property that already holds gets a **regression test, not machinery**, and the rejection goes in the record so the next reader does not re-derive the fear and read the absence as an oversight.
+  - **The Expected clause can rule out the report's own suggested fix.** They can contradict each other, and the Expected wins: it is the behaviour wanted, while the fix is a guess at how to reach it. Shipped after exactly that — a report asked only for an announcement, but the sibling message it cited as its model is one only a tool that *retargets* can emit truthfully, so its stated Expected was unreachable by its stated fix and a fork that looked like a taste call had already settled itself.
+  - Deviating from a specified shape still needs a technical reason rather than a cosmetic one; "your stated Expected is unreachable by your stated fix" is one, and it belongs in the outcome's `reason:` so it reaches the reporter.
+  - Folded in from a consuming vault's `skill-candidates` pass, where the pattern cleared the bar at four dated occurrences over three weeks with a documented cost in each. Declined as a *new* skill on the operator's call — this description already claims the intake design-review pass, and a rival would have made both fire less reliably.
+
 ## [Unreleased]
 
 ### Added
