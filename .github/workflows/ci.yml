@@ -3964,6 +3964,21 @@ jobs:
             && echo "  ok   ...while --note still files a session that touched no repo" \
             || { echo "  FAIL --note was suppressed along with the empty block"; fail=1; }
 
+          # 5. the suppression must not swallow attribution that rides ALONGSIDE content.
+          #    A MIXED session — one repo with new state, another already recorded — still
+          #    names the second on its `unchanged since` line, because there the line is
+          #    carried with content rather than instead of it. Unpinned until now, and the
+          #    docs had already drifted on exactly this point: a verify pass found SCHEMA.md
+          #    and this script's own comment claiming the line was gone outright.
+          git init -q "$T/ws/beta"
+          ( cd "$T/ws/beta"; printf 'b\n' > f; git add f; git commit -qm "beta work" )
+          ( cd "$T/ws" && WIKI_PATH="$V" "$CAP" >/dev/null 2>&1 ) || true   # file beta once
+          ( cd "$T/ws/alpha"; printf 'y\n' > g; git add g; git commit -qm "newer alpha" ) >/dev/null 2>&1
+          ( cd "$T/ws" && WIKI_PATH="$V" "$CAP" >/dev/null 2>&1 ) || true   # alpha new, beta not
+          [ "$(grep -c 'beta@main.*unchanged since' "$buf" 2>/dev/null || true)" -ge 1 ] \
+            && echo "  ok   a mixed session still names the repo that had nothing new" \
+            || { echo "  FAIL suppression swallowed attribution in a mixed session"; grep -E '^## ' "$buf"; fail=1; }
+
           exit "$fail"
 
       - name: Capture must not scale with a harness's fan-out
