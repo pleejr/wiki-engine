@@ -1,7 +1,8 @@
 ---
 slug: prove-the-test-can-fail-cede-verdict-audit
-outcome: open
+outcome: accepted
 received: 2026-08-13
+reason: "collision confirmed from the engine side: the description never mentioned a verdict that already exists, so the boundary was stated from the consumer's side only — exactly as reported. Built as proposed, frontmatter-only, with the axis named explicitly (does a verdict already exist?) and the NOT-for clause covering both polarities. One addition the report did not ask for: its own constraint — never name a skill the engine does not ship — was already violated in the sentence being extended, which named `scrutinize` flatly. That is now hedged in the form the engine already uses in `update` ('e.g. a `sync-skills` skill'), which keeps the retrieval token for vaults that have it without asserting it is installed. NO lint gate was added for that class, deliberately: the distinguishing property is whether a reference is hedged as an example or asserted as installed, and a token-matching gate flags the legitimate hedged form — confirmed by running one, which still flags all three references after the fix. That is the loosened-until-it-cannot-fail trap lint-docs' own check 3 warns about. This change has no mechanical gate and none is claimed; its acceptance criteria are read, not run."
 ---
 
 HANDOFF — engine improvement proposal

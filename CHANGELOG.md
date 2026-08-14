@@ -8,6 +8,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 _Nothing yet._
 
+## [1.64.1] — 2026-08-13
+
+Patch — `prove-the-test-can-fail` advertised a scope wider than its method covers, so a neighbouring case had nowhere to go. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Fixed
+- **The skill now cedes the case it does not own: a verdict that already came back.** It answers a capability question — *can this check go red at all?* — by manufacturing a red against a check that has never failed. A different question shares nearly all of its surface prose: a diagnostic RAN, returned a result, and what that result measured is in doubt. That one is answered by controlling the measurement that already happened, which is the opposite method. Both are provoked by "it says it passed, but", and the description's own claim to prove "a PASSING check is capable of failing" read as covering either. The description now names the axis outright — **does a verdict already exist?** — and the NOT-for clause covers both polarities rather than only a check that is already failing.
+  - **The clause describes the case, not a neighbour.** The engine ships no verdict-auditing skill and cannot assume a consumer installs one, so naming it would be a dangling pointer in the routing surface. Progressive disclosure means the router sees descriptions only, so a collision is decided before either body is read — which is why this is a frontmatter fix and the body is untouched.
+  - **The same rule was already broken in the sentence being extended.** It named `scrutinize` flatly, which the engine does not ship either. It is now hedged in the form `update` already uses for the same problem — *any artifact-review skill (e.g. a `scrutinize` skill)* — keeping the retrieval token for vaults that have it without asserting it is installed.
+  - **No gate was added for that class, on purpose.** The property that separates a correct reference from a dangling one is whether it is hedged as an example or asserted as installed, and a token-matching gate cannot see the difference: run against the fixed file it still flags all three cross-references, including the two that are correct. A gate loosened until it stops flagging those is a gate that can no longer fail — the trap `lint-docs` check 3 documents against itself.
+  - Reported from a consuming vault as `prove-the-test-can-fail-cede-verdict-audit`; accepted as proposed.
+
 ## [1.64.0] — 2026-08-13
 
 Minor — `checkpoint` now mines its own notes for skill candidates, and `skill-candidates` stops deciding on the operator's behalf. Adopt with `bin/adopt.sh` or `update.sh`.

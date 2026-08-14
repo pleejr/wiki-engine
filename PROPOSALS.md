@@ -59,7 +59,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `project-page-staleness-queue` | partially-accepted | shape and status-gating kept; the signal is derived from git rather than the hand-maintained updated: field, which was measured drifting three days on two of three active pages, and a reviewed: marker was added — the alternative the proposal rejected — because without a clock reset the queue can never be drained to zero |
 | `project-summary-volatility-gate` | partially-accepted | shape kept; warn-by-default inverted to an enforced content-hashed ratchet, slug allowlist replaced by summary hashing, and the `live` marker dropped as unreproduced |
 | `proposal-slug-roundtrip` | shipped | derived |
-| `prove-the-test-can-fail-cede-verdict-audit` | open | received 2026-08-13 |
+| `prove-the-test-can-fail-cede-verdict-audit` | shipped | derived |
 | `push-verb-omits-git-push` | shipped | derived |
 | `queue-cannot-see-unmerged-proposal-prs` | shipped | derived |
 | `rag-capture-aborts-silently-when-wiki-path-is-not-a-vault` | shipped | derived |
