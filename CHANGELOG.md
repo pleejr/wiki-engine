@@ -4,6 +4,20 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.69.0] — 2026-08-14
+
+Minor — a released `CHANGELOG` heading must have its tag, and nothing checked that before. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`bin/lint-changelog-tags.sh`** — a version with a `## [x.y.z]` section must have a `vx.y.z` tag. This closes the gap `1.44.1` fell through, and it fell through because **no instrument here pointed at it**: `lint-docs.sh` and `lint-proposals.sh` never read `CHANGELOG.md`, and `release.yml` runs only *because* a tag was pushed — so the one case it structurally cannot observe is the tag that was never cut. It took a verify pass on a consuming vault's engine page, three weeks late, to notice.
+  - **The hard part is not detection, it is knowing when a missing tag is legitimate.** Writing the section always precedes pushing the tag, so the entry being released has none for as long as the release takes. A gate blind to that would redden the merge that RECORDS a release — the shape this repo has already shipped twice, as a stale generated ledger failing the arrival that staled it and as the soft-wrap gate rejecting the proposal files it exists to receive.
+  - **So the rule is neither "every heading" nor "every heading but the top one":** a heading is due its tag once its entry was **already on `main` when the newest tag was cut**. Cutting any tag is the moment every entry already in the file had its chance.
+  - **That test deliberately ignores both file placement and version order, because neither is reliable here.** `1.66.1` sits *above* `1.67.0` in the file, so "topmost" is not "newest"; and a tag cut retroactively is newest by date while oldest by line, which is why the comparison picks the newest tag by **version**. A gate keyed on either would have had a trap in it.
+  - **Latency is inherent and stated rather than hidden:** a skipped tag is caught on the *next* release, not at the moment it is skipped. Until something else ships, "not tagged yet" and "never tagged" are the same observation, and one release cycle is the earliest any gate can honestly separate them.
+  - **Proven against the real defect, not a synthetic one.** With `v1.44.1` temporarily removed, the gate names `1.44.1`, the commit that introduced its entry, and the remedy; restored, it goes green. The fixture pass then walks a whole release lifecycle — tagged release green, **entry merged with the tag not yet pushed still green**, green again after the tag, red once a later version ships past it. The in-flight assertion is the one that matters, and it is the one a break-it-once test would never have written.
+  - **Refuses a shallow clone** rather than reporting a clean pass over a history it cannot walk — the "check that can never be red" class this repo has now shipped fixes for three times. It lives in the CI job that checks out with `fetch-depth: 0`, since the other job is shallow by default.
+  - Not covered, and a different defect: a *tag* with no CHANGELOG section. Left unbuilt rather than guessed at, since it has never occurred here.
+
 ## [1.68.0] — 2026-08-14
 
 Minor — the half of `engine-proposal` a reporter actually reads now carries the Expected-versus-fix check. Adopt with `bin/adopt.sh` or `update.sh`.

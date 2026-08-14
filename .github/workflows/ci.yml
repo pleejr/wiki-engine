@@ -2075,6 +2075,67 @@ jobs:
       - name: Ledger is well-formed and no trailer drifts from it
         run: ./bin/lint-proposals.sh
 
+      - name: A released CHANGELOG heading has its tag
+        run: ./bin/lint-changelog-tags.sh
+
+      - name: The changelog-tag gate reddens on a skipped tag, not on a release in flight
+        run: |
+          # This gate's whole difficulty is the SECOND assertion below, not the first. Writing
+          # the section precedes pushing the tag, so the entry being released has no tag for as
+          # long as the release takes — and a gate blind to that would redden the merge that
+          # RECORDS a release. This repo has shipped that defect twice already (a stale ledger
+          # failing the arrival that staled it; the soft-wrap gate rejecting the proposals it
+          # exists to receive), so proving the in-flight case stays GREEN matters more than
+          # proving the skipped case goes red.
+          fail=0
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/cl-gitconfig"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          FX="$RUNNER_TEMP/cl-fx"; rm -rf "$FX"; mkdir -p "$FX"
+          E="$PWD"
+          cd "$FX" && git init -q .
+
+          mk(){ printf '# Changelog\n\n' > CHANGELOG.md
+                for v in "$@"; do printf '## [%s] — 2026-01-01\n\nPatch — thing.\n\n' "$v" >> CHANGELOG.md; done
+                git add CHANGELOG.md; git commit -qm "release $1"; }
+
+          mk 1.0.0; git tag v1.0.0
+          "$E/bin/lint-changelog-tags.sh" --repo . >/dev/null 2>&1 \
+            && echo "  ok   a tagged release passes" \
+            || { echo "  FAIL green baseline is already red"; fail=1; }
+
+          # THE ONE THAT MATTERS: entry merged, tag not yet pushed.
+          mk 1.1.0 1.0.0
+          "$E/bin/lint-changelog-tags.sh" --repo . >/dev/null 2>&1 \
+            && echo "  ok   a release IN FLIGHT stays green — the merge is not reddened" \
+            || { echo "  FAIL the gate reddens the merge that records a release"; fail=1; }
+
+          git tag v1.1.0
+          "$E/bin/lint-changelog-tags.sh" --repo . >/dev/null 2>&1 \
+            && echo "  ok   ...and still green once its tag is pushed" \
+            || { echo "  FAIL green after tagging"; fail=1; }
+
+          # Now skip one: ship 1.2.0 while 1.1.0 never got its tag.
+          mk 1.2.0 1.1.0 1.0.0; git tag v1.2.0
+          git tag -d v1.1.0 >/dev/null
+          git rev-parse -q --verify refs/tags/v1.1.0 >/dev/null \
+            && { echo "  FAIL fixture did not remove the tag — the red below proves nothing"; fail=1; } \
+            || echo "  ok   fixture applied: 1.1.0 shipped past, with no tag"
+          out="$("$E/bin/lint-changelog-tags.sh" --repo . 2>&1)" && rc=0 || rc=$?
+          printf '%s\n' "$out" | grep -q '1\.1\.0 has a CHANGELOG section but no v1\.1\.0 tag' \
+            && echo "  ok   ...gate names the skipped version" \
+            || { echo "  FAIL gate silent on the skip: $out"; fail=1; }
+          [ "$rc" != "0" ] || { echo "  FAIL gate exited 0 on a skipped tag"; fail=1; }
+
+          # A shallow clone walks nothing. It must refuse, not report a clean pass.
+          git clone -q --depth 1 "file://$FX" "$RUNNER_TEMP/cl-shallow"
+          out="$("$E/bin/lint-changelog-tags.sh" --repo "$RUNNER_TEMP/cl-shallow" 2>&1)" && rc=0 || rc=$?
+          printf '%s\n' "$out" | grep -q SHALLOW && [ "$rc" != "0" ] \
+            && echo "  ok   a shallow clone is refused, not passed vacuously" \
+            || { echo "  FAIL shallow clone was not refused: $out"; fail=1; }
+
+          exit "$fail"
+
       - name: A shallow clone must FAIL, not pass vacuously
         run: |
           # The whole ledger gate rests on walking history. If a future checkout loses
