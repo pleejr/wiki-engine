@@ -4019,14 +4019,25 @@ jobs:
           # have explained it had been sent to /dev/null.
           sweep="$(UPKEEP_REPOS_ROOT="$WS" WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/upkeep.sh" sync-clones 2>&1 || true)"
           cap="$(cd "$WS" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" 2>&1 || true)"
+          # v1.65.0 changed what "no footprint" LOOKS like. This used to require a buffer to
+          # exist and then count zero repo blocks in it. A capture that observes nothing now
+          # writes no buffer at all, so that precondition became unsatisfiable by
+          # construction — and "no buffer" cannot, on its own, tell an invisible sweep from
+          # a capture that died. The capture's own report is the better evidence: it states
+          # positively that it found no repo activity, where a sweep that HAD left a
+          # footprint would instead say it appended an entry. The control that proves the
+          # capture still works at all is assertion 3 below, which requires the operator's
+          # own fetch to file a block in this same fixture.
+          case "$cap" in
+            *"nothing to append"*"no repo activity"*)
+              echo "  ok   a maintenance sweep leaves no repo looking worked-in" ;;
+            *) echo "  FAIL the sweep was visible to the capture"; \
+               echo "       sweep: $sweep"; echo "       capture: $cap"; fail=1 ;;
+          esac
           buf="$(ls "$V/raw/sessions"/*.md 2>/dev/null | head -1 || true)"
-          [ -n "$buf" ] \
-            && echo "  ok   fixture: the capture wrote a buffer to measure" \
-            || { echo "  FAIL fixture wrote no buffer, so the assertions below prove nothing"; \
-                 echo "       sweep: $sweep"; echo "       capture: $cap"; exit 1; }
-          blocks="$(grep -cE '^## .*@main' "$buf" 2>/dev/null || true)"; blocks="${blocks:-0}"
+          blocks="$(grep -cE '^## .*@main' "${buf:-/dev/null}" 2>/dev/null || true)"; blocks="${blocks:-0}"
           [ "$blocks" -eq 0 ] \
-            && echo "  ok   a maintenance sweep leaves no repo looking worked-in" \
+            && echo "  ok   ...and filed no repo block for it, buffer or no buffer" \
             || { echo "  FAIL $blocks repo block(s) after a sweep"; grep -E '^## ' "$buf"; fail=1; }
 
           # the suppression must not cost the verb its job
@@ -4034,12 +4045,18 @@ jobs:
             && echo "  ok   ...while still fast-forwarding the clone that was behind" \
             || { echo "  FAIL sync-clones stopped fast-forwarding"; fail=1; }
 
-          # ...nor the clause its purpose: an operator's own fetch is still access
+          # ...nor the clause its purpose: an operator's own fetch is still access.
+          # THIS IS THE CONTROL for the two assertions above: they claim the sweep was
+          # invisible, and a capture that saw nothing and a capture that is broken make that
+          # claim identically. Only a run that DOES file a block, in this same fixture,
+          # separates them. `buf` is re-resolved here because the suppressed runs above
+          # deliberately left no buffer to hold.
           git -C "$WS/quiet-repo" fetch --quiet
           ( cd "$WS" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" >/dev/null 2>&1 ) || true
-          grep -qE '^## .*quiet-repo@main' "$buf" \
+          buf="$(ls "$V/raw/sessions"/*.md 2>/dev/null | head -1 || true)"
+          [ -n "$buf" ] && grep -qE '^## .*quiet-repo@main' "$buf" \
             && echo "  ok   ...and a fetch by the OPERATOR is still captured" \
-            || { echo "  FAIL the fix silenced genuine access too"; fail=1; }
+            || { echo "  FAIL the fix silenced genuine access too (buf=${buf:-<none>})"; fail=1; }
 
           exit "$fail"
 
