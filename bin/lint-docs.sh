@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # lint-docs.sh — keep the usage docs honest so new users adopt with the lowest friction.
-# Six cheap, deterministic checks (no LLM, never `claude`):
+# Seven cheap, deterministic checks (no LLM, never `claude`):
 #   1. every skill (skills/*/) is mentioned in USAGE.md  — nothing user-facing goes undocumented
 #   2. every `bin/<name>.sh` USAGE.md references actually exists — no stale pointers to deleted tools
 #   3. no shipped skill or tool STAMPS a specific boundary value — the engine is
@@ -9,6 +9,8 @@
 #   5. every vault WALK goes through the shared exclusion, never its own prune list (v1.54.3)
 #   6. every documented hook SNIPPET states a `timeout` — a hook the host cancels is silent,
 #      and the snippet is what people copy into a real settings.json
+#   7. a defect-report template's Expected-versus-fix rule is sited on BOTH surfaces, not
+#      only in the half the reporter never reads (v1.68.0)
 #      — see the section comments below; the count above and this list have both been wrong
 #      before, so keep all three in step: this header, the numbered sections, and the
 #      success line at the bottom that names each check to the reader.
@@ -196,7 +198,64 @@ while IFS= read -r hit; do
   fail=1
 done <<< "$timeout_hits"
 
+# 7. a defect-report template's Expected-versus-fix rule is sited on BOTH surfaces --------
+# A skill that drives a handoff has two audiences in one file, and a rule written once lands
+# in whichever half its author was thinking about. The rule that catches the most common way
+# an `Expected:` goes wrong — the suggested fix beside it cannot produce it — sat only in the
+# INTAKE section, which is addressed to the maintainer receiving the report. The reporter
+# never reads it, so the check was applied only after submission, by the reader who pays a
+# round trip to discover it. The gap is asymmetric rather than absent, which is exactly why
+# reading the skill end-to-end does not reveal it: every clause a reporter needs exists
+# somewhere, and this one is in the half they are not the audience for.
+#
+# ASSERTS THE PROPERTY, NOT THE WORDING. Two things must hold, and neither pins a sentence:
+# the template's own `Expected:` field must point at the fix, and the rule must appear in at
+# least TWO sections — single-siting is the whole defect, so a rewrite that keeps both sites
+# passes and a rewrite that drops either one goes red. Keyed off any SKILL.md that ships a
+# defect-report template, not off one skill by name, so the next such template inherits it.
+for f in "$ROOT"/skills/*/SKILL.md; do
+  [ -f "$f" ] || continue
+  rel="skills/$(basename "$(dirname "$f")")/SKILL.md"
+
+  # The template is a fenced block that asks for BOTH an Expected and a suggested fix.
+  # A skill shipping no such block has nothing to be asymmetric about, and is skipped.
+  tmpl="$(awk '
+    /^[[:space:]]*```/ {
+      if (inb && blk ~ /(^|\n)Expected:/ && blk ~ /Suggested fix/) printf "%s", blk
+      inb = !inb; blk = ""; next }
+    inb { blk = blk $0 "\n" }
+  ' "$f")"
+  [ -n "$tmpl" ] || continue
+
+  # (a) the template's own Expected FIELD — the line plus its indented continuation, up to
+  # the next field at column 0 — must relate itself to the fix. The field is what a reporter
+  # fills in; a bare placeholder there is the version that shipped the defect.
+  exp_field="$(printf '%s' "$tmpl" | awk '/^Expected:/ { inx = 1; print; next } inx && /^[^ \t]/ { exit } inx { print }')"
+  if ! printf '%s' "$exp_field" | grep -qi 'fix'; then
+    echo "lint-docs: $rel's defect-report template asks for 'Expected:' without relating it to the suggested fix" >&2
+    echo "lint-docs:   the two are separate fields, so nothing makes the reporter compare them —" >&2
+    echo "lint-docs:   and an Expected the fix cannot produce is the most common way one goes wrong." >&2
+    fail=1
+  fi
+
+  # (b) the rule must be sited in at least two sections. Prose only: a fence is a template
+  # or a quoted example, not a surface that instructs anyone.
+  sites="$(awk '
+    /^[[:space:]]*```/ { inb = !inb; next }
+    inb { next }
+    /^## / { sec = $0; next }
+    /Expected/ && /fix/ { if (!(sec in seen)) { seen[sec] = 1; n++ } }
+    END { print n + 0 }
+  ' "$f")"
+  if [ "$sites" -lt 2 ]; then
+    echo "lint-docs: $rel sites the Expected-versus-fix rule in $sites section(s); both ends of the handoff need it" >&2
+    echo "lint-docs:   the intake half is addressed to the maintainer, so a reporter never reads it." >&2
+    echo "lint-docs:   Sited there alone, the check runs only after submission — one round trip late." >&2
+    fail=1
+  fi
+done
+
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout"
+  echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces"
 fi
 exit "$fail"

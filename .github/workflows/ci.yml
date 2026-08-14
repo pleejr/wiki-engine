@@ -3756,6 +3756,71 @@ jobs:
             || { echo "  FAIL the restore did not put USAGE.md back"; fail=1; }
           exit "$fail"
 
+      - name: A handoff skill cannot site the Expected-versus-fix rule on one surface only
+        run: |
+          # The defect was ASYMMETRY: the rule lived in the intake section, which only the
+          # maintainer reads, so a reporter got no chance to catch their own unreachable
+          # Expected before submitting. A gate against that must go red when either surface
+          # loses it, AND must not merely pin the sentence that happens to be there now —
+          # otherwise the next rewrite fails a better wording while a fenced example passes.
+          # Both directions are proven here; the middle one is the case a break-it-once test
+          # would have missed.
+          fail=0
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   the live docs pass as they stand" \
+            || { echo "  FAIL lint-docs is red before any fixture"; fail=1; }
+
+          S=skills/engine-proposal/SKILL.md
+          cp "$S" "$RUNNER_TEMP/SKILL.keep"
+
+          # 1. drop the reporter-facing site -> red, and it says how many sites it found
+          perl -0pi -e 's/^- \*\*Then read your own Expected.*\n//m' "$S"
+          grep -qF 'Then read your own Expected' "$S" \
+            && { echo "  FAIL fixture 1 did not apply — the red below proves nothing"; fail=1; } \
+            || echo "  ok   fixture 1: reporter-facing site removed"
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          printf '%s\n' "$out" | grep -q 'sites the Expected-versus-fix rule in 1 section' \
+            && echo "  ok   ...gate names the single-siting and counts it" \
+            || { echo "  FAIL gate said nothing about siting: $out"; fail=1; }
+          [ "$rc" != "0" ] || { echo "  FAIL gate exited 0 with the rule sited once"; fail=1; }
+          cp "$RUNNER_TEMP/SKILL.keep" "$S"
+
+          # 2. blank the template's Expected field -> red on its own, independently of 1
+          perl -0pi -e 's/^  If you copied this from another tool.*\n  lets it say this.*\n//m' "$S"
+          grep -qF 'lets it say this' "$S" \
+            && { echo "  FAIL fixture 2 did not apply"; fail=1; } \
+            || echo "  ok   fixture 2: template Expected back to a bare placeholder"
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          printf '%s\n' "$out" | grep -q 'without relating it to the suggested fix' \
+            && echo "  ok   ...gate names the template field" \
+            || { echo "  FAIL gate silent on the template: $out"; fail=1; }
+          [ "$rc" != "0" ] || { echo "  FAIL gate exited 0 with a bare Expected field"; fail=1; }
+          cp "$RUNNER_TEMP/SKILL.keep" "$S"
+
+          # 3. NEAR-MISS, the one that matters: reword the rule, keep it sited -> must stay
+          # GREEN. A gate that reddens here is asserting today's prose, not the property.
+          perl -0pi -e 's/^- \*\*Then read your own Expected against your own suggested fix, before you send it\.\*\*.*$/- **Compare the two fields yourself.** Can the fix you wrote deliver the Expected you wrote? If not, the Expected is the one to keep./m' "$S"
+          grep -qF 'Compare the two fields yourself' "$S" \
+            && echo "  ok   fixture 3: rule reworded, still sited on both surfaces" \
+            || { echo "  FAIL fixture 3 did not apply"; fail=1; }
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   ...still green: the gate asserts the property, not the sentence" \
+            || { echo "  FAIL a correct rewrite was rejected — the gate is wording-pinned"; fail=1; }
+          cp "$RUNNER_TEMP/SKILL.keep" "$S"
+
+          # 4. NEAR-MISS the other way: present, but only inside a fence -> must stay RED.
+          # A fenced block is a template or a quoted example; it instructs nobody.
+          perl -0pi -e 's/^- \*\*Then read your own Expected.*\n/```\ncheck the Expected against the suggested fix\n```\n/m' "$S"
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && { echo "  FAIL a fenced mention counted as an instruction surface"; fail=1; } \
+            || echo "  ok   fixture 4: a quoted example does not count as a site"
+          cp "$RUNNER_TEMP/SKILL.keep" "$S"
+
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   docs restored, gate green again" \
+            || { echo "  FAIL the restore did not put $S back"; fail=1; }
+          exit "$fail"
+
       - name: rag-capture refuses a non-vault out loud, and never guesses a boundary
         run: |
           # The boundary read was a bare `grep ... 2>/dev/null` under `set -euo pipefail`.
