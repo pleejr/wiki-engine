@@ -37,6 +37,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 <!-- proposals:start -->
 | slug | outcome | detail |
 |---|---|---|
+| `accepting-the-mining-offer-should-spawn-the-session` | open | received 2026-08-17 |
 | `adopt-reconcile-gitignore` | shipped | derived |
 | `adopt-step-asset-resolution` | shipped | v1.32.0 |
 | `adoption-leaves-the-skills-catalog-stale-so-the-pin-commit-is-refused-both-ways` | shipped | derived |
