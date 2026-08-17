@@ -4,6 +4,21 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.71.0] — 2026-08-17
+
+Minor — accepting `checkpoint`'s mining offer now *starts* the pass, through a session adapter your machine supplies. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`bin/spawn-session.sh`** — a seam for starting a session elsewhere, on the same pattern as `session-checks.d/`: the engine knows a session **can** be started, an executable at `~/.claude/spawn-session` knows **how**, and the engine never learns which host it is driving. Contract is four lines — working directory and prompt in as `$1`/`$2`, a handle out on stdout line 1, exit 0 only once the session is running. Anything richer would put one host's semantics into a boundary-agnostic engine.
+  - **The one failure that matters here is fail-open, not fail-closed.** A reported handoff that did not happen converts an *accepted* decision into a silently lost one — strictly worse than never offering to spawn, because the operator stops looking. So no adapter, a non-executable one, a non-zero exit, a hang, **and exit 0 with no handle** all land on the same printed-by-hand fallback, each naming which failure it was. The sharpest case is an adapter that prints a handle and *then* exits non-zero: it got far enough to name something it did not start, and that handle is discarded.
+  - **A hang is bounded, because it is the worst of the three outcomes.** An adapter that runs the session in the foreground never returns, and a caller stalled with no status has nothing to attribute the stall to. Killed at `$WIKI_ENGINE_SPAWN_TIMEOUT` (default 20s) and degraded to the fallback, exactly as a failure is.
+  - **Carries what the hard safety rule asks of a deliberate spawn**, rather than resting on the current call graph: `CLAUDE_SPAWN_DEPTH` is incremented for the child and refused above a small cap, and an identical `(cwd, prompt)` spawn inside a 90s window is refused — the realistic double-spawn is a caller re-running this after output it read as ambiguous. A non-numeric depth **refuses** rather than reading as zero; a guard that treats garbage as "not nested" is one that fails open.
+  - **No adapter is shipped, deliberately.** It is host-specific and lives on the consumer machine, the same division as `session-checks.d/`. A machine without one is never worse off than before — it gets the printed steps, which is all it ever had.
+
+### Changed
+- **`checkpoint` §6: accepting the offer starts the pass instead of describing how to start it.** v1.70.0 moved the offer to the very end *precisely* so the parent would be free at that point — but it cannot deliver that while acceptance is only a suggestion. The parent had committed, integrated, retired its worktree and reindexed, and still could not close out: the accepted outcome lived entirely outside it, unstarted. So the operator either kept a finished session open as a reminder, or the accepted verdict quietly became a deferral — for reasons with nothing to do with whether mining was worth doing.
+- **The invariant is now stated as "no *return* edge", which is what it always meant.** v1.70.0 recorded zero edges in either direction, and this adds a one-way start back. The ban was never on causing the other skill to run; it was on the two calling each other, the hook ban one layer in. `skill-candidates` invokes nothing, so the graph is a single arrow and not a loop — and the sentinel and bound above hold even if that skill later grows a caller. Starting something that can reach `checkpoint` is still banned, and so is firing this from a lifecycle event.
+
 ## [1.70.0] — 2026-08-17
 
 Minor — `checkpoint` offers the skill-mining pass instead of running it. `skill-candidates` records its own verdicts. Adopt with `bin/adopt.sh` or `update.sh`.
