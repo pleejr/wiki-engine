@@ -6,7 +6,7 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [1.70.0] — 2026-08-17
 
-Minor — `checkpoint` now **offers** the skill-mining pass instead of running it, and `skill-candidates` records its own verdicts. Adopt with `bin/adopt.sh` or `update.sh`.
+Minor — `checkpoint` offers the skill-mining pass instead of running it. `skill-candidates` records its own verdicts. Adopt with `bin/adopt.sh` or `update.sh`.
 
 ### Changed
 - **`checkpoint` §2b is gone; §6 offers the pass and stops.** The mining step ran `skill-candidates` automatically inside every checkpoint, "not as a suggestion at the end", and the operator had no way to decline. The argument for that was that the sweep is cheap in steady state — true, in *tokens*: it starts from the newest verdict note and reads only what changed. **But the cost that lands on the operator is not tokens.** It is a set of develop/discard/defer decisions injected at the moment they are trying to close out unrelated work, and a `develop` verdict opens a chain — author a skill, write an eval, fix the fixture — begun by a checkpoint they ran to record something else. Cheap to run and free to answer are different properties, and only the first was ever measured.
