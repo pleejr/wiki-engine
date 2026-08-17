@@ -1,7 +1,8 @@
 ---
 slug: decouple-skill-mining-from-checkpoint
-outcome: open
+outcome: partially-accepted
 received: 2026-08-17
+reason: "the decoupling is ACCEPTED whole and shipped as asked — checkpoint offers the pass as its last step, after commit and integrate, and a deferral writes nothing; the ordering constraint survives because the notes are on disk by then, and the retired worktree is a second reason the offer belongs last rather than earlier. The one criterion OVERRIDDEN is that skill-candidates keep handing verdicts back rather than writing them: with the call removed there is no caller to hand them to, and the proposal's own defer option depends on the write it removes — it argues no new mechanism is needed because deferrals already compound as verdict notes carrying their count, but those notes were written by checkpoint's §2b, not by skill-candidates, which wrote nothing by design. Left as proposed, the 'run it now, separately' branch ends with decisions the operator just made and no record of them, and because the two-modes check keys on a verdict note existing, every later standalone run would report backlog mode over the whole record and re-ask everything already settled. So skill-candidates gains its own worktree, commit and integrate and records its own verdicts. That does not reopen the cycle the one-way edge existed to prevent: the ban is on the two INVOKING each other, and writing a note invokes nothing — the edge count between them is now zero in both directions, which is strictly stronger than the one-way edge it replaces. No new lint gate was added for the acyclicity criterion, deliberately: no such cycle has ever occurred here, and this repo's own rule is to leave an unobserved defect unbuilt rather than guessed at. The change does put skill-candidates under lint-docs check 4 for the first time, which caught its description naming a git-ignored path with no canonical tree beside it"
 ---
 
 HANDOFF — engine improvement proposal
