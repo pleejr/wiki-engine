@@ -1,9 +1,9 @@
 ---
 name: checkpoint
-description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, distills durable facts from this session into memory/ notes, then automatically runs `skill-candidates` over them and writes back whichever verdicts the operator chooses. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session, on demand — never from a session-lifecycle hook.
+description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, distills durable facts from this session into memory/ notes, then ends by OFFERING the `skill-candidates` mining pass rather than running it — deferring writes nothing. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session, on demand — never from a session-lifecycle hook.
 status: active
-summary: "end-of-session: update project page + `log.md`, distill memory, mine it for skill candidates and record the verdicts. In-session only."
-updated: 2026-08-13
+summary: "end-of-session: update project page + `log.md`, distill memory, then offer the skill-mining pass rather than running it. In-session only."
+updated: 2026-08-17
 used_by: []
 ---
 
@@ -36,19 +36,7 @@ Before editing any vault file, take an isolated working copy so a second concurr
 - Promote **durable** facts into `$WIKI_PATH/memory/` notes with the right `type`: `preference` (how I work) · `decision` (a chosen path + why) · `lesson` (a hard-won rule).
 - Give each ≥2 `[[wikilinks]]`; mark any note it supersedes as `status: superseded`.
 - Add/refresh the `$WIKI_PATH/index.md` memory entry. For **project** pages, don't hand-edit the index Projects buckets — regenerate them from frontmatter: `$WIKI_PATH/engine/bin/gen-projects-index.sh --wiki "$WORK"` (splices between the `<!-- projects:start/end -->` sentinels, same pattern as the skills catalog).
-- **The notes this step writes are the evidence base for `skill-candidates`** (§2b), which reads them back out to find procedures repeated often enough to deserve a skill. Nothing here needs to anticipate that — just date the notes and keep them specific about what was *done*, since a note recording only a conclusion cannot later be counted as an occurrence.
-
-## 2b. Mine for skill candidates, then write the verdicts
-
-Run **`skill-candidates`** here, automatically — not as a suggestion at the end. It must come *after* §2, because it judges recurrence across weeks of notes and has nothing to read until this session's own notes have landed; and *before* §4, so the verdicts it produces are linted and committed in this same pass rather than left loose.
-
-**In steady state this is cheap**, which is what makes it safe to run every time: the sweep starts from the newest existing verdict note, so it reads what changed since, not the whole vault. Only a vault that has never been mined pays for the full backlog drain, and it pays once.
-
-**`skill-candidates` decides nothing and writes nothing.** It puts every candidate to the operator as a develop/discard/defer choice and hands the answers back. Writing them is this skill's job, here, using the worktree already open from §0 — one `type: decision` note per verdict, tagged `skill-candidate`, carrying the operator's reason for a discard and the count for a defer.
-
-**The edge is deliberately one-way: this skill calls that one, and that one never calls back.** If `skill-candidates` invoked `checkpoint` to save its own verdicts, the two would cycle. Same structural rule as the hook ban one layer in — the caller writes, never the callee. Nothing else here may invoke a skill that can reach `checkpoint`.
-
-If the operator declines every candidate, or there are none, write nothing and say so in one clause. A run that finds nothing is the ordinary steady-state result, not a failure.
+- **The notes this step writes are the evidence base for `skill-candidates`** (§6), which reads them back out to find procedures repeated often enough to deserve a skill. Nothing here needs to anticipate that — just date the notes and keep them specific about what was *done*, since a note recording only a conclusion cannot later be counted as an occurrence.
 
 ## 3. Prune the raw source (keep the vault authoritative)
 - **Only after** a native note's durable content is captured in the vault, remove it from native memory (`~/.claude/projects/*/memory/*.md`) and drop its line from that dir's `MEMORY.md` index — so the vault is the single source of truth and native can't drift into a competing authority.
@@ -65,6 +53,19 @@ If the operator declines every candidate, or there are none, write nothing and s
 
 ## 5. Refresh semantic recall (if enabled)
 - If the vault has a `.rag` index (`$WIKI_PATH/.rag/index.jsonl` exists), run `engine/bin/rag-build.sh` **against canonical `$WIKI_PATH` after the §0 worktree branch is integrated** (the `.rag/` index is untracked and lives only in the canonical checkout, not the worktree) so this session's new/updated notes are recallable next session. This closes the loop: `checkpoint` distills markdown → `rag-build` re-indexes it (incremental; only changed files re-embed) → `wiki-context` auto-recalls it. Skip if the vault has no index or the embedding endpoint is down — recall is optional; the map still works. Deterministic (a local embedding model, never `claude`), so unlike the rest of this skill `rag-build.sh` **is** hook-safe on its own and may be wired freely; it is `checkpoint` — an LLM session — that must stay in-session.
+
+## 6. Offer the mining pass — do not run it
+
+`skill-candidates` reads the notes §2 just wrote and reports the procedures that have repeated often enough to deserve a skill. It is worth running; it is not this skill's job. **End the checkpoint by offering it, and stop there.**
+
+- **Defer** — the default, and it writes nothing. Nothing is lost by declining: the evidence is the notes themselves, which are committed by now, so a later run re-derives every candidate from the same record. There is no backlog file to keep, because there is no backlog — only an un-mined record.
+- **Run it now, separately** — in its own session or pane, so its verdicts and whatever authoring follows are their own unit of work. It records its own verdicts (`skill-candidates` §7); nothing comes back here.
+
+**Offer it *here*, at the very end, and never earlier.** Both halves are load-bearing. *Here*, because mining judges recurrence across weeks of notes and has nothing to read until this session's have landed — and because §0's worktree is retired by now, so a run that accepts opens its own tree instead of writing into one this pass still holds. *An offer*, because a `develop` verdict implies authoring a skill, which implies an eval, which implies fixture and harness work: a chain the operator should start deliberately, not inherit from a checkpoint they ran to record something else.
+
+**This used to run automatically, and the argument for that was about the wrong cost.** In steady state the sweep is cheap in *tokens* — it starts from the newest verdict note and reads only what changed since. But the cost that lands on the operator is a set of develop/discard/defer decisions injected at the moment they are trying to close out unrelated work, and no token count measures that. Cheap to run is not the same as free to answer.
+
+**Neither skill invokes the other.** This one offers; that one records what it decides. An edge in *either* direction would put the two in a cycle — the hook ban's structure, one layer in. Nothing else added here may invoke a skill that can reach `checkpoint`.
 
 ## Rules
 - **In-session, on demand. Never wire this to a session-lifecycle hook** — a SessionEnd hook running `checkpoint` re-fires SessionEnd on exit, which was the `.ai-os` fork-bomb: the trigger and the spawn were the same event. The ban is on *that structure*, not on headless `claude` — a deliberately-initiated run carrying a re-entry sentinel, concurrency-bounded, and terminating is legitimate. See the **Hard safety rule** in the engine's `CLAUDE.md`.
