@@ -1,8 +1,8 @@
 ---
 name: checkpoint
-description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, distills durable facts from this session into memory/ notes, then ends by OFFERING the `skill-candidates` mining pass rather than running it — deferring writes nothing. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session, on demand — never from a session-lifecycle hook.
+description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, distills durable facts from this session into memory/ notes, then ends by OFFERING the `skill-candidates` mining pass rather than running it inline — deferring writes nothing, and accepting starts it as a separate session instead of printing instructions for starting one. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session, on demand — never from a session-lifecycle hook.
 status: active
-summary: "end-of-session: update project page + `log.md`, distill memory, then offer the skill-mining pass rather than running it. In-session only."
+summary: "end-of-session: update project page + `log.md`, distill memory, then offer the skill-mining pass — declined it writes nothing, accepted it starts elsewhere. In-session only."
 updated: 2026-08-17
 used_by: []
 ---
@@ -59,13 +59,22 @@ Before editing any vault file, take an isolated working copy so a second concurr
 `skill-candidates` reads the notes §2 just wrote and reports the procedures that have repeated often enough to deserve a skill. It is worth running; it is not this skill's job. **End the checkpoint by offering it, and stop there.**
 
 - **Defer** — the default, and it writes nothing. Nothing is lost by declining: the evidence is the notes themselves, which are committed by now, so a later run re-derives every candidate from the same record. There is no backlog file to keep, because there is no backlog — only an un-mined record.
-- **Run it now, separately** — in its own session or pane, so its verdicts and whatever authoring follows are their own unit of work. It records its own verdicts (`skill-candidates` §7); nothing comes back here.
+- **Run it now, separately** — in its own session or pane, so its verdicts and whatever authoring follows are their own unit of work. It records its own verdicts (`skill-candidates` §7); nothing comes back here. **On accept, start it rather than describing how to start it:**
+
+  ```bash
+  engine/bin/spawn-session.sh --cwd "$WIKI_PATH" --what 'the skill-mining pass' \
+    --prompt 'Run the skill-candidates mining pass over this vault: report the procedures whose dated evidence shows them repeating, and record the verdicts.'
+  ```
+
+  Relay what it prints and **stop there** — it either names a handle for the session it started, or prints the by-hand instructions and the reason it could not. Never wait on, poll, or read the spawned session; it records its own verdicts, which is what makes starting it safe. A machine with no adapter installed lands on the printed instructions, which is what this bullet used to be on every machine.
 
 **Offer it *here*, at the very end, and never earlier.** Both halves are load-bearing. *Here*, because mining judges recurrence across weeks of notes and has nothing to read until this session's have landed — and because §0's worktree is retired by now, so a run that accepts opens its own tree instead of writing into one this pass still holds. *An offer*, because a `develop` verdict implies authoring a skill, which implies an eval, which implies fixture and harness work: a chain the operator should start deliberately, not inherit from a checkpoint they ran to record something else.
 
 **This used to run automatically, and the argument for that was about the wrong cost.** In steady state the sweep is cheap in *tokens* — it starts from the newest verdict note and reads only what changed since. But the cost that lands on the operator is a set of develop/discard/defer decisions injected at the moment they are trying to close out unrelated work, and no token count measures that. Cheap to run is not the same as free to answer.
 
-**Neither skill invokes the other.** This one offers; that one records what it decides. An edge in *either* direction would put the two in a cycle — the hook ban's structure, one layer in. Nothing else added here may invoke a skill that can reach `checkpoint`.
+**Starting it is not calling it, and the difference is the return edge.** Neither skill invokes the other *in-process*: this one offers, that one records what it decides, and nothing flows back here. What the accept branch adds is a one-way **start** — a separate session, begun only on an explicit human accept, that this pass never waits on, polls, or reads. A cycle needs an edge in the other direction, and there is none: `skill-candidates` invokes nothing, so the graph is a single arrow, not a loop. `spawn-session.sh` carries the re-entry sentinel and the concurrency bound anyway, because the guarantee should not rest on that skill never growing a caller.
+
+Two things this does **not** license. Nothing added here may start something that can reach `checkpoint` — that is the edge which would close the loop, and it is still banned. And the start stays gated on an accept: fired from a lifecycle event instead, it is the fork-bomb structure exactly, one layer in.
 
 ## Rules
 - **In-session, on demand. Never wire this to a session-lifecycle hook** — a SessionEnd hook running `checkpoint` re-fires SessionEnd on exit, which was the `.ai-os` fork-bomb: the trigger and the spawn were the same event. The ban is on *that structure*, not on headless `claude` — a deliberately-initiated run carrying a re-entry sentinel, concurrency-bounded, and terminating is legitimate. See the **Hard safety rule** in the engine's `CLAUDE.md`.

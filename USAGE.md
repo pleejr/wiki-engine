@@ -111,6 +111,33 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 
 The SessionStart banner reports engine freshness. A machine can fold in **its own** checks — e.g. a consumer skill repo reporting "first run / catch up" — without the engine knowing anything about them: drop an executable script in `~/.claude/session-checks.d/`. `session-preflight.sh` runs each (deterministic, **must not call `claude`**) and folds the output into the one banner — first stdout line = a compact banner fragment, remaining lines = action/notes for the assistant. Empty output = nothing to report. This keeps the engine generic while letting each layer surface its own state in a single banner.
 
+## Spawning a session (`spawn-session`)
+
+A skill sometimes ends by handing work *elsewhere* — "run that separately, in its own session". Written as advice, accepting it means the operator performs the handoff by hand at exactly the moment the separation was meant to relieve, so the accepted branch quietly collapses into the deferred one. `bin/spawn-session.sh` closes that: the engine knows a session **can** be started, and a drop-in adapter on your machine knows **how**. Same seam as `session-checks.d` above — the engine composes something it does not ship.
+
+```bash
+engine/bin/spawn-session.sh --cwd DIR --prompt TEXT [--what LABEL] [--force]
+#   exit 0 = started (the handle is on stdout)   exit 3 = not started; by-hand steps printed
+```
+
+**The adapter** — executable at `~/.claude/spawn-session` (or wherever `$WIKI_ENGINE_SPAWN_ADAPTER` points). Its whole contract:
+
+| | |
+|---|---|
+| **argv** | `$1` = working directory, `$2` = the prompt to submit |
+| **stdout** | line 1 = a handle the operator can use to find the session (pane id, window name, session id) |
+| **exit** | `0` **only once the session is actually running**; non-zero if it could not start |
+| **env** | `CLAUDE_SPAWN_DEPTH`, already incremented — pass it through to the child |
+| **must** | start the session and **return**; an adapter that runs it in the foreground is killed at `$WIKI_ENGINE_SPAWN_TIMEOUT` (default 20s) |
+
+Nothing richer, deliberately: anything more would put one host's semantics into a boundary-agnostic engine. Drive tmux, a terminal multiplexer, a workspace manager, an IDE — the engine never learns which.
+
+**Every way it can fail lands on the same by-hand fallback, and says which failure it was** — no adapter, not executable, non-zero exit, exit 0 with no handle, or a hang. Reporting a handoff that did not happen is the one fail-open shape that matters here: it converts an accepted decision into a silently lost one, which is strictly worse than never offering to spawn. A machine with no adapter is therefore never worse off than before — it gets the printed steps, which is all it ever had.
+
+**No edge back.** The caller waits only for the adapter to report that it started something. It never polls or reads the spawned session; that session records its own results, which is what makes starting it safe.
+
+**Never wire this to a lifecycle hook.** It starts a session, and a hook whose own trigger the child can re-fire is the fork-bomb structure the engine's `CLAUDE.md` bans — see below. Invoked only on an explicit human accept, and it carries what that rule requires of a deliberate spawn: `CLAUDE_SPAWN_DEPTH` is incremented and refused above a small cap (`$WIKI_ENGINE_SPAWN_MAX_DEPTH`, default 2), and an identical `(cwd, prompt)` spawn inside a short window (`$WIKI_ENGINE_SPAWN_DEDUP_SECONDS`, default 90) is refused so a caller retrying an ambiguous result cannot start the same work twice.
+
 ## Boundary & safety (non-negotiable)
 
 - Every vault declares `boundary: personal|work`. **No secrets** (keys, tokens, credentials) in any page. **Content never crosses vaults** — personal↔work is a deliberate manual export. The engine names no value: skills and tools read the vault's declaration (`bin/vault-boundary.sh`), `lint.sh` **errors** on a page whose boundary does not match it, and `lint-docs.sh` fails the build if any shipped skill or tool stamps a literal.

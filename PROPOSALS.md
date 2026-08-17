@@ -37,7 +37,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 <!-- proposals:start -->
 | slug | outcome | detail |
 |---|---|---|
-| `accepting-the-mining-offer-should-spawn-the-session` | open | received 2026-08-17 |
+| `accepting-the-mining-offer-should-spawn-the-session` | partially-accepted | Shape built as proposed — adapter seam, thin contract, fail-closed fallback, no edge back. One acceptance criterion was declined on a false premise: `checkpoint` §6 printed no command today, so the no-adapter path cannot be byte-identical to a fallback that never existed. It now prints the working directory and prompt, which is a superset of the prose it replaces, and no machine is left worse off. |
 | `adopt-reconcile-gitignore` | shipped | derived |
 | `adopt-step-asset-resolution` | shipped | v1.32.0 |
 | `adoption-leaves-the-skills-catalog-stale-so-the-pin-commit-is-refused-both-ways` | shipped | derived |

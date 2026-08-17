@@ -2058,6 +2058,144 @@ jobs:
 
           exit "$fail"
 
+      - name: A spawn that did not happen is never reported as one
+        run: |
+          # spawn-session.sh composes an adapter the machine supplies, so the engine can
+          # start a session elsewhere without knowing how one is started here. The whole
+          # risk is in ONE direction: an accepted "run it separately" that reports a
+          # handoff nobody performed is silently converted into a lost one — strictly
+          # worse than never offering to spawn. So every way the adapter can fail to
+          # produce a running session lands on the same printed-by-hand fallback, and
+          # says which failure it was.
+          # errexit OFF for this body, deliberately: almost every assertion here runs a
+          # command whose EXPECTED result is a non-zero exit (3 = fell back to by-hand, 2 =
+          # usage), so the harness default would abort on the first correct answer and report
+          # one failure instead of all of them. The gate is `exit "$fail"` at the bottom; no
+          # assertion is weakened by this, and every one of them still runs.
+          set +e
+          S="$GITHUB_WORKSPACE/bin/spawn-session.sh"
+          T="$RUNNER_TEMP/spawn"; rm -rf "$T"; mkdir -p "$T/cfg" "$T/work"
+          export CLAUDE_CONFIG_DIR="$T/cfg"
+          export WIKI_ENGINE_SPAWN_TIMEOUT=2
+          fail=0
+          ck() { if [ "$1" = 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          PROMPT=$'run the mining pass\nsecond line'
+
+          # no adapter — the state of every machine that has not installed one
+          export WIKI_ENGINE_SPAWN_ADAPTER="$T/cfg/absent-adapter"
+          out="$("$S" --cwd "$T/work" --prompt "$PROMPT" --what 'the mining pass' 2>&1)"; rc=$?
+          [ "$rc" -eq 3 ]; ck $? "no adapter: exits 3"
+          printf '%s' "$out" | grep -q 'no session adapter installed'; ck $? "no adapter: names the missing adapter"
+          printf '%s' "$out" | grep -q "$T/work"; ck $? "no adapter: fallback names the working directory"
+          printf '%s' "$out" | grep -q 'run the mining pass'; ck $? "no adapter: fallback prints the prompt"
+          printf '%s' "$out" | grep -q 'handle:'; [ $? -ne 0 ]; ck $? "no adapter: does NOT claim a spawn"
+
+          # the happy path, and the argv contract the adapter is written against
+          A="$T/cfg/ok"; cat > "$A" <<EOF
+          #!/usr/bin/env bash
+          printf '%s' "\$1" > "$T/got-cwd"
+          printf '%s' "\$2" > "$T/got-prompt"
+          printf '%s' "\${CLAUDE_SPAWN_DEPTH:-unset}" > "$T/got-depth"
+          echo "pane:%7"
+          EOF
+          chmod +x "$A"; export WIKI_ENGINE_SPAWN_ADAPTER="$A"
+          out="$("$S" --cwd "$T/work" --prompt "$PROMPT" --what 'the mining pass' 2>&1)"; rc=$?
+          [ "$rc" -eq 0 ]; ck $? "adapter ok: exits 0"
+          printf '%s' "$out" | grep -q 'handle: pane:%7'; ck $? "adapter ok: reports the handle"
+          [ "$(cat "$T/got-cwd")" = "$T/work" ]; ck $? "adapter ok: received the exact working directory"
+          [ "$(cat "$T/got-prompt")" = "$PROMPT" ]; ck $? "adapter ok: received the exact prompt, newline intact"
+          [ "$(cat "$T/got-depth")" = "1" ]; ck $? "adapter ok: the child carries an incremented CLAUDE_SPAWN_DEPTH"
+
+          # concurrency bound — the realistic double-spawn is a caller re-running this
+          # after an output it read as ambiguous, which would start the same work twice
+          rm -f "$T/got-cwd"
+          out="$("$S" --cwd "$T/work" --prompt "$PROMPT" 2>&1)"; rc=$?
+          [ "$rc" -eq 3 ]; ck $? "dedup: an identical spawn inside the window exits 3"
+          printf '%s' "$out" | grep -q 'refusing to start it twice'; ck $? "dedup: says why"
+          [ ! -e "$T/got-cwd" ]; ck $? "dedup: the adapter was never invoked"
+          "$S" --cwd "$T/work" --prompt 'different work' >/dev/null 2>&1
+          ck $? "dedup: a different prompt is not blocked"
+          "$S" --cwd "$T/work" --prompt "$PROMPT" --force >/dev/null 2>&1
+          ck $? "dedup: --force overrides"
+
+          # every failure shape, all landing on the fallback rather than on a claim ------
+          A="$T/cfg/boom"; printf '#!/usr/bin/env bash\necho "no pane available" >&2\nexit 9\n' > "$A"
+          chmod +x "$A"; export WIKI_ENGINE_SPAWN_ADAPTER="$A"
+          out="$("$S" --cwd "$T/work" --prompt 'p-boom' 2>&1)"; rc=$?
+          [ "$rc" -eq 3 ]; ck $? "adapter fails: exits 3"
+          printf '%s' "$out" | grep -q 'exited 9'; ck $? "adapter fails: names the exit status"
+          printf '%s' "$out" | grep -q 'no pane available'; ck $? "adapter fails: relays its diagnosis"
+
+          # a handle printed BEFORE a non-zero exit is the sharpest fail-open shape: the
+          # adapter got far enough to name something and then did not start it
+          A="$T/cfg/partial"; printf '#!/usr/bin/env bash\necho pane:9\nexit 1\n' > "$A"
+          chmod +x "$A"; export WIKI_ENGINE_SPAWN_ADAPTER="$A"
+          out="$("$S" --cwd "$T/work" --prompt 'p-partial' 2>&1)"; rc=$?
+          [ "$rc" -eq 3 ]; ck $? "partial start: a handle printed before a non-zero exit is not a spawn"
+          printf '%s' "$out" | grep -q 'handle: pane:9'; [ $? -ne 0 ]; ck $? "partial start: does not report the handle it printed"
+
+          A="$T/cfg/silent"; printf '#!/usr/bin/env bash\nexit 0\n' > "$A"
+          chmod +x "$A"; export WIKI_ENGINE_SPAWN_ADAPTER="$A"
+          out="$("$S" --cwd "$T/work" --prompt 'p-silent' 2>&1)"; rc=$?
+          [ "$rc" -eq 3 ]; ck $? "silent adapter: exit 0 with no handle is not a spawn"
+          printf '%s' "$out" | grep -q 'named no handle'; ck $? "silent adapter: says the handle was missing"
+
+          # an adapter that runs the session in the FOREGROUND would hold up the caller
+          # with no status to attribute the stall to — the worst of the three outcomes
+          A="$T/cfg/hang"; printf '#!/usr/bin/env bash\nsleep 60\n' > "$A"
+          chmod +x "$A"; export WIKI_ENGINE_SPAWN_ADAPTER="$A"
+          start="$(date +%s)"
+          out="$("$S" --cwd "$T/work" --prompt 'p-hang' 2>&1)"; rc=$?
+          took=$(( $(date +%s) - start ))
+          [ "$rc" -eq 3 ]; ck $? "hanging adapter: exits 3"
+          [ "$took" -lt 30 ]; ck $? "hanging adapter: bounded (took ${took}s against a ${WIKI_ENGINE_SPAWN_TIMEOUT}s cap)"
+          printf '%s' "$out" | grep -q 'did not return within'; ck $? "hanging adapter: says it timed out"
+
+          A="$T/cfg/noexec"; printf '#!/usr/bin/env bash\necho pane:2\n' > "$A"; chmod -x "$A"
+          export WIKI_ENGINE_SPAWN_ADAPTER="$A"
+          out="$("$S" --cwd "$T/work" --prompt 'p-noexec' 2>&1)"; rc=$?
+          [ "$rc" -eq 3 ]; ck $? "non-executable adapter: exits 3"
+          printf '%s' "$out" | grep -q 'not executable'; ck $? "non-executable adapter: names the reason"
+
+          # re-entry sentinel — the engine's own rule for a deliberate spawn. A guard that
+          # read a garbage depth as zero would be one that fails open, so it refuses.
+          A="$T/cfg/depth"; printf '#!/usr/bin/env bash\ntouch "%s"\necho pane:1\n' "$T/depth-ran" > "$A"
+          chmod +x "$A"; export WIKI_ENGINE_SPAWN_ADAPTER="$A"
+          out="$(CLAUDE_SPAWN_DEPTH=2 "$S" --cwd "$T/work" --prompt 'p-depth' 2>&1)"; rc=$?
+          [ "$rc" -eq 3 ]; ck $? "depth cap: refuses at the cap"
+          [ ! -e "$T/depth-ran" ]; ck $? "depth cap: the adapter was never invoked"
+          out="$(CLAUDE_SPAWN_DEPTH=notanumber "$S" --cwd "$T/work" --prompt 'p-depth2' 2>&1)"; rc=$?
+          [ "$rc" -eq 3 ]; ck $? "depth cap: a non-numeric depth refuses rather than reading as zero"
+          [ ! -e "$T/depth-ran" ]; ck $? "depth cap: still never invoked"
+
+
+          # a knob read from the environment must be a number or it is not a bound at all:
+          # `[ x -ge notanumber ]` returns non-zero, so a garbage timeout would disarm the
+          # wait entirely rather than shortening it
+          A="$T/cfg/depthg"; printf '#!/usr/bin/env bash\ntouch "%s"\necho pane:3\n' "$T/garbage-ran" > "$A"
+          chmod +x "$A"; export WIKI_ENGINE_SPAWN_ADAPTER="$A"
+          out="$(WIKI_ENGINE_SPAWN_MAX_DEPTH=abc CLAUDE_SPAWN_DEPTH=2 "$S" --cwd "$T/work" --prompt 'p-garbage' 2>&1)"; rc=$?
+          [ "$rc" -eq 3 ]; ck $? "garbage knob: a non-numeric cap reverts to the default rather than disarming"
+          printf '%s' "$out" | grep -q 'using the default'; ck $? "garbage knob: says it reverted"
+          [ ! -e "$T/garbage-ran" ]; ck $? "garbage knob: the adapter was never invoked"
+
+          # an adapter that traps TERM and declines to leave: `wait` on it would block
+          # forever, so a timeout whose own cleanup is unbounded is not a timeout
+          A="$T/cfg/stubborn"
+          printf '#!/usr/bin/env bash\ntrap "" TERM\nsleep 60\n' > "$A"
+          chmod +x "$A"; export WIKI_ENGINE_SPAWN_ADAPTER="$A"
+          start="$(date +%s)"
+          out="$("$S" --cwd "$T/work" --prompt 'p-stubborn' 2>&1)"; rc=$?
+          took=$(( $(date +%s) - start ))
+          [ "$rc" -eq 3 ]; ck $? "TERM-ignoring adapter: still exits 3"
+          [ "$took" -lt 30 ]; ck $? "TERM-ignoring adapter: escalates to KILL and stays bounded (took ${took}s)"
+
+          # a usage error is NOT the fallback: nothing was asked of any adapter
+          "$S" --prompt 'x' >/dev/null 2>&1; [ $? -eq 2 ]; ck $? "usage: missing --cwd exits 2"
+          "$S" --cwd "$T/nope" --prompt 'x' >/dev/null 2>&1; [ $? -eq 2 ]; ck $? "usage: a --cwd that does not exist exits 2"
+
+          exit "$fail"
+
   # ---------------------------------------------------------------------------
   # The proposal round-trip is its own job for ONE reason: it needs full history
   # and tags (`fetch-depth: 0`) to see the `Proposal:` trailers and resolve a
