@@ -2,6 +2,7 @@
 slug: bump-pinned-huggingface-hub-1-28-0
 outcome: accepted
 received: 2026-08-18
+release: v1.73.1
 reason: "accepted as proposed and shipped as proposed — one pin, one commit, nothing else moved. The reporter's stated gap is closed rather than carried: install-and-embed was run on 3.12.13, 3.13.14 and 3.14.6, not 3.14 alone, with pip check clean and 768-dim unit vectors on all three. The bit-identical claim reproduced on every interpreter, which is what makes this bump free for an existing index. The Dependabot-for-pip alternative stays unbuilt and stays the right next question, for the reason both reporters gave: it needs a decision about who reviews a machine-opened bump against an embedder whose output must stay comparable, and this cycle produced the evidence that such a review has something to catch — see the sibling proposal."
 ---
 
