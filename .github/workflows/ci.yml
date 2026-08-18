@@ -294,6 +294,61 @@ jobs:
       - name: Usage docs cover all skills + no stale command refs
         run: ./bin/lint-docs.sh
 
+
+      - name: A stale doc pointer is caught wherever the docs write it
+        run: |
+          # REGRESSION: check 2 read USAGE.md only and matched a BARE `<name>.sh` only, so a
+          # reference written with its directory produced no match at all — `adopt.d/40-session-
+          # banner-hook.sh` (deleted at v1.13.0) sat in USAGE.md through 58 releases with this gate
+          # green every time, and `SCHEMA.md`, which documents the same bin/ surface in more depth,
+          # was never opened. Fail-open and self-concealing: the success line reads the same whether
+          # a reference was checked or never seen.
+          fail=0
+          D="$RUNNER_TEMP/docrefs"; rm -rf "$D"; mkdir -p "$D"
+          # Every directory the docs can name has to come along, or the fixture goes red for a
+          # reason that has nothing to do with the probes — the same completeness the check itself
+          # demands. `.github` included: SCHEMA.md names the workflow file.
+          cp -R "$GITHUB_WORKSPACE"/bin "$GITHUB_WORKSPACE"/skills "$GITHUB_WORKSPACE"/scaffold \
+                "$GITHUB_WORKSPACE"/adopt.d "$GITHUB_WORKSPACE"/.github "$GITHUB_WORKSPACE"/USAGE.md \
+                "$GITHUB_WORKSPACE"/SCHEMA.md "$GITHUB_WORKSPACE"/README.md "$D/"
+
+          # PRECONDITION: the fixture is green before anything is broken in it. Every assertion
+          # below reads a transition, and a fixture that starts red cannot show one.
+          "$D/bin/lint-docs.sh" >/dev/null 2>&1 \
+            && echo "  ok   the shipped docs pass their own gate" \
+            || { echo "  FAIL the fixture is red before the probes — the rest proves nothing"; fail=1; }
+
+          # The exact shape that escaped: a path-shaped reference in USAGE.md.
+          probe() {   # $1 = file to append to, $2 = markdown line, $3 = string the finding must name
+            printf '\n%s\n' "$2" >> "$D/$1"
+            rc=0; out="$("$D/bin/lint-docs.sh" 2>&1)" || rc=$?
+            # `|| rc=$?` because this step runs under `bash -e`: a bare assignment from a failing
+            # command substitution aborts the step at the very failure being asserted.
+            if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q -- "$3"; then
+              echo "  ok   caught: $2"
+            else
+              echo "  FAIL not caught (rc=$rc): $2"; fail=1
+            fi
+            # restore, and require the gate to go GREEN again — a check stuck red proves nothing either
+            cp "$GITHUB_WORKSPACE/$1" "$D/$1"
+            "$D/bin/lint-docs.sh" >/dev/null 2>&1 \
+              || { echo "  FAIL the gate stayed red after the probe was removed"; fail=1; }
+          }
+          probe USAGE.md  '- `adopt.d/99-not-a-step.sh`'        'adopt.d/99-not-a-step.sh'
+          probe SCHEMA.md '- `not-a-step.sh`'                   'bin/not-a-step.sh'
+          probe README.md '- `skills/no-such-skill/SKILL.md`'   'skills/no-such-skill/SKILL.md'
+          probe USAGE.md  '- `bin/also-not-here.sh`'            'bin/also-not-here.sh'
+
+          # NEAR-MISS: the check must not fail closed on prose that is CORRECT. Consumer-side,
+          # templated and globbed paths do not resolve in this repo and never should — a gate that
+          # rejects them gets weakened back out, which is worse than the gap it replaced.
+          printf '\n%s\n' '- `~/.claude/spawn-session`, `$WIKI/.wiki-gates.conf`, `bin/*.sh`, `engine/bin/doctor.sh`' >> "$D/USAGE.md"
+          "$D/bin/lint-docs.sh" >/dev/null 2>&1 \
+            && echo "  ok   consumer-side, templated and globbed paths are left alone" \
+            || { echo "  FAIL the gate rejected paths that correctly do not exist here"; fail=1; }
+          cp "$GITHUB_WORKSPACE/USAGE.md" "$D/USAGE.md"
+          exit "$fail"
+
       - name: A worktree-taking skill cannot aim a step at git-ignored state
         run: |
           # The gate has to FAIL on the shape it exists for, or it is decoration. The shape:
@@ -303,7 +358,10 @@ jobs:
           # because git-ignored growth shows up in no status, diff, or gate.
           fail=0
           T="$RUNNER_TEMP/lintdocs"; rm -rf "$T"; mkdir -p "$T"
-          cp -R bin scaffold skills USAGE.md "$T/"
+          # adopt.d comes along because check 2 resolves USAGE.md's path-shaped references
+          # from the root it is given: a fixture missing a directory the docs name would go
+          # red on this step for a reason that has nothing to do with what it asserts.
+          cp -R bin scaffold skills adopt.d USAGE.md "$T/"
           # a step that names the tree it means: clean
           "$T/bin/lint-docs.sh" >/dev/null 2>&1 \
             && echo "  ok   the shipped skills pass" \
