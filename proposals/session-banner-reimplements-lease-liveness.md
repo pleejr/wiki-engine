@@ -1,6 +1,7 @@
 ---
 slug: session-banner-reimplements-lease-liveness
-outcome: open
+outcome: accepted
+reason: "Accepted as reported, including the fix the reporter held loosely — and the caveat they raised against it is the reason it is right rather than an objection to it. The `no git` constraint is not violated by sharing `lease_live()`: the structural proof reaches `git branch --list` only for a lease whose recorded worktree directory is already gone, so every live and every crashed session is still decided by file reads, and a vault with no ghosts pays no git at all. Liveness now lives in `bin/lease-lib.sh`, which both surfaces source; the shared unit is the WALK as well as the test (`count_other_live_leases`), since a caller that re-opens the lease directory to get a number is how this divergence started. Shipped in v1.72.0."
 received: 2026-08-18
 ---
 

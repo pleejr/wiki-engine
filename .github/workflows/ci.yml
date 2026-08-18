@@ -1447,6 +1447,72 @@ jobs:
             || { echo "a session with a live worktree was wrongly reaped as finished"; exit 1; }
           echo "ok: finished sessions reaped immediately, crashed ones still reported live"
 
+      - name: The session banner and the peers verb agree about who is live
+        run: |
+          # REGRESSION: session-banner.sh inlined its own walk over the lease files applying
+          # the HEARTBEAT test alone, so a session whose worktree and branch were both gone
+          # — the proof lease_finished() reads — was announced at session start as a live
+          # peer while `peers`, run against the same directory seconds later, reported none.
+          # Fail-open: nothing refuses and nothing is lost, but a warning that shows ghosts
+          # stops being read, and the cost lands on the NEXT, genuine one. Both surfaces now
+          # source bin/lease-lib.sh, so liveness is decided in one place for all of them.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-banner"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          V="$RUNNER_TEMP/bannervault"; mkdir -p "$V/memory"; git -C "$V" init -q .
+          printf 'seed\n' > "$V/memory/seed.md"
+          git -C "$V" -c core.hooksPath=/dev/null add memory/seed.md
+          git -C "$V" -c core.hooksPath=/dev/null commit -qm seed
+          git -C "$V" branch -M main
+          WT="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+          BAN="$GITHUB_WORKSPACE/bin/session-banner.sh"
+          export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/bannercfg"   # no staleness cache: bare banner
+          banner() { WIKI_PATH="$V" WIKI_WT_SESSION=observer "$BAN"; }
+
+          W="$(WIKI_PATH="$V" WIKI_WT_SESSION=ghost "$WT" ensure)"
+          WIKI_PATH="$V" WIKI_WT_SESSION=ghost "$WT" lease memory/ >/dev/null 2>&1
+
+          # PRECONDITION, asserted rather than assumed: with a genuinely live peer the
+          # banner MUST warn. Without this, the "no warning" assertions below pass just as
+          # well on a banner that can never warn at all.
+          out="$(banner)"
+          if ! grep -q 'other session(s) writing' <<<"$out"; then
+            echo "the banner did not warn about a LIVE peer — the fixture proves nothing: $out"; exit 1
+          fi
+
+          # Retire the worktree and the branch but LEAVE the lease file: what a session
+          # leaves when it stops before releasing, and the state `gc` has not swept yet.
+          # Its heartbeat is seconds old, so only the structural test can catch it.
+          git -C "$V" worktree remove --force "$W"
+          git -C "$V" branch -D wt/ghost >/dev/null
+          if [ ! -f "$V/.worktrees/.leases/ghost.lease" ]; then
+            echo "the fixture removed the lease itself — nothing left for the two to disagree about"; exit 1
+          fi
+          pout="$(WIKI_PATH="$V" WIKI_WT_SESSION=observer "$WT" peers)"
+          if grep -q ghost <<<"$pout"; then echo "peers reported a finished session as live: $pout"; exit 1; fi
+          out="$(banner)"
+          if grep -q 'other session(s) writing' <<<"$out"; then
+            echo "the banner disagrees with peers about a finished session: $out"; exit 1
+          fi
+
+          # The other direction, or the agreement is worthless: a CRASHED session (worktree
+          # still on disk, fresh heartbeat) must still be counted by the banner.
+          WIKI_PATH="$V" WIKI_WT_SESSION=crashed "$WT" ensure >/dev/null
+          WIKI_PATH="$V" WIKI_WT_SESSION=crashed "$WT" lease memory/ >/dev/null 2>&1
+          out="$(banner)"
+          if ! grep -q '1 other session(s) writing' <<<"$out"; then
+            echo "the banner lost a live peer: $out"; exit 1
+          fi
+
+          # ...and the clock still decides the leases the structural test cannot judge.
+          lf="$V/.worktrees/.leases/crashed.lease"
+          sed -i.bak 's/^heartbeat=.*/heartbeat=1/' "$lf"; rm -f "$lf.bak"
+          out="$(banner)"
+          if grep -q 'other session(s) writing' <<<"$out"; then
+            echo "the banner counted a lease stale by the clock: $out"; exit 1
+          fi
+          echo "ok: banner and peers agree — finished, crashed and stale all decided in one place"
+
       - name: Adoption steps resolve their own engine assets
         run: |
           # REGRESSION (v1.28.0 -> v1.31.0): 30-vault-git-hooks.sh resolved its template as

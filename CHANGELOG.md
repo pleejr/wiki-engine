@@ -4,6 +4,23 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.72.0] — 2026-08-18
+
+Minor — session-lease liveness moves into `bin/lease-lib.sh`, so the session banner and `vault-worktree.sh peers` stop disagreeing about who is live. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Added
+- **`bin/lease-lib.sh`** — sourced, never executed: the one definition of lease liveness (`lease_live`, `lease_finished`, `for_other_live_leases`, `count_other_live_leases`) together with the registry's location and its two thresholds. `vault-worktree.sh` and `session-banner.sh` both source it.
+  - **A library rather than a helper each caller re-derives.** `vault-worktree.sh:122` already said liveness is decided in ONE place so `peers`, `for_other_live_leases` and `gc` cannot disagree — but that guarantee only ever covered call sites inside that file, and the banner is in another one. Making the decision importable is what makes the comment true for a fourth surface, and for the fifth nobody has written yet.
+
+### Fixed
+- **The session banner no longer announces a provably-finished session as a live peer.** It inlined its own walk over the lease files applying the heartbeat test alone, so a lease whose worktree and branch were both gone — the proof `lease_finished()` reads — was counted at session start while `peers`, run against the same directory seconds later, reported none. Reproduced at v1.71.0 before the fix and pinned by a CI step that goes red against the old renderer.
+  - **Fail-open, and the cost is not the wrong line.** Nothing refused and nothing was lost; a confident warning was simply wrong, with no way to tell a ghost from a real peer. What that spends is the *next*, genuine warning — the registry's own stated failure mode at `vault-worktree.sh:96`, "a registry that shows ghosts stops being read". It also self-clears at the stale cutoff, which is what makes it read as transient rather than as a divergence that recurs on every unreleased lease.
+  - **The reporter's own caveat was the real design question, and it resolved in favour of sharing.** The peer block was written to a "local file reads only, no git" constraint, and `lease_finished()` runs `git branch --list` — so the obvious fix appeared to contradict the constraint it had to satisfy. It does not, because of the order of the tests: the structural proof reaches git **only** for a lease whose recorded worktree directory is already gone from disk. Every live session, and every crashed one, is still decided by file reads alone, so a vault with no ghosts pays no git at all and the session-start path is unchanged in the common case.
+  - **The count, not just the test, is now shared.** The banner needed a number, and a caller that walks the lease directory itself to get one is how the divergence started; `count_other_live_leases()` walks with `for_other_live_leases`, so the banner and `peers` cannot select different leases either.
+
+### Docs
+- **`SCHEMA.md` and `USAGE.md` described a banner that stopped existing at v1.13.4** — both still showed the `· claude code <ver> ✓` segment that release removed, and `USAGE.md` credited `adopt.d/40-session-banner-hook.sh`, a step deleted at v1.13.0 when `session-boot.sh` took over the banner. Corrected alongside the change that touches the same renderer, together with the peer fragment neither file mentioned.
+
 ## [1.71.0] — 2026-08-17
 
 Minor — accepting `checkpoint`'s mining offer now *starts* the pass, through a session adapter your machine supplies. Adopt with `bin/adopt.sh` or `update.sh`.

@@ -22,26 +22,26 @@ eng="?"; [ -n "$WIKI" ] && eng="$(git -C "$WIKI/engine" describe --tags --always
 # staleness summary written by session-preflight.sh (empty = all current)
 frag=""; [ -f "$CACHE" ] && frag="$(head -n1 "$CACHE" 2>/dev/null)"
 
-# Live peer sessions (local file reads only, no git, no network). Surfaced because the
-# concurrency guard fires at COMMIT time — by then a session has already done its editing
-# in whatever tree it chose. Knowing at session START that someone else is writing is what
-# makes taking a worktree an informed choice rather than a rule to remember.
+# Live peer sessions. Surfaced because the concurrency guard fires at COMMIT time — by
+# then a session has already done its editing in whatever tree it chose. Knowing at
+# session START that someone else is writing is what makes taking a worktree an informed
+# choice rather than a rule to remember.
+#
+# The count comes from lease-lib.sh, the same definition `vault-worktree.sh peers` uses.
+# This block used to inline its own loop with the heartbeat test alone, which made the
+# banner a second opinion on liveness: a session whose worktree and branch were both gone
+# was announced here as a live peer while `peers`, reading the same directory seconds
+# later, reported none. Cheapness is preserved rather than traded away — the structural
+# test is decided by file reads and only reaches `git branch --list` for a lease whose
+# worktree directory is already gone, so a vault with no ghosts pays no git at all.
 peers=""
 if [ -n "$WIKI" ]; then
-  ldir="${WIKI_WORKTREE_ROOT:-$WIKI/.worktrees}/.leases"
-  if [ -d "$ldir" ]; then
-    me="${WIKI_WT_SESSION:-${CLAUDE_CODE_SESSION_ID:-}}"
-    stale_sec=$(( ${WIKI_LEASE_STALE_MIN:-120} * 60 ))
-    now="$(date +%s)"; n=0
-    for lf in "$ldir"/*.lease; do
-      [ -f "$lf" ] || continue
-      s="$(awk -F= '$1=="session"{sub(/^[^=]*=/,"");print;exit}' "$lf" 2>/dev/null)"
-      [ -n "$me" ] && [ "$s" = "$me" ] && continue
-      hb="$(awk -F= '$1=="heartbeat"{sub(/^[^=]*=/,"");print;exit}' "$lf" 2>/dev/null)"
-      [ -n "$hb" ] || continue
-      [ $(( now - hb )) -lt "$stale_sec" ] && n=$((n+1))
-    done
-    if [ "$n" -gt 0 ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck source=bin/lease-lib.sh
+  if . "$SCRIPT_DIR/lease-lib.sh" 2>/dev/null; then
+    lease_lib_init "$WIKI"
+    n="$(count_other_live_leases)"
+    if [ "${n:-0}" -gt 0 ]; then
       peers="$(printf '  ·  ⚠ %d other session(s) writing — take a worktree' "$n")"
     fi
   fi
