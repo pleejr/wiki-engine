@@ -1,7 +1,8 @@
 ---
 slug: bump-pinned-onnxruntime-1-29-0
-outcome: open
+outcome: accepted
 received: 2026-08-18
+reason: "accepted whole, including the held-loosely offer, which was the most valuable thing in the report. The bump is one line; the finding is not. Reproduced independently over three texts on all three supported interpreters: moving this pin alone gives cosine 0.9999997 and max component delta 1.5e-04, while moving huggingface_hub alone leaves the vectors bit-identical, so the drift attributes to this dep's kernels and to nothing else. One measurement the report did not have, and it strengthens the case for recording it: the drift is IDENTICAL on 3.12, 3.13 and 3.14, so it is a deterministic one-time version step rather than per-machine noise a consumer could dismiss. The note went into rag-requirements.txt's own header, where the next person bumping this pin reads it, because that header argued for reproducibility while naming dimension as its only invariant — so it pointed at the one property this bump does not move. The reporter's interpreter gap is closed the same way as the sibling's. Bit-identical vectors were correctly excluded as an acceptance criterion; the criteria used were pip check clean, 768 dimensions, and non-degenerate output."
 ---
 
 HANDOFF — engine improvement proposal
