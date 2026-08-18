@@ -9,8 +9,16 @@
 # carried a stale numpy). On an out-of-range Python, use the lightweight onnxruntime-free
 # fallback:
 #   RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M
+#
+# An onnxruntime bump can perturb embeddings WITHOUT changing their dimension: its
+# kernels differ in the last few float digits, so a store embedded under one release
+# and queried under the next mixes two numerically-different embedders in one
+# similarity space. Measured at 1.28.0 -> 1.29.0: cosine 0.9999997, max component
+# delta 1.5e-04, identical on 3.12/3.13/3.14 — negligible, and no reindex implied at
+# that magnitude. Check it when bumping this pin rather than assuming dimension is
+# the whole contract.
 fastembed==0.8.0
-onnxruntime==1.28.0
+onnxruntime==1.29.0
 numpy==2.5.2
 tokenizers==0.23.1
 huggingface_hub==1.28.0
