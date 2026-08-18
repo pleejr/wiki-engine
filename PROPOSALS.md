@@ -79,6 +79,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `rag-model-cache-durable-path` | shipped | v1.26.0 |
 | `release-title-splitter-cuts-inside-code-spans` | shipped | derived |
 | `session-banner-pending-proposal-nudge` | alias | engine-proposal-file-queue |
+| `session-banner-reimplements-lease-liveness` | open | received 2026-08-18 |
 | `skills-hardcode-boundary-value` | shipped | derived |
 | `statusline-composable-segments` | shipped | derived |
 | `statusline-ctx-healthy-band-bold-green` | shipped | derived |
