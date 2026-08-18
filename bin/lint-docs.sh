@@ -2,7 +2,8 @@
 # lint-docs.sh — keep the usage docs honest so new users adopt with the lowest friction.
 # Seven cheap, deterministic checks (no LLM, never `claude`):
 #   1. every skill (skills/*/) is mentioned in USAGE.md  — nothing user-facing goes undocumented
-#   2. every `bin/<name>.sh` USAGE.md references actually exists — no stale pointers to deleted tools
+#   2. every engine-shipped file USAGE/SCHEMA/README reference actually exists — no stale
+#      pointers to deleted tools, whether written bare (`foo.sh`) or as a path (`adopt.d/foo.sh`)
 #   3. no shipped skill or tool STAMPS a specific boundary value — the engine is
 #      boundary-agnostic (SCHEMA.md), so it must ask the vault, never name one
 #   4. a worktree-taking skill must name CANONICAL where it touches git-ignored state (v1.51.0)
@@ -44,11 +45,45 @@ for d in "$ROOT"/skills/*/; do
   fi
 done
 
-# 2. every bin command referenced in USAGE.md exists (catch stale doc pointers)
-while read -r cmd; do
-  [ -n "$cmd" ] || continue
-  [ -f "$ROOT/bin/$cmd" ] || { echo "lint-docs: USAGE.md references bin/$cmd, which does not exist" >&2; fail=1; }
-done < <(grep -oE '`[a-z0-9_-]+\.sh`' "$USAGE" | tr -d '`' | sort -u)
+# 2. every engine-shipped file the docs reference exists (catch stale doc pointers)
+#
+# TWO SHAPES, THREE FILES — because this check read one file and matched one shape, and a
+# reference escaped it by being more precise rather than less. `USAGE.md` credited the
+# banner to `adopt.d/40-session-banner-hook.sh`, a step deleted at v1.13.0, and it survived
+# 58 releases with this gate green every time: `/` and `.` are outside the bare-name class
+# and the backtick is anchored, so a path-shaped reference produced no match at all — and
+# neither does `bin/reflow.sh`, a file this rule exists to check, merely written with its
+# directory. `SCHEMA.md` documents the same `bin/` surface in more depth and was never read.
+#
+# A gate that reports "no stale command references" identically whether it checked a
+# reference or never saw it is the fail-open shape worth spending a few lines on.
+#
+# Bounded to the engine's OWN top-level directories on purpose. Docs legitimately name
+# paths that do not exist in this repo — consumer-side (`~/.claude/spawn-session`),
+# templated (`$WIKI/.wiki-gates.conf`), globbed — and a check that fails closed on correct
+# prose gets weakened rather than fixed. Tokens carrying $, ~ or * are skipped for the same
+# reason. The allow-list is a closed set: a NEW top-level directory falls outside it
+# silently, which is this same gap one level up — so extend it when one is added.
+doc_refs() {   # $1 = doc path; prints `owner|path` pairs to check, one per line
+  local doc="$1" base
+  base="$(basename "$doc")"
+  # bare `<name>.sh` -> resolved under bin/, as this rule has always done
+  grep -oE '`[a-z0-9_-]+\.sh`' "$doc" | tr -d '`' | sort -u | while read -r c; do
+    printf '%s|bin/%s\n' "$base" "$c"
+  done
+  # `<engine-dir>/<path>` -> resolved from the repo root
+  grep -oE '`(bin|skills|scaffold|adopt\.d|\.github)/[A-Za-z0-9._/-]+`' "$doc" | tr -d '`' | sort -u | while read -r r; do
+    case "$r" in *'$'*|*'~'*|*'*'*) continue;; esac
+    printf '%s|%s\n' "$base" "$r"
+  done
+}
+for doc in "$USAGE" "$ROOT/SCHEMA.md" "$ROOT/README.md"; do
+  [ -f "$doc" ] || continue
+  while IFS='|' read -r where ref; do
+    [ -n "$ref" ] || continue
+    [ -e "$ROOT/$ref" ] || { echo "lint-docs: $where references $ref, which does not exist" >&2; fail=1; }
+  done < <(doc_refs "$doc")
+done
 
 # 3. no engine-shipped skill or tool names a specific boundary VALUE ---------------
 # SCHEMA.md: each consuming wiki declares its own boundary and the engine is
@@ -256,6 +291,6 @@ for f in "$ROOT"/skills/*/SKILL.md; do
 done
 
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale command references; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces"
+  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces"
 fi
 exit "$fail"
