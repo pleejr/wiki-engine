@@ -428,6 +428,41 @@ case "$CMD" in
     log "  Another session may be editing here, and staging in a shared tree sweeps up"
     log "  its work. Take an isolated worktree first:"
     log "      WORK=\"\$($WIKI/engine/bin/vault-worktree.sh ensure)\"   # then edit + commit in \$WORK"
+
+    # THE STATE THIS REFUSAL LEAVES BEHIND, which the message used to say nothing about.
+    # The work is already STAGED — the guard cannot judge anything until it is, since it
+    # reads the staged set to permit the gitlink-only commit — and `ensure` cuts a fresh
+    # branch off origin/main that carries no working state. The reflex rescue for "move an
+    # edit out of a checkout I should not be in" is `git diff > patch`, which reports
+    # UNSTAGED changes only: against a fully-staged tree it writes a 0-byte file and exits
+    # 0, so the save looks fine and the `checkout -- .` that follows destroys the only
+    # copy. Discarded worktree changes were never git objects, so unlike a lost commit
+    # they are unrecoverable. This is the one instant anything knows the staged set, so it
+    # is the only place the carry can be named without the operator already knowing it.
+    if [ -n "$staged" ]; then
+      # --no-renames so a rename yields BOTH names: scoping a stash needs the old path's
+      # deletion as much as the new path's addition. -z plus %q so a path holding a space
+      # or a quote survives into a line the operator pastes. The scoping is the point, not
+      # a detail: with a peer's untracked file present, `stash push --include-untracked`
+      # takes it and removes it from their tree — the exact clobber this guard exists to
+      # refuse, reintroduced by the remedy. `refs/stash` lives in the common git dir, which
+      # linked worktrees share, so the pop below reaches a worktree on another branch.
+      carry=""; n=0
+      while IFS= read -r -d '' p; do
+        n=$((n + 1))
+        [ "$n" -le 20 ] && carry="$carry $(printf '%q' "$p")"
+      done < <(git -C "$PWD" diff --cached --name-only --no-renames -z 2>/dev/null)
+      if [ "$n" -gt 0 ]; then
+        log "  Your work is STAGED here and \`ensure\` does NOT carry it. Do not reach for"
+        log "  \`git diff > patch\` — it reports unstaged changes only, so here it writes an"
+        log "  EMPTY file. Stash your own paths (never unscoped: that takes a peer's work"
+        log "  too), then pop in the worktree:"
+        log "      git stash push -m carry --$carry"
+        log "      git -C \"\$WORK\" stash pop --index"
+        [ "$n" -gt 20 ] && log "      ...and $((n - 20)) more staged path(s) not listed: git diff --cached --name-only"
+      fi
+    fi
+
     log "  Integrate when done:  vault-worktree.sh integrate"
     log "  Override for a single-session machine:  WIKI_WORKTREE=0"
     exit 1
