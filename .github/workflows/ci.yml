@@ -678,7 +678,11 @@ jobs:
           # discard that follows takes the only copy, which was never a git object. Asserted
           # by RUNNING the line the guard prints, not by matching its wording — the property
           # is that the carry is non-lossy, and a better-worded fix must still pass.
-          git -C "$G" restore --staged engine        # clean index: only the operator's page
+          # `|| true` throughout this block: GitHub runs `run:` steps as `bash -e {0}`, so any
+          # bare non-zero command aborts the STEP — including `msg="$(guard)"`, whose whole
+          # point is a non-zero exit. An aborted step prints no assertion at all, which reads
+          # as a silent pass on every check below it.
+          git -C "$G" restore --staged engine || true   # clean index: only the operator's page
           printf 'PEER\n' > "$G/peer-untracked.txt"  # a concurrent session's work, untracked
           printf 'peer edit\n' >> "$G/page.md"       # ...and the operator's own edit, re-made
           git -C "$G" add page.md
@@ -689,7 +693,7 @@ jobs:
           # uniform red that means neither.
           [ -n "$(git -C "$G" diff --cached --name-only)" ] \
             || { echo "  FAIL precondition: the fixture staged nothing — the subject was never armed"; fail=1; }
-          msg="$( cd "$G" && "$VW" guard 2>&1 )"; rc=$?
+          rc=0; msg="$( cd "$G" && "$VW" guard 2>&1 )" || rc=$?
           [ "$rc" = 1 ] \
             || { echo "  FAIL precondition: guard exited $rc, not 1 — the fixture never armed it"; fail=1; }
           grep -q 'page\.md' <<<"$msg" \
@@ -713,8 +717,8 @@ jobs:
             [ -f "$G/peer-untracked.txt" ] \
               && echo "  ok   running it leaves a peer's untracked file alone" \
               || { echo "  FAIL the carry it printed swept up a peer's work"; fail=1; }
-            git -C "$G" worktree add -q -b wt/carry "$T/carry" 2>/dev/null
-            git -C "$T/carry" stash pop --index -q 2>/dev/null
+            git -C "$G" worktree add -q -b wt/carry "$T/carry" 2>/dev/null || true
+            git -C "$T/carry" stash pop --index -q 2>/dev/null || true
             grep -q 'peer edit' "$T/carry/page.md" 2>/dev/null \
               && echo "  ok   ...and the staged work arrives in the worktree" \
               || { echo "  FAIL the work did not survive the carry"; fail=1; }
@@ -728,11 +732,11 @@ jobs:
           # reaches this guard with an empty index, and there the work is NOT staged — so
           # `git diff` would in fact capture it and the warning would be wrong.
           printf 'unstaged\n' >> "$G/page.md"
-          msg2="$( cd "$G" && "$VW" guard 2>&1 )"
+          msg2="$( cd "$G" && "$VW" guard 2>&1 )" || true
           grep -q 'stash push' <<<"$msg2" \
             && { echo "  FAIL carry advice printed with nothing staged"; fail=1; } \
             || echo "  ok   control: no carry advice when nothing is staged"
-          git -C "$G" checkout -- page.md
+          git -C "$G" checkout -- page.md || true
 
           # (2) update.sh does not write a tracked page into a shared checkout
           git init -q "$T/e"; E="$T/e"
