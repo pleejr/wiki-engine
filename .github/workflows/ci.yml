@@ -669,6 +669,75 @@ jobs:
             || echo "  ok   ...and anything else staged beside it still refuses"
           git -C "$G" restore --staged page.md; git -C "$G" checkout -- page.md
 
+          # (1b) THE REFUSAL NAMES A NON-LOSSY CARRY FOR THE WORK IT JUST STRANDED.
+          # The guard can only decide once the work is STAGED — it reads the staged set to
+          # permit the gitlink-only commit above — and `ensure` cuts a fresh branch off
+          # origin/main carrying no working state. So the refusal leaves the operator holding
+          # staged edits with no named way to move them, and the reflex rescue
+          # (`git diff > patch`) reports UNSTAGED changes only: a 0-byte file, exit 0, and the
+          # discard that follows takes the only copy, which was never a git object. Asserted
+          # by RUNNING the line the guard prints, not by matching its wording — the property
+          # is that the carry is non-lossy, and a better-worded fix must still pass.
+          # `|| true` throughout this block: GitHub runs `run:` steps as `bash -e {0}`, so any
+          # bare non-zero command aborts the STEP — including `msg="$(guard)"`, whose whole
+          # point is a non-zero exit. An aborted step prints no assertion at all, which reads
+          # as a silent pass on every check below it.
+          git -C "$G" restore --staged engine || true   # clean index: only the operator's page
+          printf 'PEER\n' > "$G/peer-untracked.txt"  # a concurrent session's work, untracked
+          printf 'peer edit\n' >> "$G/page.md"       # ...and the operator's own edit, re-made
+          git -C "$G" add page.md
+          # PRECONDITIONS, asserted rather than assumed. The line above restored page.md, so
+          # a fixture that forgot to re-make the edit stages NOTHING — and the guard still
+          # refuses (rc=1) on an empty index, so rc alone cannot tell "feature missing" from
+          # "fixture never armed". Both halves are checked, or this whole block reports a
+          # uniform red that means neither.
+          [ -n "$(git -C "$G" diff --cached --name-only)" ] \
+            || { echo "  FAIL precondition: the fixture staged nothing — the subject was never armed"; fail=1; }
+          rc=0; msg="$( cd "$G" && "$VW" guard 2>&1 )" || rc=$?
+          [ "$rc" = 1 ] \
+            || { echo "  FAIL precondition: guard exited $rc, not 1 — the fixture never armed it"; fail=1; }
+          grep -q 'page\.md' <<<"$msg" \
+            && echo "  ok   the refusal names the staged path the operator must carry" \
+            || { echo "  FAIL the refusal never names the staged path"; fail=1; }
+          grep -q 'git diff' <<<"$msg" \
+            && echo "  ok   ...and warns off the empty-patch reflex" \
+            || { echo "  FAIL the empty-patch reflex is never named"; fail=1; }
+          # The `--` is not cosmetic: it is what makes the stash path-scoped. An unscoped
+          # `git stash push` reads as a fix and passes every other check here, so require
+          # the pathspec separator explicitly or the near-miss ships.
+          line="$(grep -Eo 'git stash push[^#]*--[[:space:]][^#]*' <<<"$msg" | head -1)"
+          if [ -z "$line" ]; then
+            echo "  FAIL no runnable path-scoped stash line in the refusal"; fail=1
+          else
+            ( cd "$G" && eval "$line" >/dev/null 2>&1 ) \
+              || { echo "  FAIL the stash line the guard printed did not run"; fail=1; }
+            # Scoping is the whole point: `stash push --include-untracked` would take this
+            # file and remove it from the peer's tree — the clobber the guard exists to
+            # refuse, reintroduced by its own remedy.
+            [ -f "$G/peer-untracked.txt" ] \
+              && echo "  ok   running it leaves a peer's untracked file alone" \
+              || { echo "  FAIL the carry it printed swept up a peer's work"; fail=1; }
+            git -C "$G" worktree add -q -b wt/carry "$T/carry" 2>/dev/null || true
+            git -C "$T/carry" stash pop --index -q 2>/dev/null || true
+            grep -q 'peer edit' "$T/carry/page.md" 2>/dev/null \
+              && echo "  ok   ...and the staged work arrives in the worktree" \
+              || { echo "  FAIL the work did not survive the carry"; fail=1; }
+            git -C "$G" worktree remove --force "$T/carry" 2>/dev/null || true
+          fi
+          rm -f "$G/peer-untracked.txt"
+          git -C "$G" restore --staged page.md 2>/dev/null || true
+          git -C "$G" checkout -- page.md 2>/dev/null || true
+          # CONTROL: with nothing staged the advice must NOT appear, or it is boilerplate
+          # rather than a reading of the state the guard actually found. `git commit <path>`
+          # reaches this guard with an empty index, and there the work is NOT staged — so
+          # `git diff` would in fact capture it and the warning would be wrong.
+          printf 'unstaged\n' >> "$G/page.md"
+          msg2="$( cd "$G" && "$VW" guard 2>&1 )" || true
+          grep -q 'stash push' <<<"$msg2" \
+            && { echo "  FAIL carry advice printed with nothing staged"; fail=1; } \
+            || echo "  ok   control: no carry advice when nothing is staged"
+          git -C "$G" checkout -- page.md || true
+
           # (2) update.sh does not write a tracked page into a shared checkout
           git init -q "$T/e"; E="$T/e"
           cp -R "$GITHUB_WORKSPACE/bin" "$GITHUB_WORKSPACE/adopt.d" "$GITHUB_WORKSPACE/scaffold" "$E/"
