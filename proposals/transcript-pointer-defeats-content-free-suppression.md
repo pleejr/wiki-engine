@@ -1,6 +1,7 @@
 ---
 slug: transcript-pointer-defeats-content-free-suppression
-outcome: open
+outcome: partially-accepted
+reason: "the observation is confirmed in full and reproduced twice — at the reporter's pin and at HEAD — by a controlled A/B where only RAG_CAPTURE_TRANSCRIPT_PATH differs: flag on appends a `(no repo activity found)` block, flag off says `nothing to append` and leaves the buffer unchanged. The mechanism is as reported: the transcript line set `substantive` with no reference to whether the block carried content, and the hook supplies a transcript path every session, so on a flagged machine the emptiness gate was unreachable and v1.65.0 was not weakened but inert. Suggested fix taken as written — the pointer now augments a block rather than justifying one — and `--note` still forces one, which is the escape hatch the suppression message already advertises. PARTIAL on the open question the report deliberately left to intake: a fanned-out one-shot that did something a transcript would show still files nothing unless it passes `--note`, and that is now the decided behaviour rather than an accident. No separate mechanism was built to detect a headless one-shot; v1.65.0 declined that axis for the reason that still holds, which is that emptiness subsumes it. Worth recording for the next reader: v1.65.0's own gate was green throughout, because every one of its cases ran with the flag unset — it measured only the population that never had the bug. That is the sibling class swept for here, and no other suppression gate in bin/ takes an override from a session attribute."
 received: 2026-08-22
 ---
 
