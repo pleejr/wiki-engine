@@ -4436,6 +4436,35 @@ jobs:
             && echo "  ok   a mixed session still names the repo that had nothing new" \
             || { echo "  FAIL suppression swallowed attribution in a mixed session"; grep -E '^## ' "$buf"; fail=1; }
 
+          # 6. THE POPULATION THIS STEP USED TO MISS. Every case above runs with
+          #    RAG_CAPTURE_TRANSCRIPT_PATH unset, so it measured only machines that do not
+          #    opt into transcript pointers. On a machine that DOES, the pointer used to set
+          #    `substantive` on its own, which made the emptiness gate unreachable and the
+          #    whole suppression inert — green here, and 90 content-free blocks in an
+          #    afternoon there. The pointer AUGMENTS a block; it does not justify one.
+          W2="$T/ws2"; mkdir -p "$W2"
+          V2="$T/vault2"; mkdir -p "$V2/raw/sessions"
+          printf -- '---\nboundary: personal\n---\n\n# v\n' > "$V2/CLAUDE.md"
+          out2="$(cd "$W2" && WIKI_PATH="$V2" RAG_CAPTURE_TRANSCRIPT_PATH=1 "$CAP" --transcript /tmp/t.jsonl 2>&1)" || true
+          [ "$(ls -1 "$V2/raw/sessions" 2>/dev/null | wc -l)" -eq 0 ] \
+            && echo "  ok   a transcript pointer alone does not file a content-free block" \
+            || { echo "  FAIL the transcript flag defeated the suppression: $out2"; fail=1; }
+          case "$out2" in
+            *"nothing to append"*) echo "  ok   ...and still says why, with the flag on" ;;
+            *) echo "  FAIL suppression was silent under the transcript flag: [$out2]"; fail=1 ;;
+          esac
+
+          # 7. PRECONDITION for 6, and the behaviour the flag exists for: a block that IS
+          #    filed still carries its pointer. Without this, 6 would pass on a script that
+          #    dropped transcript pointers entirely.
+          git init -q "$W2/gamma"
+          ( cd "$W2/gamma"; printf 'g\n' > f; git add f; git commit -qm "real work" )
+          ( cd "$W2" && WIKI_PATH="$V2" RAG_CAPTURE_TRANSCRIPT_PATH=1 "$CAP" --transcript /tmp/t.jsonl >/dev/null 2>&1 ) || true
+          buf2="$(ls "$V2/raw/sessions"/*.md 2>/dev/null | head -1 || true)"
+          [ -n "$buf2" ] && [ "$(grep -c '^Transcript (' "$buf2" 2>/dev/null || true)" -eq 1 ] \
+            && echo "  ok   ...while a block with real content still carries the pointer" \
+            || { echo "  FAIL the pointer was lost from a block that should carry it"; fail=1; }
+
           exit "$fail"
 
       - name: Capture must not scale with a harness's fan-out

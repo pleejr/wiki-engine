@@ -336,9 +336,18 @@ append_repo() {
 
 entries=""
 # substantive — did this run observe anything a reader could not reconstruct from the
-# buffer it already has? Only a real repo block, an explicit --note, or a transcript
-# pointer count. The two content-free shapes ("no repo activity found", "no new repo
-# state") deliberately do NOT, which is what lets a fan-out of one-shots append nothing.
+# buffer it already has? Only a real repo block or an explicit --note count. The two
+# content-free shapes ("no repo activity found", "no new repo state") deliberately do NOT,
+# which is what lets a fan-out of one-shots append nothing.
+#
+# A TRANSCRIPT POINTER DOES NOT COUNT, and used to. It is attribution carried BY a block,
+# emitted below into whatever is already being written — it augments a block, it does not
+# justify one. Setting `substantive` from it made the emptiness gate unreachable on any
+# machine running with RAG_CAPTURE_TRANSCRIPT_PATH=1, since the hook supplies a transcript
+# path on every session: the suppression was not weakened there, it was inert, and silently
+# so. Reported from a consuming vault after one afternoon's fan-out left 90 content-free
+# blocks in a buffer whose whole design is that a distillation pass drains it cheaply.
+# A read-only session that is still worth filing has --note, which the message below names.
 substantive=0
 if git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
   # cwd is inside a git repo — capture just it
@@ -359,7 +368,6 @@ else
 fi
 
 [ -n "$NOTE" ] && substantive=1
-[ "${RAG_CAPTURE_TRANSCRIPT_PATH:-0}" = "1" ] && [ -n "$TRANSCRIPT" ] && substantive=1
 
 # A block that carries nothing is not appended at all. One SessionEnd per session is the
 # right rate for interactive work, and wrong the moment anything fans out headless
