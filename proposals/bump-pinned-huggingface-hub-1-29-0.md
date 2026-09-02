@@ -1,7 +1,8 @@
 ---
 slug: bump-pinned-huggingface-hub-1-29-0
-outcome: open
+outcome: accepted
 received: 2026-09-02
+reason: "accepted as proposed and shipped as proposed — one pin, one commit, nothing else moved. The block arrived with the whole 3.12–3.14 range already covered, so intake re-ran nothing it could not check: the file-level claims (pure-Python wheel, fastembed range, one pin per commit) were confirmed against PyPI metadata and the diff, and rag_deps_check.load_pins() still parses the file. The Dependabot-for-pip alternative stays unbuilt for the reason every prior bump to this pin gave: it needs a decision about who reviews a machine-opened bump against an embedder whose output must stay comparable."
 ---
 
 HANDOFF — engine improvement proposal

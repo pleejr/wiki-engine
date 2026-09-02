@@ -44,7 +44,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `bare-status-ignores-submitted-markers` | shipped | derived |
 | `bump-pinned-huggingface-hub-1-26-0` | shipped | derived |
 | `bump-pinned-huggingface-hub-1-28-0` | shipped | v1.73.1 |
-| `bump-pinned-huggingface-hub-1-29-0` | open | received 2026-09-02 |
+| `bump-pinned-huggingface-hub-1-29-0` | shipped | derived |
 | `bump-pinned-onnxruntime-1-29-0` | shipped | v1.73.1 |
 | `canonical-commit-refusal-strands-staged-work-and-names-no-way-to-carry-it` | shipped | v1.73.2 |
 | `capture-scales-with-harness-fanout` | shipped | v1.65.0 |
