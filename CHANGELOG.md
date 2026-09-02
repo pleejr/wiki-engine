@@ -4,6 +4,15 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.73.4] — 2026-09-02
+
+Patch — the one pinned RAG embedder dep `doctor.sh` was reporting advances, verified by install *and* embed across the whole supported Python range against a baseline measured before the bump. Adopt with `bin/adopt.sh` or `update.sh`; `update.sh` re-syncs the vault's `.rag/venv` to the new pin automatically.
+
+### Changed
+- **`scaffold/rag-requirements.txt` pins `huggingface_hub==1.29.0`** (was `1.28.0`), one pin in one commit so a bad bump stays bisectable. Released to PyPI on 2026-08-27, five days after v1.73.3, so this is fresh drift rather than a missed report — and the same shape as the three prior bumps to this pin: a pure-Python `py3-none-any` wheel with `requires_python >=3.10.0`, inside `fastembed==0.8.0`'s `huggingface-hub<2.0,>=0.20` range, so the compiled-wheel-lag hazard governing this file's other pins does not apply.
+  - **Measured before it was changed.** Fresh `uv` venvs on 3.12.13, 3.13.14 and 3.14.6 first installed the file's *current* set and embedded a known text through `bge-base`, so the comparison existed before anything moved; then the same three interpreters installed the set with only this pin advanced. `pip check` clean on all six venvs, 768 dimensions and every component non-zero on all six, and the 1.29.0 vector is **bit-identical** to the 1.28.0 baseline on every interpreter — cosine 1.0, max component delta 0.0. An existing `.rag` index stays valid; no reindex is implied.
+  - **The proposal was filed from the consuming vault's own `doctor.sh` finding**, through the queue, by the drain loop that then intook it — the route `doctor.sh` prints for a pin a consumer cannot change locally. It arrived with the whole range already covered, which is what the two prior reports flagged as their gap. `Proposal: bump-pinned-huggingface-hub-1-29-0`
+
 ## [1.73.3] — 2026-08-22
 
 Patch — a transcript pointer no longer counts as a reason to file a block, so v1.65.0's content-free suppression actually runs on machines that record transcript paths. Adopt with `bin/adopt.sh` or `update.sh`.
