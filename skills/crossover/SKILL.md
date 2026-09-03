@@ -3,8 +3,7 @@ name: crossover
 description: This skill should be used to migrate vault pages (memory notes, projects, comparisons, repo pages) from one wiki-engine vault to another vault that lives on a different machine and never shares a checkout — a deliberate boundary crossing (e.g. work vault to a personal vault). It moves items over a copy-paste text channel with sha256 integrity — one block per page, pasted separately — imports them on the receiving session, and only after a returned receipt cryptographically matches does it soft-delete the originals and sweep references to tombstones. Triggers: "crossover", "move this note to my personal vault", "migrate these pages to the other vault", "export this for my personal wiki", "import this crossover block", "finalize the crossover". Distinct from wiki-adopt (which stands up / wires a vault) and checkpoint (which curates content within one vault) — crossover transfers existing items between two vaults. NOT for syncing one vault across machines (that is git) or ingesting an external repo (use wiki-repo).
 status: active
 summary: "migrate vault items to a vault on another machine over copy-paste — one block per page — with sha256-verified soft-delete + tombstone sweep."
-updated: 2026-07-24
-used_by: []
+updated: 2026-09-03
 ---
 
 # crossover — move vault items across a machine/boundary gap
@@ -92,4 +91,4 @@ On a bundle match it removes the files and rewrites every `[[slug]]` reference t
 - **Resumable** — the `.crossover/` ledgers hold each batch's state (`<id>.outbound` at the origin; `<id>.inbound` + `<id>.manifest` at the destination, which is what makes a half-arrived batch resumable), so an interrupted migration is safe to re-drive. Commit the ledgers as migration provenance.
 - **One batch = one connected cluster** where practical, so a half-moved graph doesn't strand links on both ends.
 - New pages that *belong* to the destination should be **created there directly**, not created at the origin and migrated.
-- In-session by default; the constraint is structural — no mode may run from a hook that fires on an event its own child can re-trigger. A deliberately-initiated run with a re-entry sentinel, a concurrency bound, and a terminating path is legitimate. `finalize` soft-deletes at the origin, so it stays human-confirmed regardless. See the **Hard safety rule** in the engine's `CLAUDE.md`.
+- **In-session, on demand; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule). `finalize` soft-deletes at the origin, so it stays human-confirmed regardless.
