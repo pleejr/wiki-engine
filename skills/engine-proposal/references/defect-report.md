@@ -1,0 +1,11 @@
+# engine-proposal — worked examples for a defect report
+
+Read from `SKILL.md` §1b when the two rules there need their history. Everything below is the reasoning that produced those rules, kept here so the body carries the rules and this file carries why.
+
+## The observation is evidence; the prescription is a hypothesis
+
+- **Separate what you OBSERVED from what you PROPOSE.** The observation is evidence; the fix is a hypothesis, and a reporter's hypothesis can be wrong while the bug is entirely real. A worked example from this engine's own history: a report correctly identified that a lost terminator line dropped the last item, and prescribed treating the missing terminator as an integrity failure — which would have *rejected a payload whose hash matched*, forcing another paste over exactly the lossy channel the tool exists to survive. The defect was real; the prescription would have made it worse. Report the first with confidence, offer the second loosely.
+
+## Read your own Expected against your own suggested fix
+
+- **Then read your own Expected against your own suggested fix, before you send it.** They are separate fields, so nothing in the block makes you compare them — and the most common way an Expected goes wrong is that the fix written beside it cannot produce it. Ask it directly: *if engine-dev did exactly what I suggested, would I get exactly what I wrote under Expected?* If the answer is no, say so and say which of the two you would keep. **When a precedent supplies your Expected, cite the behaviour that earns the output, not the output itself.** A sibling tool's printed line is normally the only part of it you ever see — you run the tools, you do not read their internals — so "cite a precedent" and "quote what the precedent prints" feel identical from your chair, and only the second one can specify something unreachable. This engine's own `lint-announce-resolved-vault` turned on exactly that: the report quoted a sibling's unprompted announcement as the output wanted, but that sibling can print its line only because it RETARGETS, so the stated fix — announce, as the sibling does — could not produce the stated Expected. Intake declined the prescription and shipped the retarget that does produce it; the observation was confirmed in full, and the round trip was the only cost.
