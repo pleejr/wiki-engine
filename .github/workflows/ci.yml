@@ -3531,6 +3531,124 @@ jobs:
             || { echo "  FAIL a summary at the budget was flagged"; fail=1; }
           exit "$fail"
 
+      - name: A log entry over budget is named by its date, and a near-miss is not
+        run: |
+          # Proposal: log-rotation-and-entry-shape. The engine stated a one-dated-line rule on
+          # three surfaces and measured it nowhere; 2% of entries followed it. The rule now says
+          # one dated ENTRY under a word cap, and this is the gate. Red before green on the
+          # subject: an over-length entry fails under --strict naming its date; restore; green.
+          # Near-misses: one word under the cap must pass, and an older date inside an entry's
+          # PROSE must not read as an inversion (a check keying on any date in the entry passes
+          # the obvious test and fails on every real history).
+          V="$RUNNER_TEMP/loglint"; rm -rf "$V"; mkdir -p "$V"; fail=0
+          printf -- '---\nboundary: personal\n---\n' > "$V/CLAUDE.md"
+          ok="$(printf 'word %.0s' $(seq 1 30))"
+          printf -- '# Log\n\n- **2026-01-05** — %s [[a]]\n- **2026-02-01 (tag)** — %s [[b]]\n' "$ok" "$ok" > "$V/log.md"
+          ./bin/lint-log.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && echo "  ok   a conforming log passes under --strict" \
+            || { echo "  FAIL the conforming fixture is red"; ./bin/lint-log.sh --wiki "$V" --strict; fail=1; }
+          cp "$V/log.md" "$RUNNER_TEMP/log.keep"
+          long="$(printf 'word %.0s' $(seq 1 40))"
+          printf -- '- **2026-03-01** — %s [[c]]\n' "$long" >> "$V/log.md"
+          out="$(LOG_ENTRY_WARN_WORDS=35 ./bin/lint-log.sh --wiki "$V" --strict 2>&1)" && rc=0 || rc=$?
+          [ "$rc" != 0 ] && echo "  ok   --strict fails on an entry over the cap" \
+            || { echo "  FAIL --strict passed an over-length entry: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'entry of 2026-03-01 is 4[0-9] words' \
+            && echo "  ok   ...naming the entry by its date and length" \
+            || { echo "  FAIL the finding does not name the entry: $out"; fail=1; }
+          LOG_ENTRY_WARN_WORDS=35 ./bin/lint-log.sh --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   without --strict it warns and passes" \
+            || { echo "  FAIL the default tier failed"; fail=1; }
+          cp "$RUNNER_TEMP/log.keep" "$V/log.md"
+          # NEAR-MISS 1: one word under the cap
+          under="$(printf 'word %.0s' $(seq 1 30))"
+          printf -- '- **2026-03-01** — %s [[c]]\n' "$under" >> "$V/log.md"   # 30 + 4 header/link tokens = 34 < 35
+          LOG_ENTRY_WARN_WORDS=35 ./bin/lint-log.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && echo "  ok   an entry one word under the cap is not flagged" \
+            || { echo "  FAIL an entry under the cap was flagged"; LOG_ENTRY_WARN_WORDS=35 ./bin/lint-log.sh --wiki "$V"; fail=1; }
+          # NEAR-MISS 2: an older date in the PROSE is not an inversion; a header inversion is
+          printf -- '- **2026-04-01** — revisited the 2025-12-31 incident [[d]]\n' >> "$V/log.md"
+          out="$(./bin/lint-log.sh --wiki "$V" --strict 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && echo "  ok   a date inside the prose is not read as an inversion" \
+            || { echo "  FAIL prose date read as inversion: $out"; fail=1; }
+          printf -- '- **2026-03-15** — landed after a merge [[e]]\n' >> "$V/log.md"
+          out="$(./bin/lint-log.sh --wiki "$V" 2>&1)"
+          printf '%s\n' "$out" | grep -q 'entry dated 2026-03-15 follows 2026-04-01' \
+            && echo "  ok   a header inversion is named" \
+            || { echo "  FAIL the header inversion was not named: $out"; fail=1; }
+          # ERROR tier: a bullet that is not a dated entry
+          printf -- '- just a bullet with no date\n' >> "$V/log.md"
+          ./bin/lint-log.sh --wiki "$V" >/dev/null 2>&1 \
+            && { echo "  FAIL a bullet outside the template shape passed"; fail=1; } \
+            || echo "  ok   a bullet outside the template shape errors"
+          exit "$fail"
+
+      - name: rotate-log moves whole quarters byte-for-byte, keys on the date, and is idempotent
+        run: |
+          # Proposal: log-rotation-and-entry-shape. Three quarters in one file, deliberately out
+          # of order (concurrent sessions merge that way): the current quarter stays, the older
+          # two land under log/ verbatim (the concatenation of archived + remaining entries
+          # equals the original set), and a second immediate run moves nothing. Then the RAG
+          # builder — with a stub embedder, since this is about which files are walked — indexes
+          # the archive: a string that exists only in a rotated entry is in the index.
+          V="$RUNNER_TEMP/rotate"; rm -rf "$V"; mkdir -p "$V"; fail=0
+          printf -- '---\nboundary: personal\n---\n# v\n' > "$V/CLAUDE.md"
+          {
+            echo "# Log"; echo
+            echo "- **2026-01-05** — q1 one [[a]]"
+            echo "- **2026-05-01** — q2 one zebrafish-only-here [[c]]"
+            echo "- **2026-02-10 (tag)** — q1 two, appended after q2 by a merge [[b]]"
+            echo "- **2026-08-15** — q3 current [[e]]"
+            echo "- **2026-04-02** — q2 two [[d]]"
+          } > "$V/log.md"
+          cp "$V/log.md" "$RUNNER_TEMP/rotate-orig.md"
+          LOG_TODAY=2026-09-03 ./bin/rotate-log.sh --wiki "$V" --dry-run | grep -q 'would move 4 entries' \
+            && echo "  ok   dry run counts the four older entries" \
+            || { echo "  FAIL dry run miscounted"; fail=1; }
+          [ ! -d "$V/log" ] && echo "  ok   ...and wrote nothing" || { echo "  FAIL dry run wrote"; fail=1; }
+          LOG_TODAY=2026-09-03 ./bin/rotate-log.sh --wiki "$V" >/dev/null
+          [ -f "$V/log/2026-Q1.md" ] && [ -f "$V/log/2026-Q2.md" ] \
+            && echo "  ok   two quarter archives created" \
+            || { echo "  FAIL archives missing"; ls -R "$V"; fail=1; }
+          grep -q '^- \*\*2026-08-15' "$V/log.md" && ! grep -q '^- \*\*2026-0[1-5]' "$V/log.md" \
+            && echo "  ok   the current quarter stays; older entries left, by DATE not position" \
+            || { echo "  FAIL wrong entries moved"; cat "$V/log.md"; fail=1; }
+          [ "$(grep -c '^- \*\*' "$V/log/2026-Q1.md")" = 2 ] && [ "$(grep -c '^- \*\*' "$V/log/2026-Q2.md")" = 2 ] \
+            && echo "  ok   each quarter received its two entries" \
+            || { echo "  FAIL quarter counts wrong"; fail=1; }
+          diff <(grep '^- \*\*' "$RUNNER_TEMP/rotate-orig.md" | sort) <(cat "$V"/log/*.md "$V/log.md" | grep '^- \*\*' | sort) >/dev/null \
+            && echo "  ok   archived + remaining entries are byte-identical to the original set" \
+            || { echo "  FAIL entry text changed in transit"; fail=1; }
+          [ "$(grep -c '^_(rotated' "$V/log.md")" = 1 ] && echo "  ok   one pointer line" || { echo "  FAIL pointer line count"; fail=1; }
+          before="$(cat "$V/log.md" "$V"/log/*.md | shasum)"
+          LOG_TODAY=2026-09-03 ./bin/rotate-log.sh --wiki "$V" | grep -q 'nothing to move' \
+            && [ "$(cat "$V/log.md" "$V"/log/*.md | shasum)" = "$before" ] \
+            && echo "  ok   a second run moves nothing and changes nothing" \
+            || { echo "  FAIL the second run was not a no-op"; fail=1; }
+          ./bin/lint-log.sh --wiki "$V" >/dev/null 2>&1 && echo "  ok   the rotated files pass lint-log" \
+            || { echo "  FAIL lint-log rejects the rotated layout"; ./bin/lint-log.sh --wiki "$V"; fail=1; }
+          # The archive is walked by rag-build (stub embedder: file selection, not vector quality).
+          python3 - <<'PY' &
+          import json
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          class H(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  self.rfile.read(int(self.headers.get('Content-Length', 0)))
+                  b = json.dumps({"embedding": [0.1] * 8}).encode()
+                  self.send_response(200); self.send_header('Content-Type', 'application/json')
+                  self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+              def log_message(self, *a): pass
+          HTTPServer(('127.0.0.1', 8772), H).serve_forever()
+          PY
+          STUB=$!; trap 'kill $STUB 2>/dev/null' EXIT
+          for _ in $(seq 1 50); do python3 -c "import socket;socket.create_connection(('127.0.0.1',8772),0.2)" 2>/dev/null && break; sleep 0.1; done
+          export RAG_EMBED_API=ollama RAG_EMBED_URL=http://127.0.0.1:8772/api/embeddings
+          ./bin/rag-build.sh --wiki "$V" >/dev/null 2>&1 || { echo "  FAIL rag-build errored"; fail=1; }
+          grep -q '"file": *"log/2026-Q2.md"' "$V/.rag/index.jsonl" && grep -q 'zebrafish-only-here' "$V/.rag/index.jsonl" \
+            && echo "  ok   the archive is indexed: a string only in a rotated entry is in the index" \
+            || { echo "  FAIL the archive was not indexed"; fail=1; }
+          exit "$fail"
+
       - name: The capture hook cannot deadlock a later session's integrate
         run: |
           # REGRESSION: rag-capture.sh runs at SessionEnd and appends to

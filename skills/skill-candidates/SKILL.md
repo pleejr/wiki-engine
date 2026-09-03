@@ -25,7 +25,7 @@ This skill invokes nothing; writing its own notes is not an invocation.
 Inputs, all read from canonical `$WIKI_PATH`:
 
 - `memory/*.md` — the curated notes; the primary evidence.
-- `log.md` — one dated line per session; the recurrence signal.
+- `log.md` (and rotated `log/*.md`) — one dated entry per session; the recurrence signal.
 - `raw/sessions/` — the auto-captured buffer, **canonical `$WIKI_PATH` only** (git-ignored). Weak and disposable: a *pattern forming*, never a candidate's justification.
 
 ## Two modes: backlog, then steady state
@@ -75,7 +75,7 @@ grep -H '^created:\|^updated:' "$WIKI_PATH"/memory/*.md | paste - - | awk '$2 !=
 grep -A6 '^\*\*How to apply' "$WIKI_PATH"/memory/*.md
 
 # How often a kind of work reached the log at all.
-grep -in '<phrase>' "$WIKI_PATH"/log.md | tail -20
+grep -in '<phrase>' "$WIKI_PATH"/log.md "$WIKI_PATH"/log/*.md 2>/dev/null | tail -20
 ```
 
 **Count `created:`, never `updated:`** — `updated:` migrates toward the present as notes are amended, so counting it makes every subject look like it recurred this week; a note created weeks ago and amended recently is itself a second occurrence. Recall is a **second lens, not a replacement**: `"$WIKI_PATH"/engine/bin/recall.sh "did this the same way again"` points at pages to open. Read the prior verdicts (§7) before reporting.

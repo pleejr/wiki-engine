@@ -27,7 +27,7 @@ Two sessions otherwise share one working tree, where simultaneous writes are sil
 - **Overwrite** the **Current state** section with where things stand; update **Next steps**.
 - **Append** (never overwrite) to **Key decisions** if a decision was made.
 - Keep the page's frontmatter `status:` (`active|paused|done`) and one-line `summary:` current — these drive the generated `index.md` Projects buckets (§4). Closing a project = flip `status: done`.
-- Append one dated line to `$WIKI_PATH/log.md`, tagged with the project.
+- Append **one dated entry** to `$WIKI_PATH/log.md` — one physical line, `- **YYYY-MM-DD (tag)** — …`, linking the notes this session distilled; `lint-log.sh` warns over `LOG_ENTRY_WARN_WORDS` (400). When the file has outgrown the quarter, `$WIKI_PATH/engine/bin/rotate-log.sh` (from `$WORK`) moves older entries to `log/` — text unchanged.
 
 ## 2. Distill memory (raw → curated)
 - Review what emerged this session — Claude Code's native per-project memory **and** any `$WIKI_PATH/raw/sessions/` entries auto-captured by `rag-capture.sh` — as raw input.

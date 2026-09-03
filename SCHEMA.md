@@ -12,7 +12,7 @@ Each consuming wiki declares its own boundary in its top-level `CLAUDE.md` (see 
 
 - **Layer 1 — `raw/`**: captured sources. `articles/`, `papers/`, `transcripts/`, `assets/` are **immutable** ingested docs (carry `source_url`, `ingested`, `sha256`; never edited after capture). `sessions/` is the exception: **disposable** auto-capture scratch written by `rag-capture.sh` (see below) — promote keepers, then prune.
 - **Layer 2 — wiki pages**: agent-owned, synthesized (folders below).
-- **Navigation**: `index.md` (sectioned catalog + generated skills list) + `log.md` (chronological log).
+- **Navigation**: `index.md` (sectioned catalog + generated skills list) + `log.md` (the chronological log). **A log entry is one dated entry per session, one physical line** — `- **YYYY-MM-DD** — …` or `- **YYYY-MM-DD (tag)** — …` — linking the notes the session distilled; `bin/lint-log.sh` errors on any other bullet shape and warns over `LOG_ENTRY_WARN_WORDS` (default 400, the measured 90th percentile), on an entry that links nothing, and on a date inversion (`--strict` fails). The rule says *entry*, not *line*, because "one dated line" was stated on three surfaces and obeyed by 2% of entries — the number is the rule. The file is append-only and never edited; `bin/rotate-log.sh` moves entries older than the current quarter, byte for byte and keyed on each header date (never position — concurrent sessions merge out of order), into `log/<YYYY>-Q<n>.md`, which the RAG builder walks, leaving one pointer line under the title. `log.md` stays at that path; the tools that read it name it literally.
 
 ## The four node types — one graph, the RIGHT freshness each
 
