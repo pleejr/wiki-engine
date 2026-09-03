@@ -4,7 +4,6 @@ description: Prove a check, gate, lint rule, CI step or test actually FAILS when
 status: active
 summary: run a new check against a deliberately broken subject and a near-miss, proving it goes red for the right reason and rejects the coincidence.
 updated: 2026-09-03
-used_by: []
 ---
 
 # prove-the-test-can-fail — a check nobody has seen fail is a hypothesis

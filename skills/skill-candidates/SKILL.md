@@ -4,7 +4,6 @@ description: Mine the vault's durable record — `memory/` notes, `log.md`, the 
 status: active
 summary: mine `memory/`, `log.md` and the session buffer for procedures proven to repeat; report ranked skill candidates with dated evidence and record the verdicts, never a SKILL.md.
 updated: 2026-09-03
-used_by: []
 ---
 
 # skill-candidates — find the procedures the vault already proved you repeat

@@ -4,7 +4,6 @@ description: End-of-session wrap-up ritual. Updates the active project's page (C
 status: active
 summary: "end-of-session: update project page + `log.md`, distill memory, then offer the skill-mining pass — declined it writes nothing, accepted it starts elsewhere. In-session only."
 updated: 2026-08-17
-used_by: []
 ---
 
 # checkpoint — capture where I left off + distill memory
@@ -62,7 +61,7 @@ Before editing any vault file, take an isolated working copy so a second concurr
 - **Run it now, separately** — in its own session or pane, so its verdicts and whatever authoring follows are their own unit of work. It records its own verdicts (`skill-candidates` §7); nothing comes back here. **On accept, start it rather than describing how to start it:**
 
   ```bash
-  engine/bin/spawn-session.sh --cwd "$WIKI_PATH" --what 'the skill-mining pass' \
+  $WIKI_PATH/engine/bin/spawn-session.sh --cwd "$WIKI_PATH" --what 'the skill-mining pass' \
     --prompt 'Run the skill-candidates mining pass over this vault: report the procedures whose dated evidence shows them repeating, and record the verdicts.'
   ```
 

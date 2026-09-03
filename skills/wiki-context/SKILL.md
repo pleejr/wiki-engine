@@ -4,7 +4,6 @@ description: Load relevant context from the wiki vault ($WIKI_PATH) for the curr
 status: active
 summary: index-first, lazy context router with repo freshness check.
 updated: 2026-07-20
-used_by: []
 ---
 
 # wiki-context — the context router

@@ -1,6 +1,7 @@
 ---
 slug: schema-and-catalog-drift
-outcome: open
+outcome: partially-accepted
+reason: "partially-accepted — all five observations reproduced at HEAD by the report's own one-line controls (12 skills vs 4 listed; used_by written by 12 and read by 0; the three identifier classes at their seven sites; five executable bare engine/bin paths among ten grep hits; three verbs documented against six dispatched; shellcheck 0.11 reporting the same ten warnings — plus seven more in adopt.d/, the sibling the report did not measure, fixed in the same pass). Suggested fixes (a), (c), (d), (e), (f) and (g) taken as proposed. (b) decided as DROP: nothing reads used_by, the catalog line has no such concept, and lint.sh enumerates no allowed skill keys, so removal needs no migration. PARTIAL on (h), and that is the declined half: the denylist-in-lint-docs shape is not built, for a technical reason rather than taste — a static list of the given names and consumer slugs known to have leaked would itself carry those identifiers into the public repository the gate exists to keep them out of. The report's own falsification of the user.name-first-token idea is recorded and agreed. The PUSH question was read past line 83 as instructed: the push keys on REMOTE_URL / CREATE_REMOTE at lines 143-152, so PUSH was dead and is removed rather than wired."
 received: 2026-09-03
 ---
 

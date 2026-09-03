@@ -4,7 +4,6 @@ description: Seed a freshly-scaffolded (or newly-adopted) wiki vault from what a
 status: active
 summary: seed a freshly-scaffolded vault from existing memories, repos, and skills.
 updated: 2026-07-14
-used_by: []
 ---
 
 # wiki-onboard — seed an empty vault from what already exists
@@ -28,9 +27,9 @@ Run **once**, right after `new-wiki.sh` (or after adopting the engine in an exis
 
 4. **Projects → `projects/`.** For in-flight work, stub `projects/<slug>.md` (`type: project`, `status: active|paused`, `repos: [[...]]`) with Goal · Linked repos · Key decisions · Current state · Next steps. Link each to its repo pages.
 
-5. **Skills.** The engine's `skills/` are already linked by the scaffolder. Inventory any other `~/.claude/skills/*`; note user-authored ones worth promoting into the engine (a manual add — don't copy them into the vault). Then regenerate the catalog: `engine/bin/gen-skills-index.sh`.
+5. **Skills.** The engine's `skills/` are already linked by the scaffolder. Inventory any other `~/.claude/skills/*`; note user-authored ones worth promoting into the engine (a manual add — don't copy them into the vault). Then regenerate the catalog: `$WIKI_PATH/engine/bin/gen-skills-index.sh`.
 
-6. **Finalize.** Refresh `$WIKI_PATH/index.md` sections for the new pages, run `engine/bin/lint.sh` (umbrella) and fix any failures, and append a dated `log.md` line summarizing the seed.
+6. **Finalize.** Refresh `$WIKI_PATH/index.md` sections for the new pages, run `$WIKI_PATH/engine/bin/lint.sh` (umbrella) and fix any failures, and append a dated `log.md` line summarizing the seed.
 
 ## Rules
 - **In-session, on demand.** A one-time bootstrap has nothing to automate — and never from a hook that fires on an event its own child can re-trigger, the structure behind the `.ai-os` fork-bomb. The rule targets runaway agent generation, not headless `claude`. See the **Hard safety rule** in the engine's `CLAUDE.md`.
