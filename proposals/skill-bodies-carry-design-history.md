@@ -1,0 +1,59 @@
+---
+slug: skill-bodies-carry-design-history
+outcome: open
+received: 2026-09-03
+---
+
+HANDOFF — engine improvement proposal slug: skill-bodies-carry-design-history boundary: generic (engine-domain; contains no consumer-private context)
+
+Title: Skill bodies carry their own design history, restate always-loaded rules, and in one case contradict themselves on the transport; three bodies are 1.4–2.3× the body budget
+
+Engine version: v1.73.4 — the tag this vault is pinned to. All line references and counts re-measured at the pinned commit on 2026-09-03. The pin moved v1.73.3 -> v1.73.4 since the first draft; that range touched only `CHANGELOG.md`, `PROPOSALS.md`, `proposals/` and `scaffold/rag-requirements.txt`, so no `skills/` file, `SCHEMA.md` or `USAGE.md` changed and every measurement below still holds. The pin is one commit behind the engine's `origin/main`, not equal to it.
+
+Problem (observed — each item is a measurement, not a preference):
+
+1. `skills/engine-proposal/SKILL.md` body is 4192 words (`awk 'BEGIN{c=0} /^---$/{c++; next} c>=2' | wc -w`). The description (line 3) promises "a self-contained copy-pastable kickoff block" and §5a (lines 149-153, "Hand off the legacy way") still describes presenting a block to paste, while §5 (lines 132-148) says proposals are files in `proposals/` submitted by pull request and that `stash` "still runs and warns; nothing should use it". §1b (lines 29-80, 944 words) carries two worked examples from engine history (lines 36-37); §6 (lines 177-261, 1619 words) carries a third (line 257). "Reproduce first / the fix may be wrong / the symptom may not be the defect" is stated at lines 183-187, again as the four-claims table at 189-201, and again in `drain` §2 lines 36-37.
+
+2. `skills/skill-candidates/SKILL.md` body is 3366 words. The no-cycle argument ("this skill invokes nothing") appears at lines 26, 170, 172, 186 and 187 — five statements of one rule. "Why a bare grep is wrong" appears at 49, 94, 133 and 190. "Recommend; never decide" at 144, 154, 189. Lines 12-16 are a two-paragraph essay on why end-of-session judgement is unreliable; line 170 narrates a previous design ("used to write nothing and hand its verdicts back… That edge is gone").
+
+3. `skills/checkpoint/SKILL.md` body is 2607 words. §0 (lines 14-25, 728 words): line 19 is a 260-word paragraph on `ensure`'s stale-base cases that reproduces the `bin/vault-worktree.sh` header. "Git-ignored state lives only in canonical, and its absence looks like nothing to do" is made at lines 21, 43 (twice), 49, and again in `skill-candidates` lines 23 and 32. §3 line 49 narrates "for nine releases §3 aimed at the worktree".
+
+4. `skills/prove-the-test-can-fail/SKILL.md` (1370 words, within budget): line 14 is a 110-word narrative citing four release versions whose only durable content is "a rule you must remember is weaker than a procedure you run". Lines 14, 50 and 82 name `lesson-…` note slugs that exist in one consumer vault and not in the engine. **Correction to the first draft of this report:** those slugs are in backticks, not `[[wikilinks]]`, so they are not dangling links — nothing resolves them and no link checker sees them; they are prose references to notes an engine reader cannot open. The right control is therefore `grep -n 'lesson-' skills/prove-the-test-can-fail/SKILL.md` (lines 14, 50, 82), and a `[[lesson-` pattern returns empty everywhere in `skills/`, which would read as a clean pass on a defect that is present. The four near-miss shapes at lines 79-82 carry version tags.
+
+5. The Hard safety rule is canonical in `engine/CLAUDE.md` lines 17-21, which every consuming vault imports, so it is in context before any skill body loads. Re-measured 2026-09-03: `grep -c 'Hard safety rule' skills/*/SKILL.md` → **9 matching lines across 7 files** (`checkpoint` 2, `wiki-onboard` 2, and one each in `crossover`, `engine-proposal`, `wiki-adopt`, `wiki-context`, `wiki-repo`) — the first draft said 8 files, which was wrong; `grep -li fork-bomb skills/*/SKILL.md` → 4 files (`checkpoint`, `drain`, `wiki-adopt`, `wiki-onboard`). `checkpoint` line 80, `wiki-adopt` line 59 and `wiki-onboard` line 36 each re-tell the incident (naming its source and re-explaining "the trigger and the spawn were the same event"); `SCHEMA.md` line 125 and `USAGE.md` line 144 carry it again.
+
+6. `skills/wiki-context/SKILL.md` step 0 (line 17) runs `engine-version.sh` (which does a `git fetch`, `engine-version.sh:25`) and offers `update.sh`. `bin/session-boot.sh` lines 4-8 → `session-preflight.sh` lines 26-27 already run the same check at SessionStart with no model involvement and deliver a `systemMessage` banner, and the `update` skill owns the offer-then-update flow. Three surfaces offer the same bump; `SCHEMA.md` line 94 ("`wiki-context` runs it at session start and offers…") and line 171 ("**Per session** — `wiki-context` runs `engine-version.sh` and offers `update.sh`") still say `wiki-context` does it. Cost: one network round-trip per `wiki-context` invocation for information the banner already showed.
+
+Motivating use case (generic): a consumer vault runs these skills under a model strong enough that the facts and the why suffice; every skill body is loaded in full on every invocation, so restatement and history are a per-invocation tax. Item 1 is not a verbosity problem but a wrong instruction — the routing surface and §5a describe a channel the same file says is retired.
+
+Proposed shape (per skill — what to keep verbatim is the load-bearing part):
+
+- `engine-proposal`: (a) description per proposal `skills-descriptions-exceed-router-cut`. (b) Delete §5a; keep one sentence in §5: "`stash` is retired and warns; the block is now the file content of `proposals/<slug>.md`." (c) Move §1b's two worked examples and the "read your own Expected against your own fix" paragraph (line 37) to `references/defect-report.md`; keep in the body the five bullet headers, the failure-shape definitions (lines 38-41, verbatim), and the block template (48-77). (d) Move §6's design-review checklist (214-221), four-claims table (189-201) and diff-review gate (256-261) to `references/intake.md`; keep in the body the commands (`queue`, `gen-proposals-ledger.sh`), the frontmatter outcome shape (233-237), the two hard rules (never hand-edit `PROPOSALS.md`; never rename the slug), and the `Proposal:` trailer placement fact (250-255) as one paragraph — the "used to require the final paragraph" history goes to references. Target ≤1800 words. Every `references/` file must be linked from the body or it is never loaded.
+
+- `skill-candidates`: keep verbatim the frontmatter query (44-47), the bar (§1), the evidence queries (74-92) with the `created:` vs `updated:` rule (94) in one sentence, the four candidate shapes (§3), the overlap grep (120), the report block (135-142), the AskUserQuestion batching fact (162: cap of four, batch never truncate), and the verdict-note shape (176-180). Cut lines 12-16, 26, 170-174 to one clause each; collapse Rules to five one-liners without justifications. Target ≤1800 words.
+
+- `checkpoint`: §0 (lines 14-25) → the command list with exit codes (`ensure` exit ≠0 → not isolated; `integrate` exit 3 → conflict, 4 → lock held; `gc "$WORK"`), the "stage explicit paths, never `git add -A`" rule, the carve-out sentence (line 21, once), and "run engine tooling from canonical". §3 → the three-state confirm rule (line 46 — the load-bearing decision) plus the `_(pruned <date>: …)_` marker convention; drop lines 48-49. Target ≤1500 words. `skill-candidates` line 22 says "see `checkpoint` §0" — keep the numbering or update that pointer.
+
+- `prove-the-test-can-fail`: collapse line 14 to one clause ("the same class shipped four times in three weeks with the lesson note available each time — hence a procedure, not a note"); keep the four near-miss shapes at 79-82 verbatim minus version tags; drop the `lesson-…` slugs the engine cannot resolve.
+
+- Hard safety rule: each skill's Rules keeps one line — "In-session, on demand; never from a lifecycle hook (engine `CLAUDE.md`, Hard safety rule)." Drop the incident's source name and the structural explanation from every skill; `CLAUDE.md` line 19 keeps the one-clause incident with its number.
+
+- `wiki-context`: delete step 0; one line — "Engine staleness is reported by the SessionStart banner; when it flags stale, run the `update` skill." Update `SCHEMA.md` lines 94 and 171 to name the hook, not `wiki-context`.
+
+Alternatives considered:
+- Leave bodies as they are and rely on the model to skim — rejected: item 1 is a contradiction, not padding; a reader following the description or §5a performs a retired action.
+- Delete the history outright — rejected: the intake checklist and worked examples are load-bearing on the engine-dev side; `references/` keeps them one link away.
+- Keep the Hard safety rule restatements as belt-and-braces — rejected: the rule's authority is the always-loaded file; nine restatements make the one canonical copy harder to find, and the incident's source name is consumer history that does not belong in nine places.
+
+Acceptance criteria:
+  - `engine-proposal` description names the queue transport; §5a is gone; `grep -n 'copy-pastable' skills/engine-proposal/SKILL.md` is empty (control: today line 3 matches).
+  - Body word counts (the awk above) ≤1800 / ≤1800 / ≤1500 for `engine-proposal` / `skill-candidates` / `checkpoint`.
+  - `grep -c 'Hard safety rule' skills/*/SKILL.md` → at most 1 per file (control: today `checkpoint` and `wiki-onboard` return 2), and `grep -li fork-bomb skills/*/SKILL.md` → empty (control: today 4 files).
+  - `grep -n 'lesson-[a-z]' skills/*/SKILL.md` → no hit in `prove-the-test-can-fail` (control: today lines 14, 50 and 82 match; the two `crossover` hits at 48 and 61 are `memory/lesson-foo.md` placeholder filenames in an example and must stay). The intent is no consumer-vault note slug in engine text. A `[[lesson-` pattern is the wrong control — it is empty today, on a file that carries three of them.
+  - `wiki-context` runs no `engine-version.sh`; `SCHEMA.md` lines 94/171 name `session-boot.sh`.
+  - Every `references/*.md` created is linked from the body that lost the content.
+  - Boundary: `bin/lint.sh`'s own "the engine names no consumer's strings" rule holds after the edits.
+
+Redactions: the incident's source name (a consumer tooling identifier that appears in the engine's own `CLAUDE.md`) is referred to as "the incident's source" rather than repeated here.
+
+Instruction to engine-dev: this is additive doc/skill-text work and needs no design pass; the one non-cosmetic decision is which paragraphs move to `references/` versus are cut, and the lists above name them line by line. Create the project under this slug, apply per skill, ship.
