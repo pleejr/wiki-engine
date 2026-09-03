@@ -1778,6 +1778,56 @@ jobs:
           ./bin/lint.sh --wiki "$VAULT"
           ./bin/adopt.sh --check --wiki "$VAULT"
 
+      - name: The soft-wrap gate judges curated prose, never raw/ capture
+        run: |
+          # Proposal: soft-wrap-lint-covers-the-ignored-raw-sessions-buffer. lint.sh's soft-wrap
+          # section read the UNPRUNED vault walk while every other content-node check in the same
+          # script prunes raw/ — so a hard-wrapped line in the git-ignored raw/sessions buffer (a
+          # file that cannot be staged and cannot enter the commit) refused commits of unrelated
+          # tracked content, and the remedy on offer was --no-verify. The same walk covered the
+          # TRACKED raw/ folders, whose contents are verbatim sources a reflow would corrupt.
+          #
+          # Three runs, and the two controls are the ones that matter: a fix that simply widened
+          # the exemption to the whole vault would pass the first assertion and fail the third.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-softwrap-raw"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-softwrap-raw.json"
+          V="$RUNNER_TEMP/softwrap-raw-vault"
+          ./bin/new-wiki.sh --path "$V" --boundary personal \
+            --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+          fail=0
+          # The fixture: a hard-wrapped pruned-marker in the session buffer, the shape a checkpoint
+          # session writes. Assert the PRECONDITIONS before the property — the file must be ignored
+          # AND must be something reflow would change, or the pass below proves nothing.
+          printf '## capture\n\n_(pruned 2026-01-01: this block was\npromoted into a note and\nthen pruned as spent)_\n' \
+            > "$V/raw/sessions/2026-01.md"
+          git -C "$V" check-ignore -q raw/sessions/2026-01.md \
+            || { echo "  FIXTURE BROKEN: raw/sessions file is not git-ignored"; fail=1; }
+          ./bin/reflow.sh --check "$V/raw/sessions/2026-01.md" >/dev/null 2>&1 \
+            && { echo "  FIXTURE BROKEN: buffer would not reflow, so the gate has nothing to skip"; fail=1; }
+          # 1. The property: an ignored file does not gate the vault's commit.
+          out="$(./bin/lint.sh --wiki "$V" 2>&1)" \
+            || { echo "  FAIL lint refused the vault over a git-ignored raw/sessions file"; printf '%s\n' "$out" | grep -e 'would reflow' -e '^lint:'; fail=1; }
+          # 2. Tracked raw/ is exempt too: a transcript is captured verbatim; a hard wrap in it is
+          #    the source's shape, not drift.
+          printf 'speaker one said this\nand then said that\n' > "$V/raw/transcripts/t.md"
+          ./bin/lint.sh --wiki "$V" >/dev/null 2>&1 \
+            || { echo "  FAIL lint refused the vault over a hard-wrapped tracked raw/transcripts file"; fail=1; }
+          # 3. NEAR-MISS CONTROL: a hard-wrapped CURATED page must still be refused, and the verdict
+          #    line must NAME the section — the second half of the report was that "FAILURES above"
+          #    named nothing and sat 130 lines below the one failing line.
+          printf -- '---\ntitle: n\nboundary: personal\n---\nline one\nline two\n' > "$V/notes/n.md"
+          out="$(./bin/lint.sh --wiki "$V" 2>&1)" \
+            && { echo "  FAIL a hard-wrapped notes/ page passed: the exemption is wider than raw/"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'would reflow: .*notes/n\.md' \
+            || { echo "  FAIL the refusal did not name the drifting curated page"; fail=1; }
+          printf '%s\n' "$out" | grep -q '^lint: FAILURES above .*soft-wrap' \
+            || { echo "  FAIL the verdict line does not name the failing section"; printf '%s\n' "$out" | tail -1; fail=1; }
+          rm "$V/notes/n.md"
+          [ "$fail" -eq 0 ] || exit 1
+          echo "  ok: ignored buffer and tracked raw/ do not gate; a curated page still does, by name"
+
       - name: The order update.sh prints lands both the catalog and the pin
         run: |
           # THE BIND: index.md's skills catalog is generated from the PINNED engine, so a release
