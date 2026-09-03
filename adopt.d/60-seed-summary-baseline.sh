@@ -17,6 +17,7 @@
 set -uo pipefail
 
 : "${WIKI:?}"; : "${ENGINE:?}"
+# shellcheck source=bin/adopt-lib.sh
 . "${ADOPT_LIB:?}" || exit 3
 
 # ENGINE ASSETS — unconditional, above every consumer-state guard (see adopt-lib.sh).

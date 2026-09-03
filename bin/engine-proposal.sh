@@ -16,8 +16,13 @@
 #
 # Subcommands:
 #   scan   --vault DIR [--file F]   block on stdin (or F) -> findings; exit 1 if any leak
-#   stash  --vault DIR --slug ID    block on stdin -> $VAULT/.engine-proposal/ID.outbox (git-ignored)
+#   submit --vault DIR --slug ID --file F   scan, then prepare a proposals/ID.md branch locally
+#                                   (nothing is pushed; prints the text that would become public)
+#   push   --vault DIR --slug ID    push the prepared branch and open the pull request — the
+#                                   irreversible, public step; forks on demand
+#   queue  [--repo DIR] [--all]     ENGINE-DEV: what is awaiting intake / awaiting merge
 #   status --vault DIR [--slug ID]  what happened to a proposal, read from the engine checkout
+#   stash  --vault DIR --slug ID    RETIRED — still runs and warns; use submit + push
 #
 # `status` closes the round trip. A handoff is forward-only, so the engine has no way to
 # tell a reporter anything — the shared surface is the engine repository itself, and that
@@ -39,7 +44,9 @@
 #
 # Usage:
 #   engine-proposal.sh scan   --vault DIR [--file draft.md]   < block
-#   engine-proposal.sh stash  --vault DIR --slug my-idea       < block
+#   engine-proposal.sh submit --vault DIR --slug my-idea --file draft.md
+#   engine-proposal.sh push   --vault DIR --slug my-idea
+#   engine-proposal.sh queue  [--repo ENGINE_DIR] [--all]
 #   engine-proposal.sh status --vault DIR [--slug my-idea]
 
 set -uo pipefail
@@ -467,11 +474,11 @@ do_submit() {
   git -C "$eng" checkout -q -b "$br" "$start" \
     || die "could not create $br from $start in $eng — if that checkout has uncommitted changes, commit or discard them first; nothing was written"
   mkdir -p "$eng/proposals"
-  local f="$eng/proposals/$SLUG.md"
+  local pf="$eng/proposals/$SLUG.md"
   {
     printf -- '---\nslug: %s\noutcome: open\nreceived: %s\n---\n\n' "$SLUG" "$(date +%Y-%m-%d)"
     printf '%s\n' "$block"
-  } > "$f"
+  } > "$pf"
   git -C "$eng" add "proposals/$SLUG.md"
 
   # PROPOSALS.md is DERIVED from proposals/, so adding a queue file without regenerating it
@@ -538,7 +545,7 @@ EOF
 
 do_push() {
   [[ -n "${SLUG:-}" ]] || die "--slug is required"
-  local marker="$(submit_marker_dir)/$SLUG.prepared"
+  local marker; marker="$(submit_marker_dir)/$SLUG.prepared"
   [[ -f "$marker" ]] || die "nothing prepared for '$SLUG' — run submit first (it scans; push does not)"
   local br; br="$(marker_branch "$marker")"
   # The checkout the branch actually lives in, as recorded by submit. An explicit
@@ -597,7 +604,7 @@ do_queue() {
   local q="$repo/proposals"
   [[ -d "$q" ]] || die "no proposals/ queue at $q (pass --repo for a different engine checkout)"
 
-  local fm_get; fm_get() {
+  fm_get() {
     awk -v key="$2" '
       NR==1 && $0=="---" { f=1; next }
       f && $0=="---" { exit }

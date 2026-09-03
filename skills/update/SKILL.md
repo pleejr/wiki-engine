@@ -4,7 +4,6 @@ description: This skill should be used to bring the wiki-engine on THIS machine 
 status: active
 summary: engine-only machine catch-up — report/offer engine version bump, converge wiring, relink engine skills. Generic; never touches consumer skill repos.
 updated: 2026-07-22
-used_by: []
 ---
 
 # update — bring this machine's wiki-engine current

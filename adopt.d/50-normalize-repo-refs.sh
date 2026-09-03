@@ -25,6 +25,7 @@
 set -uo pipefail
 
 : "${WIKI:?}"; : "${ENGINE:?}"
+# shellcheck source=bin/adopt-lib.sh
 . "${ADOPT_LIB:?}" || exit 3
 
 CHECK="${ADOPT_CHECK:-}"
@@ -43,7 +44,7 @@ for f in "$WIKI/repos"/*.md; do
     echo "adopt: would normalise ${f#$WIKI/} ref $old -> $new"
   else
     tmp="$f.tmp.$$"
-    sed -E "s/^([[:space:]]*-?[[:space:]]*ref:[[:space:]]*)$old[[:space:]]*$/\1$new/" "$f" > "$tmp" && mv "$tmp" "$f"
+    sed -E "s/^([[:space:]]*-?[[:space:]]*ref:[[:space:]]*)${old}[[:space:]]*$/\1${new}/" "$f" > "$tmp" && mv "$tmp" "$f"
     echo "adopt: normalised ${f#$WIKI/} ref $old -> $new"
   fi
   changed=$((changed+1))

@@ -42,6 +42,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
+# shellcheck disable=SC2088  # a LITERAL leading ~/ is what this expands by hand
 case "$WIKI" in "~/"*) WIKI="$HOME/${WIKI#\~/}";; esac
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
 WIKI="$(cd "$WIKI" && pwd)"

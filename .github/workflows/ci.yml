@@ -25,6 +25,18 @@ jobs:
             bash -n "$f"
           done
 
+      - name: Shell lint (shellcheck -S warning)
+        run: |
+          # Proposal: schema-and-catalog-drift. bash -n proves the scripts parse; it says nothing
+          # about a variable assigned and never read, an array expanded without an index, or a
+          # directive-worthy intentional pattern nobody marked. Ten warnings sat across five
+          # scripts (and seven more in adopt.d/, the sibling nobody measured) with this gate
+          # absent. Warning level, so style-only info is not a build failure; an intentional
+          # pattern carries a disable directive WITH its reason on the line above, which is how
+          # the next reader learns it was deliberate rather than missed.
+          shellcheck --version | head -2
+          shellcheck -S warning bin/*.sh adopt.d/*.sh
+
       - name: Python syntax (py_compile)
         run: python3 -m py_compile bin/*.py
 
@@ -1778,6 +1790,56 @@ jobs:
           ./bin/lint.sh --wiki "$VAULT"
           ./bin/adopt.sh --check --wiki "$VAULT"
 
+      - name: The soft-wrap gate judges curated prose, never raw/ capture
+        run: |
+          # Proposal: soft-wrap-lint-covers-the-ignored-raw-sessions-buffer. lint.sh's soft-wrap
+          # section read the UNPRUNED vault walk while every other content-node check in the same
+          # script prunes raw/ — so a hard-wrapped line in the git-ignored raw/sessions buffer (a
+          # file that cannot be staged and cannot enter the commit) refused commits of unrelated
+          # tracked content, and the remedy on offer was --no-verify. The same walk covered the
+          # TRACKED raw/ folders, whose contents are verbatim sources a reflow would corrupt.
+          #
+          # Three runs, and the two controls are the ones that matter: a fix that simply widened
+          # the exemption to the whole vault would pass the first assertion and fail the third.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-softwrap-raw"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-softwrap-raw.json"
+          V="$RUNNER_TEMP/softwrap-raw-vault"
+          ./bin/new-wiki.sh --path "$V" --boundary personal \
+            --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+          fail=0
+          # The fixture: a hard-wrapped pruned-marker in the session buffer, the shape a checkpoint
+          # session writes. Assert the PRECONDITIONS before the property — the file must be ignored
+          # AND must be something reflow would change, or the pass below proves nothing.
+          printf '## capture\n\n_(pruned 2026-01-01: this block was\npromoted into a note and\nthen pruned as spent)_\n' \
+            > "$V/raw/sessions/2026-01.md"
+          git -C "$V" check-ignore -q raw/sessions/2026-01.md \
+            || { echo "  FIXTURE BROKEN: raw/sessions file is not git-ignored"; fail=1; }
+          ./bin/reflow.sh --check "$V/raw/sessions/2026-01.md" >/dev/null 2>&1 \
+            && { echo "  FIXTURE BROKEN: buffer would not reflow, so the gate has nothing to skip"; fail=1; }
+          # 1. The property: an ignored file does not gate the vault's commit.
+          out="$(./bin/lint.sh --wiki "$V" 2>&1)" \
+            || { echo "  FAIL lint refused the vault over a git-ignored raw/sessions file"; printf '%s\n' "$out" | grep -e 'would reflow' -e '^lint:'; fail=1; }
+          # 2. Tracked raw/ is exempt too: a transcript is captured verbatim; a hard wrap in it is
+          #    the source's shape, not drift.
+          printf 'speaker one said this\nand then said that\n' > "$V/raw/transcripts/t.md"
+          ./bin/lint.sh --wiki "$V" >/dev/null 2>&1 \
+            || { echo "  FAIL lint refused the vault over a hard-wrapped tracked raw/transcripts file"; fail=1; }
+          # 3. NEAR-MISS CONTROL: a hard-wrapped CURATED page must still be refused, and the verdict
+          #    line must NAME the section — the second half of the report was that "FAILURES above"
+          #    named nothing and sat 130 lines below the one failing line.
+          printf -- '---\ntitle: n\nboundary: personal\n---\nline one\nline two\n' > "$V/notes/n.md"
+          out="$(./bin/lint.sh --wiki "$V" 2>&1)" \
+            && { echo "  FAIL a hard-wrapped notes/ page passed: the exemption is wider than raw/"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'would reflow: .*notes/n\.md' \
+            || { echo "  FAIL the refusal did not name the drifting curated page"; fail=1; }
+          printf '%s\n' "$out" | grep -q '^lint: FAILURES above .*soft-wrap' \
+            || { echo "  FAIL the verdict line does not name the failing section"; printf '%s\n' "$out" | tail -1; fail=1; }
+          rm "$V/notes/n.md"
+          [ "$fail" -eq 0 ] || exit 1
+          echo "  ok: ignored buffer and tracked raw/ do not gate; a curated page still does, by name"
+
       - name: The order update.sh prints lands both the catalog and the pin
         run: |
           # THE BIND: index.md's skills catalog is generated from the PINNED engine, so a release
@@ -3202,6 +3264,92 @@ jobs:
 
           exit "$fail"
 
+      - name: An index hook over budget or carrying a date is named, and a near-miss is not
+        run: |
+          # Proposal: lints-for-always-loaded-surfaces. index.md is loaded on every turn, and
+          # nothing measured its hooks. Red before green on the SUBJECT: one 40-word hook with
+          # a date, under --strict, must fail naming that line; a 24-word undated hook must
+          # not; and a hook whose NOTE body carries a date must not — the rule is about the hook
+          # line, and a check that opened the note would pass its own obvious test and fail on
+          # every real vault. Control: the summary counts must move with the input.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-hooks"
+          git config --global user.email ci@example.com; git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-hooks.json"
+          V="$RUNNER_TEMP/hooks-vault"
+          ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
+            --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+          fail=0
+          ./bin/lint-index-hooks.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && echo "  ok   a scaffolded index passes under --strict" \
+            || { echo "  FAIL the scaffolded index has findings"; fail=1; }
+          long="- [[long-note]] — $(printf 'word %.0s' $(seq 1 38)) on 2026-01-01"
+          printf '%s\n' "$long" >> "$V/index.md"
+          [ "$(grep -c '^- \[\[long-note\]\]' "$V/index.md")" = 1 ] \
+            || { echo "  FIXTURE BROKEN: the long hook was not appended"; fail=1; }
+          out="$(./bin/lint-index-hooks.sh --wiki "$V" --strict 2>&1)" && rc=0 || rc=$?
+          [ "$rc" != 0 ] && echo "  ok   --strict fails on a 40-word dated hook" \
+            || { echo "  FAIL --strict passed a 40-word dated hook"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'hook is 4[0-9] words.*\[\[long-note\]\]' \
+            && echo "  ok   ...naming the hook and its length" \
+            || { echo "  FAIL the finding does not name the hook: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'inlines a date.*\[\[long-note\]\]' \
+            && echo "  ok   ...and the inlined date" \
+            || { echo "  FAIL the date was not reported: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q '1 over 25 words, 1 dated' \
+            && echo "  ok   the counts moved with the input (control against a constant check)" \
+            || { echo "  FAIL the summary counts did not reflect the fixture: $out"; fail=1; }
+          ./bin/lint-index-hooks.sh --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   without --strict it warns and passes (warn-first)" \
+            || { echo "  FAIL the default tier failed the vault"; fail=1; }
+          # NEAR-MISSES
+          sed -i '/^- \[\[long-note\]\]/d' "$V/index.md"
+          short="- [[short-note]] — $(printf 'word %.0s' $(seq 1 24))"
+          printf '%s\n' "$short" >> "$V/index.md"
+          printf -- '---\ntitle: short\nboundary: personal\n---\nwritten 2026-01-01, revised 2026-02-02\n' > "$V/notes/short-note.md"
+          out="$(./bin/lint-index-hooks.sh --wiki "$V" --strict 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && echo "  ok   a 24-word undated hook is not flagged" \
+            || { echo "  FAIL a 24-word hook was flagged: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'inlines a date' \
+            && { echo "  FAIL a date in the NOTE body was read as a hook finding"; fail=1; } \
+            || echo "  ok   a date inside the note is not the hook's business"
+          exit "$fail"
+
+      - name: The always-on budget is the vault's, and a section over it is named
+        run: |
+          # Proposal: lints-for-always-loaded-surfaces. No budget -> counts and a pass; a budget
+          # below the count -> fail naming the section; a budget above -> pass, so the failure is
+          # attributable to the number and not to the file being read at all.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-alwayson"
+          git config --global user.email ci@example.com; git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-alwayson.json"
+          V="$RUNNER_TEMP/alwayson-vault"
+          ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
+            --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+          fail=0
+          printf '\n## Working preferences\n\n%s\n' "$(printf 'word %.0s' $(seq 1 60))" >> "$V/CLAUDE.md"
+          out="$(./bin/lint-always-on.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && echo "  ok   no budget declared: reports and passes" \
+            || { echo "  FAIL failed with no budget declared: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q '60 words  ## Working preferences' \
+            && echo "  ok   ...with the section's count" \
+            || { echo "  FAIL the count is missing or wrong: $out"; fail=1; }
+          printf 'always_on_budget_words = 40\n' >> "$V/.wiki-gates.conf"
+          out="$(./bin/lint-always-on.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" != 0 ] && echo "  ok   a budget below the count fails" \
+            || { echo "  FAIL passed a section over its declared budget: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'Working preferences.*budget of 40' \
+            && echo "  ok   ...naming the section and the budget" \
+            || { echo "  FAIL the failing section is not named: $out"; fail=1; }
+          sed -i 's/^always_on_budget_words = 40$/always_on_budget_words = 80/' "$V/.wiki-gates.conf"
+          ./bin/lint-always-on.sh --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   a budget above the count passes (the number decides, not the file)" \
+            || { echo "  FAIL failed with the budget above the count"; fail=1; }
+          out="$(./bin/lint.sh --wiki "$V" 2>&1)" || true
+          printf '%s\n' "$out" | grep -q '=== index hooks ===' && printf '%s\n' "$out" | grep -q '=== always-on budget ===' \
+            && echo "  ok   lint.sh runs both as named sections" \
+            || { echo "  FAIL lint.sh does not carry the new sections"; fail=1; }
+          exit "$fail"
+
       - name: A project summary must name identity, not state
         run: |
           # The gate is a PROXY for a SCHEMA rule, enforced through a content-hashed
@@ -3285,6 +3433,39 @@ jobs:
             && { echo "  FAIL gate references a model or network verb"; fail=1; } \
             || echo "  ok   gate invokes no model and no network verb"
 
+          exit "$fail"
+
+      - name: A 40-word summary on a done page is warned about, and fails only under --strict
+        run: |
+          # Proposal: lints-for-always-loaded-surfaces. summary: is identity, which does not
+          # freeze differently by status — but the volatility check skipped done pages entirely
+          # and measured markers, never length, so a 54-word summary passed. Control: the same
+          # page was skipped before this change, so the warning is attributable to the cap.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-sumcap"
+          git config --global user.email ci@example.com; git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-sumcap.json"
+          V="$RUNNER_TEMP/sumcap-vault"
+          ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
+            --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+          fail=0
+          long="$(printf 'word %.0s' $(seq 1 40))"
+          printf -- '---\ntitle: Long\ntype: project\nstatus: done\nsummary: "%s"\nboundary: personal\n---\n# Long\n' "$long" > "$V/projects/long.md"
+          out="$(./bin/lint-summary-volatility.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && echo "  ok   warn-first: a long summary does not fail the default run" \
+            || { echo "  FAIL the default tier failed on a long summary: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'projects/long.md (status: done) — summary is 40 words' \
+            && echo "  ok   ...but the done page is warned about, by length" \
+            || { echo "  FAIL no length warning for the done page: $out"; fail=1; }
+          ./bin/lint-summary-volatility.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && { echo "  FAIL --strict passed a 40-word summary"; fail=1; } \
+            || echo "  ok   --strict fails it"
+          # NEAR-MISS: 25 words exactly is within budget.
+          ok25="$(printf 'word %.0s' $(seq 1 25))"
+          printf -- '---\ntitle: Ok\ntype: project\nstatus: active\nsummary: "%s"\nboundary: personal\n---\n# Ok\n' "$ok25" > "$V/projects/ok.md"
+          rm "$V/projects/long.md"
+          ./bin/lint-summary-volatility.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && echo "  ok   a 25-word summary is not flagged" \
+            || { echo "  FAIL a summary at the budget was flagged"; fail=1; }
           exit "$fail"
 
       - name: The capture hook cannot deadlock a later session's integrate
@@ -3836,6 +4017,13 @@ jobs:
           printf '%s' "$out" | grep -q 'rebase main' \
             && echo "  ok   ...and offers the remedy against local main" \
             || { echo "  FAIL no remedy offered"; fail=1; }
+          # NEAR-MISS for case (4) below: ahead-only is the common commit-now-push-later state,
+          # and a fix keyed on "canonical differs from origin" would print the heavier divergence
+          # remedy on every ordinary session — which is how a correct warning becomes one nobody
+          # reads. Proposal: worktree-staleness-warning-omits-the-behind-case.
+          printf '%s' "$out" | grep -q 'DIVERGED' \
+            && { echo "  FAIL the ahead-only state was reported as divergence"; fail=1; } \
+            || echo "  ok   ahead-only is not called divergence"
 
           # the base is still origin/main: this warns, it must never silently re-base
           [ "$(git -C "$W" rev-parse HEAD)" = "$(git -C "$V" rev-parse origin/main)" ] \
@@ -3854,6 +4042,55 @@ jobs:
           printf '%s' "$out3" | grep -q 'lacks' \
             && { echo "  FAIL warned about a base that omits nothing"; fail=1; } \
             || echo "  ok   a level base is not warned about"
+
+          # (4) AHEAD AND BEHIND — Proposal: worktree-staleness-warning-omits-the-behind-case.
+          # The warning measured one count and printed `rebase main` unconditionally. When
+          # canonical main is ALSO behind origin/main (another session's unpushed commit here,
+          # merges landed on the remote since), that command detaches the branch from
+          # origin/main: its push is refused as non-fast-forward and integrate refuses too,
+          # correctly, since fast-forwarding main to a branch that no longer contains
+          # origin/main would discard remote history. Observed live at 1 ahead / 1 behind.
+          # The right sentence already existed in this file — on integrate's refusal, reached
+          # only after the damage. The test runs the commands the warning PRINTS, rather than
+          # matching its wording, so a better-worded fix still passes.
+          W4="$(WIKI_WT_SESSION=f4 "$VW" ensure 2>/dev/null)"
+          git clone -q "$T/origin.git" "$T/peer" 2>/dev/null
+          printf 'landed on the remote\n' > "$T/peer/remote.md"
+          git -C "$T/peer" add -A; git -C "$T/peer" commit -qm "remote work"; git -C "$T/peer" push -q origin main
+          git -C "$V" fetch -q origin main                         # behind: fetched, not merged
+          printf 'another session, unpushed\n' > "$V/local.md"
+          git -C "$V" add -A; git -C "$V" commit -qm "local unpushed" # ahead
+          # Precondition: the fixture really is in the ahead-AND-behind state, or (4) tests (1).
+          [ "$(git -C "$V" rev-list --count origin/main..main)" = 1 ] \
+            && [ "$(git -C "$V" rev-list --count main..origin/main)" = 1 ] \
+            || { echo "  FIXTURE BROKEN: canonical is not 1 ahead / 1 behind"; fail=1; }
+          out4="$(WIKI_WT_SESSION=f4 "$VW" ensure 2>&1 >/dev/null)"
+          printf '%s\n' "$out4"
+          printf '%s' "$out4" | grep -q 'origin/main lacks' \
+            && echo "  ok   the ahead half is still reported" \
+            || { echo "  FAIL the ahead warning vanished when behind was added"; fail=1; }
+          printf '%s' "$out4" | grep -q 'DIVERGED' \
+            && echo "  ok   the behind half is measured and named" \
+            || { echo "  FAIL divergence was not named — the second count is not taken"; fail=1; }
+          printf '%s' "$out4" | grep -q 'Rebase before surveying or writing:' \
+            && { echo "  FAIL the ahead-only remedy was printed in the divergent state"; fail=1; } \
+            || echo "  ok   the ahead-only remedy is withheld"
+          # Run exactly the commands the warning prints, in order. If following the printed
+          # advice leaves the branch outside origin/main's history, the advice is the defect.
+          cmds="$(printf '%s\n' "$out4" | sed -n 's/^ *\(git -C .*\)$/\1/p')"
+          [ "$(printf '%s\n' "$cmds" | grep -c .)" -ge 1 ] \
+            || { echo "  FAIL no runnable command printed for the divergent state"; fail=1; }
+          while IFS= read -r c; do [ -n "$c" ] && eval "$c" >/dev/null 2>&1; done <<< "$cmds"
+          br4="$(git -C "$W4" rev-parse --abbrev-ref HEAD)"
+          git -C "$V" merge-base --is-ancestor origin/main "$br4" \
+            && echo "  ok   following the printed remedy keeps the branch a descendant of origin/main" \
+            || { echo "  FAIL the printed remedy detached the branch from origin/main"; fail=1; }
+          git -C "$V" merge-base --is-ancestor main "$br4" \
+            && echo "  ok   ...and of local main, so integrate can fast-forward to it" \
+            || { echo "  FAIL local main is not an ancestor of the branch after the remedy"; fail=1; }
+          ( cd "$W4" && "$VW" integrate >/dev/null 2>&1 ) \
+            && echo "  ok   integrate reconciles the state the remedy leaves" \
+            || { echo "  FAIL integrate refused after following the printed remedy"; fail=1; }
 
           exit "$fail"
 
@@ -4146,6 +4383,96 @@ jobs:
           ./bin/lint-docs.sh >/dev/null 2>&1 \
             && echo "  ok   docs restored, gate green again" \
             || { echo "  FAIL the restore did not put USAGE.md back"; fail=1; }
+          exit "$fail"
+
+      - name: lint-docs rejects a skill description the router would cut
+        run: |
+          # Proposal: skills-descriptions-exceed-router-cut. The host truncates each description
+          # at ~1536 characters before routing, and the clauses past that point are the
+          # `Distinct from` / `NOT for` exclusions — so an over-long description keeps firing on
+          # its triggers while the rules that hand a case to a sibling silently stop applying.
+          # Three shipped descriptions were over the cut and nothing measured them. Prove the
+          # gate can go red, and that its warning tier is a warning: a check that errors at 1400
+          # would have been the always-red gate this repo keeps having to un-bypass.
+          fail=0
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   the live skills pass as they stand" \
+            || { echo "  FAIL lint-docs is red before the fixture is applied"; fail=1; }
+          F=skills/wiki-repo/SKILL.md
+          cp "$F" "$RUNNER_TEMP/SKILL.keep"
+          base="$(awk '/^description:/{sub(/^description:[ \t]*/,""); print length($0); exit}' "$F")"
+          # (1) over the budget by a clause: pad to 1501+ characters
+          pad="$(printf '%*s' $((1501 - base)) '' | tr ' ' x)"
+          perl -pi -e 'if (!$d && /^description: /) { s/$/ '"$pad"'/; $d=1 }' "$F"
+          len="$(awk '/^description:/{sub(/^description:[ \t]*/,""); print length($0); exit}' "$F")"
+          [ "$len" -gt 1500 ] \
+            && echo "  ok   fixture applied: description is now $len characters" \
+            || { echo "  FIXTURE BROKEN: description is $len characters, not over 1500"; fail=1; }
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          printf '%s\n' "$out" | grep -q "wiki-repo/SKILL.md description is $len characters" \
+            && echo "  ok   ...and lint-docs names the file and the length" \
+            || { echo "  FAIL lint-docs did not name the over-long description: $out"; fail=1; }
+          [ "$rc" != "0" ] \
+            && echo "  ok   ...and exits non-zero, so CI fails on it" \
+            || { echo "  FAIL lint-docs exited 0 with a description over the cut"; fail=1; }
+          # (2) NEAR-MISS: inside the budget but past the warning line must WARN and pass —
+          #     the tier exists so a description is named before it crosses, not refused at it.
+          cp "$RUNNER_TEMP/SKILL.keep" "$F"
+          pad="$(printf '%*s' $((1450 - base)) '' | tr ' ' x)"
+          perl -pi -e 'if (!$d && /^description: /) { s/$/ '"$pad"'/; $d=1 }' "$F"
+          len="$(awk '/^description:/{sub(/^description:[ \t]*/,""); print length($0); exit}' "$F")"
+          [ "$len" -gt 1400 ] && [ "$len" -le 1500 ] \
+            || { echo "  FIXTURE BROKEN: near-miss description is $len characters, not in (1400,1500]"; fail=1; }
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          cp "$RUNNER_TEMP/SKILL.keep" "$F"
+          [ "$rc" = "0" ] \
+            && echo "  ok   a description under 1500 is not refused" \
+            || { echo "  FAIL a $len-character description was refused: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q "warning: skills/wiki-repo/SKILL.md description is $len" \
+            && echo "  ok   ...but is warned about by name, before it crosses" \
+            || { echo "  FAIL no warning for a description past 1400: $out"; fail=1; }
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   skill restored, gate green again" \
+            || { echo "  FAIL the restore did not put the skill back"; fail=1; }
+          exit "$fail"
+
+      - name: lint-docs catches a skill reference file nothing links to
+        run: |
+          # Proposal: skill-bodies-carry-design-history. Content moved from a SKILL.md body into
+          # references/ is loaded only when the body links to it; an orphan reference file is
+          # content that silently left the skill. Prove the gate reds on an orphan, and that a
+          # mention inside a code fence does not count as a link (the near-miss).
+          fail=0
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   the live skills pass as they stand" \
+            || { echo "  FAIL lint-docs is red before the fixture is applied"; fail=1; }
+          D=skills/engine-proposal/references; F="$D/orphan-fixture.md"
+          [ -d "$D" ] || { echo "  FIXTURE BROKEN: $D does not exist"; exit 1; }
+          printf '# orphan\n\nnothing links here\n' > "$F"
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          printf '%s\n' "$out" | grep -q 'references/orphan-fixture.md is linked from nowhere' \
+            && echo "  ok   lint-docs names the orphan reference" \
+            || { echo "  FAIL lint-docs did not name the orphan: $out"; fail=1; }
+          [ "$rc" != "0" ] \
+            && echo "  ok   ...and exits non-zero" \
+            || { echo "  FAIL lint-docs exited 0 with an orphan reference file"; fail=1; }
+          # NEAR-MISS: a mention inside a code fence is a quoted example, not a link.
+          B=skills/engine-proposal/SKILL.md; cp "$B" "$RUNNER_TEMP/SKILL.keep"
+          printf '\n```\nsee references/orphan-fixture.md\n```\n' >> "$B"
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          cp "$RUNNER_TEMP/SKILL.keep" "$B"
+          [ "$rc" != "0" ] \
+            && echo "  ok   a fenced mention does not satisfy the link check" \
+            || { echo "  FAIL a path quoted inside a code fence was accepted as a link"; fail=1; }
+          # ...and a real prose link does.
+          printf '\nSee [orphan](references/orphan-fixture.md).\n' >> "$B"
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   a prose link satisfies it" \
+            || { echo "  FAIL a linked reference file was still reported"; fail=1; }
+          cp "$RUNNER_TEMP/SKILL.keep" "$B"; rm -f "$F"
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   fixture removed, gate green again" \
+            || { echo "  FAIL the restore did not put the tree back"; fail=1; }
           exit "$fail"
 
       - name: A handoff skill cannot site the Expected-versus-fix rule on one surface only

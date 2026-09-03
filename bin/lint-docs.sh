@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # lint-docs.sh — keep the usage docs honest so new users adopt with the lowest friction.
-# Seven cheap, deterministic checks (no LLM, never `claude`):
+# Nine cheap, deterministic checks (no LLM, never `claude`):
 #   1. every skill (skills/*/) is mentioned in USAGE.md  — nothing user-facing goes undocumented
 #   2. every engine-shipped file USAGE/SCHEMA/README reference actually exists — no stale
 #      pointers to deleted tools, whether written bare (`foo.sh`) or as a path (`adopt.d/foo.sh`)
@@ -12,6 +12,13 @@
 #      and the snippet is what people copy into a real settings.json
 #   7. a defect-report template's Expected-versus-fix rule is sited on BOTH surfaces, not
 #      only in the half the reporter never reads (v1.68.0)
+#   8. every skill's `description:` fits the host router's cut — error above 1500
+#      characters, warning above 1400 — because the clauses past the cut are the
+#      `Distinct from` / `NOT for` exclusions, and a clause the router cannot see is
+#      not a rule (v1.74.0)
+#   9. every `skills/<s>/references/*.md` is linked from that skill's SKILL.md — a
+#      reference file nothing links to is never loaded, so content moved there to
+#      slim a body has silently left the skill (v1.75.0)
 #      — see the section comments below; the count above and this list have both been wrong
 #      before, so keep all three in step: this header, the numbered sections, and the
 #      success line at the bottom that names each check to the reader.
@@ -290,7 +297,63 @@ for f in "$ROOT"/skills/*/SKILL.md; do
   fi
 done
 
+# 8. every skill description fits the host router's cut -----------------------------------
+# The host presents each skill's `description:` to its routing step truncated at roughly
+# 1536 characters. The description is the routing surface, and its shape is what/when,
+# `Triggers:`, then `Distinct from` and `NOT for` — so the clauses that fall past the cut
+# are exactly the exclusions, and the skill keeps routing on its positive triggers while
+# the rules that hand a case to a sibling silently stop applying. Measured at v1.73.4:
+# three descriptions at 2446 / 1982 / 1845 characters, every `NOT for` past the cut, and
+# nothing here read the length — the generator read `description:` only to render it.
+#
+# Two tiers, both against the VALUE (the `description: ` prefix stripped — measuring the
+# raw line shifts every number by exactly 13 and the two sets look like a disagreement):
+# error above DESC_MAX (1500, a margin under the cut), warning above DESC_WARN (1400) so a
+# description creeping toward the cut is named before it crosses. A description over the
+# budget is not shortened here — which clauses survive is the skill author's call.
+DESC_MAX=1500
+DESC_WARN=1400
+for f in "$ROOT"/skills/*/SKILL.md; do
+  [ -f "$f" ] || continue
+  rel="skills/$(basename "$(dirname "$f")")/SKILL.md"
+  len="$(awk '
+    NR==1 && $0=="---" { infm=1; next }
+    infm && $0=="---"  { exit }
+    infm && /^description:/ { sub(/^description:[ \t]*/, ""); print length($0); exit }
+  ' "$f")"
+  [ -n "$len" ] || { echo "lint-docs: $rel has no description: — the router has nothing to match" >&2; fail=1; continue; }
+  if [ "$len" -gt "$DESC_MAX" ]; then
+    echo "lint-docs: $rel description is $len characters; the router cuts at ~1536, so anything past $DESC_MAX is unseen at routing time" >&2
+    echo "lint-docs:   the clauses that fall off are 'Distinct from' / 'NOT for' — move rationale to the body, keep the exclusions" >&2
+    fail=1
+  elif [ "$len" -gt "$DESC_WARN" ]; then
+    echo "lint-docs: warning: $rel description is $len characters (budget $DESC_MAX; the router cuts at ~1536)" >&2
+  fi
+done
+
+# 9. every references/ file is linked from its skill body -----------------------------------
+# A skill body is loaded whole on every invocation; a `references/` file is loaded only when
+# the body links to it. Moving history and worked examples out of a body to keep it under
+# budget is therefore only a move if the body still points at the file — otherwise the
+# content has silently left the skill, and nothing reports it. The link is matched as the
+# path `references/<name>` in prose or a markdown link; a mention inside a code fence is a
+# quoted example and does not count.
+for d in "$ROOT"/skills/*/references; do
+  [ -d "$d" ] || continue
+  skill="$(basename "$(dirname "$d")")"
+  body="$ROOT/skills/$skill/SKILL.md"
+  for r in "$d"/*.md; do
+    [ -f "$r" ] || continue
+    name="$(basename "$r")"
+    if ! awk '/^[[:space:]]*```/ { inb = !inb; next } !inb' "$body" | grep -qF "references/$name"; then
+      echo "lint-docs: skills/$skill/references/$name is linked from nowhere in skills/$skill/SKILL.md" >&2
+      echo "lint-docs:   a reference file the body never points at is never loaded — the content has left the skill" >&2
+      fail=1
+    fi
+  done
+done
+
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces"
+  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces; every skill description fits the router's cut; every references/ file is linked from its skill"
 fi
 exit "$fail"
