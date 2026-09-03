@@ -17,6 +17,7 @@
 set -uo pipefail
 
 : "${ENGINE:?}"
+# shellcheck source=bin/adopt-lib.sh
 . "${ADOPT_LIB:?}" || exit 3
 
 SRC="$ENGINE/skills"

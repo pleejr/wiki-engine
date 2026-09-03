@@ -25,6 +25,18 @@ jobs:
             bash -n "$f"
           done
 
+      - name: Shell lint (shellcheck -S warning)
+        run: |
+          # Proposal: schema-and-catalog-drift. bash -n proves the scripts parse; it says nothing
+          # about a variable assigned and never read, an array expanded without an index, or a
+          # directive-worthy intentional pattern nobody marked. Ten warnings sat across five
+          # scripts (and seven more in adopt.d/, the sibling nobody measured) with this gate
+          # absent. Warning level, so style-only info is not a build failure; an intentional
+          # pattern carries a disable directive WITH its reason on the line above, which is how
+          # the next reader learns it was deliberate rather than missed.
+          shellcheck --version | head -2
+          shellcheck -S warning bin/*.sh adopt.d/*.sh
+
       - name: Python syntax (py_compile)
         run: python3 -m py_compile bin/*.py
 

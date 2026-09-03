@@ -30,8 +30,8 @@
 #                              file, and says so rather than passing silently
 #
 # Checks 6–9 are vault-invariant GATES: they must hold at zero, so lint.sh doubles
-# as the enforced write-time gate (vault CI + pre-commit) — see the pleejr-wiki
-# engine-gates-at-zero project. 6–8 carry no per-vault values, so they ship
+# as the enforced write-time gate (vault CI + pre-commit): a gate held at zero has no
+# backlog of known violations to normalize. 6–8 carry no per-vault values, so they ship
 # engine-default-on; 9 needs a consumer-specific denylist and therefore sits behind
 # the vault seam ($WIKI/.wiki-gates.conf) — the engine composes it, the vault fills
 # it in, and the engine names no consumer's strings.

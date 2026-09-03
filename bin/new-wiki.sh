@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 VAULT_PATH="" WIKI_NAME="" BOUNDARY="" GIT_EMAIL="" GIT_NAME="" ENGINE_URL="" LINK_SKILLS=1 RAG=1
-WIRE_SHELL=0 SHELL_RC="" WIRE_CLAUDE_MD=0 REMOTE_URL="" CREATE_REMOTE="" VISIBILITY="private" PUSH=0
+WIRE_SHELL=0 SHELL_RC="" WIRE_CLAUDE_MD=0 REMOTE_URL="" CREATE_REMOTE="" VISIBILITY="private"
 
 usage() {
   cat <<'USAGE'
@@ -57,8 +57,8 @@ while [ $# -gt 0 ]; do
     --wire-shell) WIRE_SHELL=1
       case "${2:-}" in ""|--*) SHELL_RC="$HOME/.zshrc"; shift;; *) SHELL_RC="$2"; shift 2;; esac;;
     --wire-claude-md) WIRE_CLAUDE_MD=1; shift;;
-    --remote) REMOTE_URL="$2"; PUSH=1; shift 2;;
-    --create-remote) CREATE_REMOTE="$2"; PUSH=1; shift 2;;
+    --remote) REMOTE_URL="$2"; shift 2;;
+    --create-remote) CREATE_REMOTE="$2"; shift 2;;
     --visibility) VISIBILITY="$2"; shift 2;;
     -h|--help) usage; exit 0;;
     *) echo "unknown arg: $1" >&2; usage; exit 1;;
@@ -80,6 +80,7 @@ case "$BOUNDARY" in personal|work) ;; *) echo "error: --boundary must be 'person
 case "$VISIBILITY" in private|public|internal) ;; *) echo "error: --visibility must be private|public|internal" >&2; exit 1;; esac
 [ -n "$WIKI_NAME" ] || WIKI_NAME="$(basename "$VAULT_PATH")"
 # Expand a leading ~ that survives when --path is quoted.
+# shellcheck disable=SC2088  # a LITERAL leading ~/ is what this expands by hand
 case "$VAULT_PATH" in "~/"*) VAULT_PATH="$HOME/${VAULT_PATH#\~/}";; esac
 
 if [ -z "$ENGINE_URL" ]; then

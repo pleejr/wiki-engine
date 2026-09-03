@@ -12,6 +12,7 @@
 set -uo pipefail
 
 : "${WIKI:?}"; : "${ENGINE:?}"
+# shellcheck source=bin/adopt-lib.sh
 . "${ADOPT_LIB:?}" || exit 3
 
 TMPL="$ENGINE/scaffold/pre-commit"

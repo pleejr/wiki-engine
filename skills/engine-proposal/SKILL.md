@@ -4,7 +4,6 @@ description: Hand a wiki-engine improvement or DEFECT from a consumer vault upst
 status: active
 summary: "genericize + boundary-scrub a consumer vault's engine improvement OR defect report into a self-contained, scan-verified handoff block for the engine-dev vault (creates no consumer node); on the engine-dev end, reproduce/design-review before building."
 updated: 2026-09-03
-used_by: []
 ---
 
 # engine-proposal — hand a scrubbed engine improvement *or defect* upstream
