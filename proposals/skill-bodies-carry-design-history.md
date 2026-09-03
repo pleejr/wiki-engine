@@ -1,6 +1,7 @@
 ---
 slug: skill-bodies-carry-design-history
-outcome: open
+outcome: accepted
+reason: "accepted — every measurement reproduced at HEAD (4192 / 3366 / 2607 / 1370 words; nine Hard-safety-rule lines across seven files; four fork-bomb files; three backticked lesson- slugs; wiki-context step 0 running engine-version.sh) and every per-skill list applied as written: §5a deleted with the one-sentence stash note kept in §5; the worked examples, four-claims table, checklist, trailer history and diff-review gate moved VERBATIM to references/defect-report.md and references/intake.md, both linked from the body; skill-candidates keeps the named blocks verbatim and collapses the restatements to one clause each with five one-line Rules; checkpoint §0 and §3 reduced to the named content; prove-the-test-can-fail's line 14 to one clause, version tags and lesson- slugs dropped; the Hard safety rule one-liner in every skill's Rules; wiki-context step 0 replaced by one line and SCHEMA/USAGE naming the hook. All acceptance criteria hold: copy-pastable absent, bodies under 1800 / 1800 / 1500, at most one Hard-safety-rule line per file, no fork-bomb, no lesson- slug outside crossover's placeholder filenames, wiki-context runs no engine-version.sh, every references/ file linked. One addition beyond the ask: lint-docs check 9 makes the last criterion a gate, because the existing Expected-versus-fix rewording fixture immediately showed how a body edit silently orphans a reference file. One edit outside the lists: checkpoint §6 was trimmed to the offer, the two outcomes and the why-here to meet the 1500 budget; its mechanism is untouched and is the subject of checkpoint-mining-offer-can-use-native-agent."
 received: 2026-09-03
 ---
 

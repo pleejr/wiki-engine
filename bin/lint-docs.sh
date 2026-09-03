@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # lint-docs.sh — keep the usage docs honest so new users adopt with the lowest friction.
-# Eight cheap, deterministic checks (no LLM, never `claude`):
+# Nine cheap, deterministic checks (no LLM, never `claude`):
 #   1. every skill (skills/*/) is mentioned in USAGE.md  — nothing user-facing goes undocumented
 #   2. every engine-shipped file USAGE/SCHEMA/README reference actually exists — no stale
 #      pointers to deleted tools, whether written bare (`foo.sh`) or as a path (`adopt.d/foo.sh`)
@@ -16,6 +16,9 @@
 #      characters, warning above 1400 — because the clauses past the cut are the
 #      `Distinct from` / `NOT for` exclusions, and a clause the router cannot see is
 #      not a rule (v1.74.0)
+#   9. every `skills/<s>/references/*.md` is linked from that skill's SKILL.md — a
+#      reference file nothing links to is never loaded, so content moved there to
+#      slim a body has silently left the skill (v1.75.0)
 #      — see the section comments below; the count above and this list have both been wrong
 #      before, so keep all three in step: this header, the numbered sections, and the
 #      success line at the bottom that names each check to the reader.
@@ -328,7 +331,29 @@ for f in "$ROOT"/skills/*/SKILL.md; do
   fi
 done
 
+# 9. every references/ file is linked from its skill body -----------------------------------
+# A skill body is loaded whole on every invocation; a `references/` file is loaded only when
+# the body links to it. Moving history and worked examples out of a body to keep it under
+# budget is therefore only a move if the body still points at the file — otherwise the
+# content has silently left the skill, and nothing reports it. The link is matched as the
+# path `references/<name>` in prose or a markdown link; a mention inside a code fence is a
+# quoted example and does not count.
+for d in "$ROOT"/skills/*/references; do
+  [ -d "$d" ] || continue
+  skill="$(basename "$(dirname "$d")")"
+  body="$ROOT/skills/$skill/SKILL.md"
+  for r in "$d"/*.md; do
+    [ -f "$r" ] || continue
+    name="$(basename "$r")"
+    if ! awk '/^[[:space:]]*```/ { inb = !inb; next } !inb' "$body" | grep -qF "references/$name"; then
+      echo "lint-docs: skills/$skill/references/$name is linked from nowhere in skills/$skill/SKILL.md" >&2
+      echo "lint-docs:   a reference file the body never points at is never loaded — the content has left the skill" >&2
+      fail=1
+    fi
+  done
+done
+
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces; every skill description fits the router's cut"
+  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces; every skill description fits the router's cut; every references/ file is linked from its skill"
 fi
 exit "$fail"

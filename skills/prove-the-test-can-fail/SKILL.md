@@ -10,7 +10,7 @@ updated: 2026-09-03
 
 A check that has never failed is not known to work. It is known to be *quiet*, and quiet is what a broken check and a satisfied check have in common. The only evidence that separates them is watching the check reject something — which means breaking the thing it watches, on purpose, and looking at the output.
 
-This is written down in the record already, and it did not transfer. `lesson-a-constant-check-is-not-a-check` was written 2026-07-27 and amended twice; the same defect shipped again in v1.57.0 (a coverage check satisfied by the word *drainable*), in v1.58.0 (a gate that could not go red because a stray backtick made it read a snippet as prose), in the v1.62.0 fixture (which passed trivially because the step it tested had silently done nothing), and in v1.62.1 (a mode query that read a mention as a verdict). Four instances in three weeks, by someone who had the note available each time. **A rule you must remember is weaker than a procedure you run**, which is why this exists as a skill rather than another note.
+This rule was already written down in the record, and it did not transfer: the same class shipped four times in three weeks with the lesson note available each time. **A rule you must remember is weaker than a procedure you run**, which is why this exists as a skill rather than another note.
 
 ## Where it runs
 
@@ -46,9 +46,9 @@ Pick the mutation the check exists to catch — the actual failure it was writte
 
 Run the check's own command. Three things must all hold, and each has failed on its own in this repo's history:
 
-- **A non-zero exit.** Not "no output", not "did not run". A step that never executed reports nothing, which reads exactly like a step that passed — that is `lesson-no-run-is-not-a-red-run`, and it is why a skipped CI job once looked like a green one.
+- **A non-zero exit.** Not "no output", not "did not run". A step that never executed reports nothing, which reads exactly like a step that passed — it is how a skipped CI job once looked like a green one.
 - **A message naming the subject you broke.** A red for the wrong reason is not evidence. A check that fails because a path was missing, a shell expanded something unexpectedly, or an unrelated step blew up has told you nothing about the property under test.
-- **Proof the mutation took effect.** Read the file back, or diff it. A fixture that silently failed to apply gives a green that means nothing, and that is exactly how the v1.62.0 sequence test passed before its fix: the step it depended on had quietly done nothing, so there was nothing to detect.
+- **Proof the mutation took effect.** Read the file back, or diff it. A fixture that silently failed to apply gives a green that means nothing — one sequence test here passed that way before its fix: the step it depended on had quietly done nothing, so there was nothing to detect.
 
 If the check stays green, you have found a real defect — the check does not do what it claims. Report it and stop; do not adjust the mutation until it goes red, which is how a check gets tuned to its test instead of to its subject.
 
@@ -75,10 +75,10 @@ So feed it a **near-miss**: something that resembles the subject closely enough 
 
 Concrete shapes, all drawn from real defects here:
 
-- The check greps a name — supply a longer word containing it. `drain` was "documented" by *drainable* in an unrelated table row (v1.57.0).
-- The check matches a tag or key — supply one with the same prefix. A note tagged `skill-candidates-meta` satisfied a query looking for `skill-candidate` (v1.62.1).
+- The check greps a name — supply a longer word containing it. `drain` was "documented" by *drainable* in an unrelated table row.
+- The check matches a tag or key — supply one with the same prefix. A note tagged `skill-candidates-meta` satisfied a query looking for `skill-candidate`.
 - The check counts or enumerates — supply an item that inflates the count without being a member. `ci` matched inside "de**ci**sion" and "spe**ci**fic", returning 112 of 117 notes against 9 real ones.
-- The check reads a version or a timestamp — supply one that never changes, per `lesson-a-version-that-never-changes-is-not-a-version`.
+- The check reads a version or a timestamp — supply one that never changes; a version that never changes is not a version.
 
 Restore afterwards exactly as in step 4.
 

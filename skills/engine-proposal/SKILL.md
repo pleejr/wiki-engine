@@ -8,38 +8,36 @@ updated: 2026-09-03
 
 # engine-proposal — hand a scrubbed engine improvement *or defect* upstream
 
-A consumer vault (one that only *runs* the engine, where engine development does not happen) keeps discovering engine-improvement ideas mid-work, each soaked in that vault's private/domain context. Handing them to the engine-dev vault by hand is inconsistent and a boundary risk — identifiers leak unless someone scrubs them every time. This skill makes that handoff repeatable and boundary-safe: it genericizes the idea, gates it through a mechanical scan, and produces a self-contained kickoff block — **without writing anything into the consumer vault.**
+A consumer vault (one that only *runs* the engine) discovers engine ideas and defects mid-work, each soaked in private context. This skill makes the handoff repeatable and boundary-safe: genericize, gate through a mechanical scan, submit as a file in the engine's `proposals/` queue — **without writing anything into the consumer vault.** On the engine-dev end it drives intake (§6).
 
-**Vault**: `$WIKI_PATH` — the consumer vault on *this* machine; must be set. The deterministic gate lives in `engine/bin/engine-proposal.sh`; this skill owns the genericization and drives the handoff.
+**Vault**: `$WIKI_PATH` — the consumer vault on *this* machine; must be set. The deterministic gate is `$WIKI_PATH/engine/bin/engine-proposal.sh`; this skill owns the genericization and the judgement.
 
 ## Routing — this vs crossover vs checkpoint
 
-- **engine-proposal** — a *new, forward-only* idea that never was a consumer node and shouldn't become one. No integrity handshake, no deletion; the destination (engine-dev vault) owns everything that results.
-- **crossover** — *moves* an existing canonical page to a vault on another machine, with sha256 integrity + soft-delete + tombstones. Use it when the thing already exists as a node.
-- **checkpoint** — writes a curated node *into this vault*. Use it when the idea belongs here.
-
-If the idea should leave and never lived here, it's this skill. **A bug you hit while running the engine is the same case** — see §1b; the consumer vault cannot fix it, so the report is the deliverable.
+- **engine-proposal** — a *new, forward-only* idea or defect report that never was a consumer node; the engine-dev end owns the result.
+- **crossover** — *moves* an existing page to a vault on another machine, with integrity and soft-delete.
+- **checkpoint** — writes a curated node *into this vault*, when the idea belongs here.
 
 ## 1. Capture the idea + its raw context
 
-Collect the improvement, the motivating use case, and why it surfaced now. Keep the raw (private) context as *input to the scrub* — it never appears in the output. One idea per handoff block (mirrors crossover's one-connected-cluster rule); a second idea is a second block.
+Collect the improvement, the motivating use case, and why it surfaced now. The raw (private) context is *input to the scrub* and never appears in the output. One idea per block.
 
 ## 1b. Found a DEFECT rather than an improvement? Same channel, different block
 
-A consumer vault is where engine bugs actually get hit — it is the thing running the engine all day. It is also the one place that **cannot fix them**: engine development does not happen there, and a local edit inside `engine/` is not a fix but a time bomb, because the submodule is pinned and the next `update.sh` moves the pointer straight past your change. So a defect found in a consumer vault travels the *same* upstream channel as an idea; only the block's contents differ.
+A consumer vault is where engine bugs get hit and the one place that **cannot fix them** — a local edit inside `engine/` is discarded by the next `update.sh`. Five things a defect report needs that an improvement does not:
 
-Five things a defect report needs that an improvement proposal does not:
-
-- **Confirm it is still live at the pin you are running — do not assume.** A bug can be fixed *incidentally* by unrelated work and stay open on paper for days, because the change that fixed it never cited it. State the engine version you reproduced against; the engine-dev end cannot tell a live defect from a stale one otherwise, and re-deriving that costs more than reporting it.
-- **Separate what you OBSERVED from what you PROPOSE.** The observation is evidence; the fix is a hypothesis, and a reporter's hypothesis can be wrong while the bug is entirely real. A worked example from this engine's own history: a report correctly identified that a lost terminator line dropped the last item, and prescribed treating the missing terminator as an integrity failure — which would have *rejected a payload whose hash matched*, forcing another paste over exactly the lossy channel the tool exists to survive. The defect was real; the prescription would have made it worse. Report the first with confidence, offer the second loosely.
-- **Then read your own Expected against your own suggested fix, before you send it.** They are separate fields, so nothing in the block makes you compare them — and the most common way an Expected goes wrong is that the fix written beside it cannot produce it. Ask it directly: *if engine-dev did exactly what I suggested, would I get exactly what I wrote under Expected?* If the answer is no, say so and say which of the two you would keep. **When a precedent supplies your Expected, cite the behaviour that earns the output, not the output itself.** A sibling tool's printed line is normally the only part of it you ever see — you run the tools, you do not read their internals — so "cite a precedent" and "quote what the precedent prints" feel identical from your chair, and only the second one can specify something unreachable. This engine's own `lint-announce-resolved-vault` turned on exactly that: the report quoted a sibling's unprompted announcement as the output wanted, but that sibling can print its line only because it RETARGETS, so the stated fix — announce, as the sibling does — could not produce the stated Expected. Intake declined the prescription and shipped the retarget that does produce it; the observation was confirmed in full, and the round trip was the only cost.
+- **Confirm it is still live at the pin you are running — do not assume.** A bug can be fixed incidentally by unrelated work and stay open on paper. State the engine version you reproduced against.
+- **Separate what you OBSERVED from what you PROPOSE.** The observation is evidence; the fix is a hypothesis, and a reporter's hypothesis can be wrong while the bug is entirely real. Report the first with confidence, offer the second loosely.
+- **Then read your own Expected against your own suggested fix, before you send it.** They are separate fields, so nothing makes you compare them. Ask: *if engine-dev did exactly what I suggested, would I get exactly what I wrote under Expected?* If not, say which of the two you would keep. When a precedent supplies your Expected, cite the behaviour that earns the output, not the output itself.
 - **Say which failure shape it is** — this, not severity adjectives, is what sets urgency:
   - **fail-closed** — it refuses, nothing is lost. Annoying, rarely urgent.
   - **fail-open** — it proceeds while *looking* correct. Severe, because nothing surfaces it. A boundary filter that silently disabled itself on an unrecognized value, a write-time gate that skipped every commit taking the intended path, and an isolation helper that handed back the shared tree with exit 0 were all this shape.
   - **data-loss** — it destroys or overwrites work. Report immediately, and say what you did to preserve the evidence.
 - **List what you already ruled out.** Saves the engine-dev end re-deriving your dead ends, and often contains the real clue.
 
-**The scrub is harder here, and skimping is tempting.** The material that makes a defect report useful — error output, stack traces, command lines, file paths, config dumps — is precisely the material that carries absolute paths, vault and org names, usernames, and machine names. Scrub it anyway, but **keep the reproduction runnable**: substitute placeholders *consistently* (the same path becomes the same `<vault>` everywhere) so the steps still work, and **declare what you redacted** so a gap reads as deliberate rather than as evidence you forgot to include. Never quietly drop a detail because scrubbing it is awkward — say it was redacted and describe its shape.
+Worked examples of the second and third rules failing: [`references/defect-report.md`](references/defect-report.md).
+
+**The scrub is harder here** — error output, command lines and paths are the material that carries identifiers. Scrub it anyway, **keep the reproduction runnable** (the same path becomes the same `<vault>` everywhere) and **declare what you redacted**, so a gap reads as deliberate. Never quietly drop a detail because scrubbing it is awkward.
 
 Use this block shape instead of §3's:
 
@@ -75,21 +73,20 @@ Instruction to engine-dev: reproduce first, then decide the shape. Treat the
 suggested fix as a hypothesis, not a specification.
 ```
 
-Everything else — the scrub discipline in §2, the mechanical scan in §4, the no-consumer-node rule in §5 — applies unchanged.
+§2, §4 and §5 apply unchanged.
 
 ## 2. Genericize / boundary-scrub — the core value
 
-This is the step that gets skipped when done by hand, so do it deliberately:
+Do this deliberately:
 
 - **Strip consumer identifiers** — vault name, org/repo slugs, usernames, emails, machine names, absolute paths.
 - **Replace concrete values with placeholders** — `<consumer vault>`, `<a repo page>`, `<the private boundary>` rather than the real ones.
 - **Restate the problem generically** — describe what would be true for *any* consumer vault, not just this one. If the motivating use case only makes sense with private detail, abstract the detail until it doesn't.
 - **Drop secrets entirely** — never carry key material or credentials, even as an example.
-- Reuse crossover's boundary discipline (respect the destination boundary; one item per block) but **not** its move / integrity / tombstone machinery — there is nothing to move or delete here.
 
 ## 3. Draft the kickoff block
 
-Produce a self-contained block the engine-dev session can act on with **zero** access to the consumer vault. Use this shape:
+Self-contained — the engine-dev session acts on it with **zero** access to the consumer vault.
 
 ```
 HANDOFF — engine improvement proposal
@@ -114,22 +111,19 @@ Instruction to engine-dev: create the project in the engine-dev vault, build it,
 ship it in the engine so consumer vaults receive it on their next update.
 ```
 
-Keep the slug stable — it's how the engine-dev vault names the resulting project.
+Keep the slug stable — it names the resulting project and is the reporter's only correlation key.
 
 ## 4. Scan — the boundary gate (mechanical, fail-closed)
 
-Before showing the block to anyone, run the scan. It derives the consumer's own identifiers (vault slug, directory name, git user/email) and flags any literal appearance, plus home paths, emails, non-generic `boundary:` tags, and secret assignments:
-
 ```bash
 $WIKI_PATH/engine/bin/engine-proposal.sh scan --vault "$WIKI_PATH" --file <draft.md>
-# or pipe it:  printf '%s' "$block" | $WIKI_PATH/engine/bin/engine-proposal.sh scan --vault "$WIKI_PATH"
 ```
 
-Any finding → revise the block (return to §2) and re-scan. Do not hand off until it prints `scan clean`. The scan is a **backstop, not a substitute** for the §2 scrub: it only catches identifiers it can derive from the vault, so a leak of some *other* private detail still rides on your genericization. Read the block once more yourself.
+It flags the consumer's own identifiers (vault slug, directory name, git user/email), home paths, emails, non-generic `boundary:` tags and secret assignments. Any finding → revise (§2) and re-scan until `scan clean`. It is a **backstop, not a substitute** for §2 — it catches only what it can derive, so read the block once more yourself.
 
 ## 5. Hand off — submit to the queue
 
-**Proposals are files in the engine's `proposals/` queue, submitted by pull request.** The copy-paste channel lost blocks and could not tell you: a stashed block lived in a git-ignored, per-machine outbox that nothing observed, so *sent* and *never arrived* were indistinguishable from the consumer's chair.
+**Proposals are files in the engine's `proposals/` queue, submitted by pull request.**
 
 ```bash
 $WIKI_PATH/engine/bin/engine-proposal.sh submit --vault "$WIKI_PATH" --slug <slug> --file <draft.md>
@@ -137,88 +131,21 @@ $WIKI_PATH/engine/bin/engine-proposal.sh submit --vault "$WIKI_PATH" --slug <slu
 $WIKI_PATH/engine/bin/engine-proposal.sh push   --vault "$WIKI_PATH" --slug <slug>
 ```
 
-**`submit` and `push` are two verbs on purpose, and this is the safety decision in the whole design.** The engine repository is **public**, so a committed proposal and its pull request are permanently public — a leak is a git object that force-push cannot reliably retract once forks, clones and cached views exist. `submit` runs the fail-closed boundary scan *first* (nothing is branched, committed or written if it finds anything), prepares the branch locally, and prints the exact text that will become public. `push` performs the irreversible act.
-
-**Read the printed block before pushing.** The scan matches identifiers it can *derive* from your vault — slug, git identity, home paths. It cannot judge whether the prose itself discloses something private: a private workflow described in generic-sounding terms passes every pattern. Under copy-paste a human necessarily read the text at the moment of publication; that review is now yours to perform deliberately. There is **no bypass flag**, because the failure it would enable is the one with no undo.
-
-**You do not need write access.** `push` forks on demand — and the fork is public too.
-
-**Engine CI is a backstop, not the gate.** The scan derives its identifiers from *your* vault, which CI cannot see; CI can only apply generic patterns. A backstop described as a gate is how the real gate gets skipped.
-
-## 5a. Hand off the legacy way — create NO consumer node
-
-- Present the clean block for the user to paste into the engine-dev vault's session.
-- **`stash` is retired.** It existed because a forward-only copy-paste handoff that was not kept could not be re-sent — which happened. `submit` makes the block a committed file, so that durability is now the transport's own property. The verb still runs and warns; nothing should use it. A stashed block is **invisible to the engine**, which is the whole defect the queue removed: nothing observes a git-ignored, per-machine outbox, so *sent* and *never arrived* look identical from the consumer's chair.
-- Do **not** run checkpoint and do **not** create a project/memory/lesson node here. The engine-dev vault owns the resulting project, notes, lessons, and skill.
+**`submit` and `push` are two verbs on purpose.** The engine repository is **public**, so a pushed proposal is permanently public. `submit` runs the fail-closed scan first, prepares the branch locally, and prints the exact text that will become public; `push` performs the irreversible act (forking on demand — the fork is public too). **Read the printed block before pushing**: the scan matches identifiers it can derive; it cannot judge whether the prose discloses something private, and there is no bypass flag. Engine CI is a backstop, not the gate. `stash` is retired and warns; the block is now the file content of `proposals/<slug>.md`. Do **not** run `checkpoint` and do **not** create a node here — the engine-dev vault owns the result.
 
 ## 5b. Ask what happened to it — `status`, not a grep
 
 ```bash
-$WIKI_PATH/engine/bin/engine-proposal.sh status --vault "$WIKI_PATH"
-$WIKI_PATH/engine/bin/engine-proposal.sh status --vault "$WIKI_PATH" --slug <slug>
+$WIKI_PATH/engine/bin/engine-proposal.sh status --vault "$WIKI_PATH" [--slug <slug>]
 ```
 
-Reports every proposal as **shipped** (with the release, and whether your pin already has it), **merged** (landed, not yet released), **rejected** (with the reason), **partially accepted**, **open** (received, in progress — do not re-send), or **unknown** (the engine has no record of it — re-sending is the right move). It reads the engine repo's `PROPOSALS.md` plus the `Proposal:` commit trailers; no network.
-
-Three things to know before trusting an answer:
-
-- **`unknown` and `open` are different answers.** The engine writes a row when a proposal *arrives*, so `unknown` means it never got there — a paste that was never intaken, or a session that dropped it. That is the case where re-sending is correct; `open` is the case where re-sending is noise.
-- **A bare `status` sees only what this machine knows** — legacy outbox blocks, and the prepared/submitted markers `submit`/`push` leave behind. An empty result is not evidence that nothing is outstanding, and it says so. Use `--slug` to ask about any proposal, from any machine.
-- **It resolves against `origin/main` when the submodule has it**, not the pinned tag — otherwise anything that shipped after your pin reads as still open. It prints the horizon it used. If it says it resolved against `HEAD` only, run `update` first.
-
-**Never hand-maintain a `status:` line on a proposal.** Derived status cannot go stale; a hand-kept one drifts, which is the failure that produced this subcommand.
-
-## 5c. Nothing to grep — do NOT reach for the git log
-
-If a consumer asks "did my proposal ship?", the answer is `status`, not a keyword search of the engine's commit subjects. Guessed keywords against reworded prose is how already-shipped blocks sat in the outbox as clutter while genuinely open ones looked identical to rejected ones.
+Reports **shipped** (with the release), **merged**, **rejected** (with the reason), **partially accepted**, **open** (do not re-send) or **unknown** (never arrived — re-send). A bare `status` sees only this machine's records; `--slug` asks about any proposal. It resolves against `origin/main` and prints the horizon — if it says `HEAD` only, run `update` first. Never hand-maintain a `status:` line or answer "did it ship?" with a grep of the commit log.
 
 ## 6. Intake — receiving a proposal (engine-dev session)
 
-The other end of the handoff. A proposal arrives as a `HANDOFF` block; it is the **design input for the build**, so review it *before* choosing a shape — a gap found here costs a paragraph, the same gap found mid-build costs a format change with artifacts already in flight.
+The proposal is the **design input for the build**, so review it *before* choosing a shape — the design pass when it touches a wire/file format, an on-disk contract or a safety gate, or flips a default; none for additive doc/skill text or a one-line fix. Checklist, four-claims table and diff-review gate: [`references/intake.md`](references/intake.md).
 
-**When to review.** Run the pass when the proposal touches a **wire/file format, a protocol, an on-disk contract, or a safety gate**, or when it flips a default. Skip it for additive doc/skill-text or a one-line fix — this is a gate on expensive-to-revise decisions, not a tax on every idea.
-
-**If it is a DEFECT report (§1b), reproduce before designing anything.** Three failure modes, all seen here:
-
-- **The bug may already be gone.** A defect can be fixed *incidentally* by unrelated work while its report stays open, because the change that fixed it never cited it. Reproduce at current `HEAD` first. If it no longer reproduces, the work is not "close it" — it is **find the commit that fixed it and pin it with a regression test**, because a fix nobody aimed at is exactly the one no test covers. Then close it, citing both.
-- **The reporter's suggested fix may be wrong while the bug is real.** Treat it as a hypothesis. Judge it against the *observation*, never adopt it because the report sounded confident. One filed prescription in this engine's history would have rejected payloads that were provably intact.
-- **The reported symptom may not be the defect.** Reproduce, then find the mechanism; report and mechanism agree less often than they appear to. Only once you have the mechanism is the shape decision a design question at all.
-
-**Read the report as FOUR separable claims, and check each on its own.** They arrive as one message and read as one voice, so belief in the half the reporter can see carries into the half they cannot. Each part fails in its own direction:
-
-| part | what it is | how it fails |
-|---|---|---|
-| **Observation** | what they saw | usually right — they hit it |
-| **Mechanism** | why they think it happens | a hypothesis written by someone who stopped investigating |
-| **Expected** | the behaviour they want | the most reliable part, and the least read |
-| **Acceptance criteria** | what "done" means | prescription wearing neutral clothes |
-
-Two consequences worth stating, because both have decided a shape here:
-
-- **An acceptance criterion is a claim about the system — go falsify it.** "X would happen if we don't do Y" is checkable, and one such criterion, flagged by its reporter as the part most likely to be dropped, was simply **false**; building to it would have added a mechanism to guarantee a property that already held. A property that already holds gets a **regression test, not machinery** — and say in the record that you rejected it and why, or the next reader re-derives the same fear and reads the absence as an oversight.
-- **Check the Expected clause against the suggested fix.** They can contradict each other, and when they do the Expected wins — it is the behaviour actually wanted, while the fix is a guess at how to reach it. If the suggested fix *cannot produce* the stated Expected, the report has settled its own design question and what looks like a fork is not one. A reporter naming an alternative and declining it is not a prohibition either; they declined it from outside the internals.
-
-Deviating from a specified shape still needs a technical reason, never a cosmetic one — but "your stated Expected is unreachable by your stated fix" is one. Record it in the outcome's `reason:` so it travels back to the reporter.
-
-A defect that reproduces and has an obvious, contained fix does **not** need the full design pass below — go fix it, with a test that fails first.
-
-**How to review.** Use a rigorous critique skill if this vault has one installed — check `~/.claude/skills/scrutinize` (this vault's is `scrutinize`; a vault may install it under another name, and the engine depends on none of them):
-
-```bash
-[ -e ~/.claude/skills/scrutinize ] && echo "review skill available" || echo "use the checklist below"
-```
-
-If none is installed, do the pass inline against this checklist — it is deliberately generic, and each line is a gap a real proposal has actually shipped with:
-
-- **Missing receiver state** — what must the *other* end know that the proposal never names? (identity, ordering, the shape of the whole from one part)
-- **Repeat / out-of-order / partial arrival** — is the operation idempotent? Does replaying a step *regress* something already good? A repair path that degrades on retry is worse than the failure it repairs.
-- **The new metadata's own failure** — if the field the design adds is itself damaged or absent, does the gate still fail closed, or does it silently trust the damage?
-- **Backwards compatibility** — what happens to artifacts already in flight from the previous version?
-- **Evidence vs mechanism** — does the cited evidence actually support the proposed axis? (a volume-driven failure is not fixed by a per-item size threshold)
-- **Defaults + capability** — what does the *default* do after the change, and does the escape hatch preserve the old behavior rather than remove it?
-- **Unverifiable criteria** — which acceptance criteria can't be mechanically checked as written?
-
-**Arrival records itself.** A submitted proposal is a file in `proposals/<slug>.md`, and merging its pull request *is* the arrival record — there is no row to remember to write. That is the whole point of the queue: the `unknown`-vs-`open` distinction used to rest on a human remembering a bookkeeping step at the least interesting moment of the task.
+**If it is a DEFECT report, reproduce at current `HEAD` before designing anything.** If it no longer reproduces, find the commit that fixed it, pin it with a regression test, and close it citing both. The suggested fix is a hypothesis; judge it against the observation. **Check the Expected clause against the suggested fix** — when they contradict, the Expected wins, and *your fix cannot produce your Expected* is a technical reason to deviate; record it in `reason:`. An acceptance criterion is a claim about the system: falsify it before building to it. A defect with an obvious, contained fix needs no design pass — fix it, with a test that fails first.
 
 **See what is waiting:**
 
@@ -227,7 +154,7 @@ bin/engine-proposal.sh queue          # open proposals, oldest first
 bin/engine-proposal.sh queue --all    # include resolved ones
 ```
 
-**Record the outcome by editing the proposal's own frontmatter**, then regenerate:
+Merging the proposal's pull request *is* the arrival record. **Record the outcome by editing the proposal's own frontmatter**, then regenerate:
 
 ```
 outcome: accepted | partially-accepted | rejected | alias
@@ -239,28 +166,12 @@ alias:   <canonical slug, for alias>
 bin/gen-proposals-ledger.sh           # PROPOSALS.md is DERIVED from the queue
 ```
 
-**Never hand-edit `PROPOSALS.md`.** It is generated, and `lint-proposals.sh` fails on drift between the table and the queue. `outcome:` and *shipped* are **orthogonal** — a proposal can be `partially-accepted` and also shipped; shipped stays derived from `git tag --contains` on the trailer commit, never stored.
+Two hard rules. **Never hand-edit `PROPOSALS.md`** — it is generated and `lint-proposals.sh` fails on drift; *shipped* is derived from `git tag --contains` on the trailer commit, orthogonal to `outcome:`. **Never rename the slug** — if unavoidable, add a file for the incoming slug with `outcome: alias`. A `rejected` or `partially-accepted` entry must carry its reason.
 
-- **Do not rename the slug to fit engine vocabulary.** It is the reporter's only correlation key, and renaming it silently severs their ability to match the result back. If a rename is genuinely necessary, add a file for the incoming slug with `outcome: alias` pointing at the canonical one; `status` follows it.
-- **A `rejected` or `partially-accepted` entry must carry the reason** — the generator refuses to render one without it, because a decline the reporter cannot act on is the failure this whole mechanism exists to fix.
+**Then file it**: a project page under the proposal's slug, with the review's accepted *and* rejected findings in **Key decisions**. Build, ship, release. **Cite the slug on the implementing commit** as a `Proposal: <slug>` line (in the PR description for a squashed merge). Placement does not matter — `lint-proposals.sh` and `status` read the literal line wherever it appears, ignoring one inside a code fence or indented as a quoted example; lint notes when git's trailer parser cannot see it, as advice. **Review the diff before you push** when the change touches an on-disk contract, a safety gate or a default — a defect outside the design's frame is invisible to the design pass and to the tests derived from it (`references/intake.md`); file its findings in Key decisions too.
 
-**Then file it.** Create the project page under the proposal's slug, carrying its evidence and acceptance criteria; record the review's accepted *and* rejected findings in the project's **Key decisions** (append-only), so the reasoning survives the session. Build, ship, release — consumer vaults receive it on their next `update`.
+## Rules
 
-**Cite the slug on the implementing commit** as a `Proposal: <slug>` line — in the PR description for a squashed merge. **Placement does not matter**: `bin/lint-proposals.sh` and `engine-proposal.sh status` read the literal line wherever it appears. Beside `Co-authored-by:` is still the tidiest spot, and lint notes it when git's own trailer parser cannot see it, but that is advice, not a failure.
-
-This used to require the final paragraph, and that requirement was itself the bug: GitHub appends a `---------` + `Co-authored-by:` footer to a squash body, so the slug the author put last stopped being last, `%(trailers)` returned nothing, and lint failed **after** the merge — when the only remedy is rewriting published history. Following the instructions was what produced the rejected state.
-
-A `Proposal:` line inside a ``` fence or indented as a quoted example is deliberately ignored, so documenting the convention does not accidentally cite it. `lint-proposals.sh` still hard-fails on a citation with no ledger row.
-
-**Then review the diff, before you push.** The design pass above and the acceptance criteria it produces are both derived from the *design* — so a defect that lives outside the design's frame is invisible to both, and to the tests you wrote from those criteria. Reading the change as written is the only layer that catches it. The worked example is this gate's own first use: the reviewed design was sound and every acceptance criterion passed, while the implementation ran its cache-migration side effect during a *probe* for a library that wasn't installed — outside the design's frame, so nothing upstream could have seen it.
-
-- **Use the host's diff-review tool** (in Claude Code, `/code-review`) — a line-level pass over the working diff. Reach for the design-critique skill only when the change is design-shaped; on a plain diff it produces architecture commentary where you want line-level scrutiny.
-- **Gated like the design pass, for the same reason** — run it when the change touches an on-disk contract, a safety gate, or a default, or when it has filesystem/network side effects; skip it for docs, comments, and skill text. Deterministic checks (CI) already cover the mechanical layer; this is a gate on expensive-to-revise code, not a tax on every commit.
-- **Findings go where the design findings went** — the project's Key decisions, accepted and rejected, so the next build inherits the reasoning.
-
-## Notes
-
-- **Forward-only.** The idea never was a consumer node, so there is nothing to delete and no receipt to match — the only surface shared with crossover is the boundary gate, which is why this is a separate skill rather than a crossover mode.
-- **The review belongs at intake, not authoring.** The consumer's gate is the mechanical boundary scan; a design critique there is produced by the same model that just wrote the idea, in private context, and yields findings that can't travel in a forward-only block. The engine-dev end reviews the genericized artifact — which is what actually gets built.
-- **Self-seeding.** The first artifact this skill would have produced is the proposal that created the skill itself; thereafter consumers use the skill instead of hand-authoring.
-- **In-session by default; automate only behind the recursion guards.** The thing to prevent is *runaway agent generation*, not headless `claude` as such — a deliberately-initiated one-shot or subagent is legitimate when it carries a re-entry sentinel, is concurrency-bounded, and terminates. What this skill must never become is a hook that fires on an event its own child can re-trigger. See the **Hard safety rule** in the engine's `CLAUDE.md`.
+- **Forward-only.** The idea never was a consumer node: nothing to delete, no receipt to match.
+- **The review belongs at intake, not authoring.** The consumer's gate is the mechanical scan; the engine-dev end reviews the genericized artifact, which is what gets built.
+- **In-session, on demand; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule).
