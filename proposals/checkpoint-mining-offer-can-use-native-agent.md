@@ -1,6 +1,7 @@
 ---
 slug: checkpoint-mining-offer-can-use-native-agent
-outcome: open
+outcome: accepted
+reason: "accepted — the design pass was run because it flips a default on a safety-adjacent seam, and the shape survived it: (a) native subagent first, adapter fallback; (b) spawn-session.sh kept unchanged, its fail-closed exit-0-no-handle behaviour still under CI; (c) §6 at 146 words; (d) the relative path was already fixed by schema-and-catalog-drift in v1.74.1; (e) skill-candidates now states that §1–§6 are read-only and subagent-safe and §6a–§7 need the operator and a worktree, with the whole pass permitted in the subagent on a host whose subagents can ask. The AskUserQuestion assumption was re-measured on this host rather than trusted: a fresh general-purpose subagent lists Agent, Artifact, Bash, Edit, Read, Skill, ToolSearch, Write — no interactive question facility — so the split in (e) is needed here, and the skill text keeps it conditional on the host as instructed. Hard safety rule: one agent, started only on an explicit accept, terminates and returns text; a report flowing back to the offering session is data, not an invocation edge, and neither skill calls the other. Alternatives declined as the report declined them: adapter-only (the fallback was the common case), subagent records verdicts (it cannot ask), inline (settled by decouple-skill-mining-from-checkpoint). Both related slugs are cited in the vault project page's Key decisions."
 received: 2026-09-03
 ---
 

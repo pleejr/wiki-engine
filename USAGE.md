@@ -113,6 +113,8 @@ The SessionStart banner reports engine freshness. A machine can fold in **its ow
 
 ## Spawning a session (`spawn-session`)
 
+Since v1.76.0 this is the **fallback**: `checkpoint`'s accepted mining offer starts the host's native subagent first (one agent, started on an explicit accept, returning text — which satisfies the Hard safety rule on its own) and reaches for this adapter only on a host with no such tool, or when the operator wants a separate *interactive* session.
+
 A skill sometimes ends by handing work *elsewhere* — "run that separately, in its own session". Written as advice, accepting it means the operator performs the handoff by hand at exactly the moment the separation was meant to relieve, so the accepted branch quietly collapses into the deferred one. `bin/spawn-session.sh` closes that: the engine knows a session **can** be started, and a drop-in adapter on your machine knows **how**. Same seam as `session-checks.d` above — the engine composes something it does not ship.
 
 ```bash

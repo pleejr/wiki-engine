@@ -53,19 +53,12 @@ Two sessions otherwise share one working tree, where simultaneous writes are sil
 
 ## 6. Offer the mining pass — do not run it
 
-`skill-candidates` reads the notes §2 just wrote and reports the procedures that have repeated often enough to deserve a skill. **End the checkpoint by offering it, and stop there.** Two outcomes:
+`skill-candidates` reads the notes §2 just wrote and reports procedures repeated often enough to deserve a skill. **End the checkpoint by offering it, and stop there.**
 
-- **Defer** — the default; it writes nothing. The evidence is the committed notes, so a later run re-derives every candidate.
-- **Accept** — start it as its own unit of work rather than describing how to:
+- **Defer** — the default; writes nothing.
+- **Accept** — start the host's native subagent (fresh, or a fork of this session) with: *"Run the `skill-candidates` mining pass read-only over `$WIKI_PATH`: return the ranked candidate report with dated evidence and the catalog-overlap check. Ask no questions; write nothing."* When its report returns, run `skill-candidates` §6a–§7 here — the questions need the operator, the verdicts a worktree. No native subagent tool → `$WIKI_PATH/engine/bin/spawn-session.sh --cwd "$WIKI_PATH" --what 'the skill-mining pass' --prompt '<same prompt>'`; relay what it prints and stop.
 
-  ```bash
-  $WIKI_PATH/engine/bin/spawn-session.sh --cwd "$WIKI_PATH" --what 'the skill-mining pass' \
-    --prompt 'Run the skill-candidates mining pass over this vault: report the procedures whose dated evidence shows them repeating, and record the verdicts.'
-  ```
-
-  Relay what it prints and stop — it names a handle for the session it started, or prints by-hand instructions and why. Never wait on or read the spawned session; it records its own verdicts.
-
-Offer it *here*: mining reads the notes this pass just committed, and §0's worktree is retired, so a run opens its own. An offer, not a run: a `develop` verdict implies authoring and an eval, a chain the operator starts deliberately. Nothing started here may reach `checkpoint`; the start stays gated on an explicit accept, never a lifecycle event.
+Why here: mining reads the notes this pass just committed, and §0's worktree is retired. Never from a lifecycle hook (engine `CLAUDE.md`).
 
 ## Rules
 - **In-session, on demand; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule).

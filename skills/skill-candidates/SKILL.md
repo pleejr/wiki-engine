@@ -8,39 +8,41 @@ updated: 2026-09-03
 
 # skill-candidates — find the procedures the vault already proved you repeat
 
-A skill is worth writing when a procedure **repeats**, and the end of a session is the worst moment to judge that. The vault settles it: `checkpoint` distils every session into dated `memory/` notes and a `log.md` line, and this skill reads that record back out and reports **candidates with their evidence**. The engine's `drain` skill is the worked example: noticed in `log.md`, then written down.
+A skill is worth writing when a procedure **repeats**, and the end of a session is the worst moment to judge that. The vault settles it: `checkpoint` distils every session into dated `memory/` notes and a `log.md` line, and this skill reads that record back out and reports **candidates with their evidence**.
 
 ## Where it runs
 
-**Reads canonical `$WIKI_PATH`; writes its verdicts through a worktree of its own.** Take the worktree up front:
+**Two halves, in different places.** §1–§6 (bar, evidence, shapes, overlap, report) are **read-only and subagent-safe** — a host subagent may run them over canonical `$WIKI_PATH` and return the report as text. §6a–§7 (questions and verdict notes) **need the operator and a worktree**: the questions need the host's interactive question facility, which its subagents lack (measured: a subagent's tool set has none), so they run in the session that offered the pass; a host whose subagents can ask may run the whole pass there. A report returned to the offering session is data flowing back, not an invocation edge into `checkpoint`.
+
+**Reads canonical `$WIKI_PATH`; writes its verdicts through a worktree of its own**, taken at the start of the verdict half:
 
 - `WORK="$($WIKI_PATH/engine/bin/vault-worktree.sh ensure)" || { echo "not isolated — resolve before writing"; }` — **check the exit status** and read its stderr for a stale base; the full contract is `checkpoint` §0.
 - **Read the evidence from canonical `$WIKI_PATH`, write the verdicts to `$WORK`.** The session buffer is git-ignored, so it exists only in canonical; a worktree's empty copy is indistinguishable from a quiet month.
-- Commit, `vault-worktree.sh integrate`, then `gc "$WORK"` — a standalone run is a complete unit of work.
+- Commit, `vault-worktree.sh integrate`, then `gc "$WORK"`.
 
-This skill invokes nothing — not `checkpoint`, not a skill-authoring skill; writing its own notes is not an invocation.
+This skill invokes nothing; writing its own notes is not an invocation.
 
 Inputs, all read from canonical `$WIKI_PATH`:
 
 - `memory/*.md` — the curated notes; the primary evidence.
 - `log.md` — one dated line per session; the recurrence signal.
-- `raw/sessions/` — the auto-captured buffer, **canonical `$WIKI_PATH` only** (git-ignored, so absent from a worktree). A weak, disposable source: use it to notice a *pattern forming*, never to justify a candidate alone.
+- `raw/sessions/` — the auto-captured buffer, **canonical `$WIKI_PATH` only** (git-ignored). Weak and disposable: a *pattern forming*, never a candidate's justification.
 
 ## Two modes: backlog, then steady state
 
-**The first run on a vault is a backlog drain, and it should return many candidates** — reporting two because a long list felt undisciplined is the under-reporting this skill exists to prevent. **If no `skill-candidate` verdict note exists, this is a first run.** Ask that of the **frontmatter**, never the file text:
+**The first run on a vault is a backlog drain, and it should return many candidates** — trimming the list to look disciplined is the under-reporting this skill exists to prevent. **If no `skill-candidate` verdict note exists, this is a first run.** Ask that of the **frontmatter**, never the file text:
 
 ```sh
 grep -l '^type: decision' "$WIKI_PATH"/memory/*.md \
   | xargs grep -lE '^tags:.*(\[|, )skill-candidate(,|\])' 2>/dev/null
 ```
 
-A bare `grep -l 'skill-candidate'` is wrong in the costly direction: every note *about* this skill contains its name, so a mention counts as a verdict and a never-mined vault reads as steady state. The `type:` test rejects a lesson that discusses the skill; the delimited tag rejects one that merely starts with the same letters.
+A bare `grep -l 'skill-candidate'` is wrong in the costly direction: every note *about* this skill contains its name, so a mention counts as a verdict and a never-mined vault reads as steady state. The `type:` test and the delimited tag are both load-bearing.
 
 - **Backlog mode** — sweep the entire record, oldest to newest. Expect many; rank hard (§4).
 - **Steady state** — sweep forward from the newest verdict note's date, and re-check anything marked *defer*. Expect zero or one; zero is the run working.
 
-The bar (§1) is the same in both modes; only the expected count changes, so a first run returning nothing means the queries are wrong. **Report every candidate that clears the bar; recommend a small number to build first** — the rest keep their evidence for the next run. `checkpoint` offers this pass rather than running it, so a long gap shows up as a bigger sweep.
+The bar (§1) is the same in both modes; only the expected count changes, so a first run returning nothing means the queries are wrong. **Report every candidate that clears the bar; recommend a small number to build first** — the rest keep their evidence for the next run.
 
 ## 1. The bar
 
@@ -54,7 +56,7 @@ State the count and the dates for every candidate you report. A candidate whose 
 
 ## 2. Gather the evidence
 
-Run these against canonical `$WIKI_PATH`. Start with the clusters, then read the notes behind the interesting ones — do not read 100 notes.
+Run these against canonical `$WIKI_PATH`; start with the clusters, then read the notes behind the interesting ones.
 
 ```sh
 # Tag clusters — a tag carried by many notes is a subject you keep returning to.
@@ -99,7 +101,7 @@ Every installed skill is linked into one place, so check them all at once:
 grep -h '^description:' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/skills/*/SKILL.md
 ```
 
-For each candidate: **already covered** — drop it and say which skill (the common, useful outcome); **nearly covered** — propose a section or trigger phrase there, not a new skill; **genuinely new** — it survives, naming the neighbours it must be distinguished from. Overlapping descriptions degrade both skills.
+For each candidate: **already covered** — drop it and say which skill (the common, useful outcome); **nearly covered** — propose a section or trigger phrase there, not a new skill; **genuinely new** — it survives, naming the neighbours it must be distinguished from.
 
 ## 6. Report
 
@@ -114,11 +116,11 @@ One block per surviving candidate, ranked, no prose preamble:
   Recommend   develop | discard (<why>) | defer at N — and one line of reasoning
 ```
 
-**`Recommend` is advisory, not a decision** (§6a). `defer` is first-class and in steady state usually the honest one; report near-misses with their count. Finish with one line naming what you searched, which mode, and what you found nothing for — an empty steady-state report is ordinary; an empty **first** run is a result to distrust.
+**`Recommend` is advisory, not a decision** (§6a). `defer` is first-class and in steady state usually honest; report near-misses with their count. Finish with one line naming what you searched, which mode, and what you found nothing for — an empty steady-state report is ordinary; an empty **first** run is a result to distrust.
 
 ## 6a. Ask, one candidate at a time
 
-**Every candidate that clears the bar goes to the operator as a choice** — the obvious discards included; a detection skill that also decides has become an authoring skill with a filter. Use the host's interactive question facility and offer exactly three outcomes: **Develop** (hand it to a skill-authoring skill; no `SKILL.md` is written here, the verdict is), **Discard** (never propose again — **capture the operator's reason in one line**, which is the entire value of the record), **Defer** (keep it with its current count).
+**Every candidate that clears the bar goes to the operator as a choice** — the obvious discards included; a detection skill that also decides is an authoring skill with a filter. Use the host's interactive question facility and offer exactly three outcomes: **Develop** (hand it to a skill-authoring skill; no `SKILL.md` is written here, the verdict is), **Discard** (never propose again — **capture the operator's reason in one line**, which is the entire value of the record), **Defer** (keep it with its current count).
 
 Practical shape: these facilities cap the number of questions per call — commonly four — so **batch, never truncate**. Six candidates is two rounds. Silently dropping the tail would report a filtered list as the whole list, which is the failure this skill exists to avoid.
 
@@ -126,7 +128,7 @@ The discard reason is where your recommendation is most likely wrong: recurrence
 
 ## 7. Close the loop — record the verdicts here
 
-**Do not write the `SKILL.md`** — authoring is a different job. **Record the verdicts yourself**, into the worktree from *Where it runs*: one commit, `integrate`, `gc`. Recording is not invoking — zero edges to `checkpoint` in either direction. The verdict note is the only thing that persists: a run that decides and writes nothing leaves the vault indistinguishable from one never mined.
+**Do not write the `SKILL.md`** — authoring is a different job. **Record the verdicts yourself**, into the worktree from *Where it runs*: one commit, `integrate`, `gc`. The verdict note is the only thing that persists: a run that decides and writes nothing leaves the vault indistinguishable from one never mined.
 
 Each verdict becomes a `type: decision` note tagged `skill-candidate`:
 
@@ -134,7 +136,7 @@ Each verdict becomes a `type: decision` note tagged `skill-candidate`:
 - **Developed** — what it was built from, so the skill's provenance points back at the notes that justified it.
 - **Deferred** — the count, which is the only thing that makes it reconsiderable rather than merely rediscoverable.
 
-Read those notes at the start of the next run (the frontmatter query from **Two modes**) and skip anything declined unless its evidence count has grown past the count in the decline.
+Read those notes at the start of the next run (the frontmatter query from **Two modes**); skip anything declined unless its evidence count has grown past the count in the decline.
 
 ## Rules
 
