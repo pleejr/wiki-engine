@@ -572,6 +572,69 @@ jobs:
 
           exit "$fail"
 
+      - name: A superseded note names its successor, and the successor must exist
+        run: |
+          # Proposal: memory-note-lifecycle-fields. `status: superseded` was the one memory value
+          # the lint acted on and nothing defined; nothing recorded what superseded a note, so
+          # supersession happened in prose and no script could follow it. Red before green on
+          # the SUBJECT: a conforming note, minus its superseded_by:, must be reported by file
+          # and field. The near-miss that matters: a successor slug that resolves to nothing
+          # must ERROR — presence-only is the natural implementation and passes it. Second
+          # near-miss: the pairing, not the field alone. Then created: as a warning.
+          V="$RUNNER_TEMP/lifecycle"; rm -rf "$V"; mkdir -p "$V/memory"; fail=0
+          # %b for the optional extra frontmatter line, so a trailing \n is a newline, not text
+          mk() { printf -- '---\ntitle: %s\ntype: memory\nboundary: personal\ncreated: 2026-01-01\nupdated: 2026-01-02\nstatus: %s\n%b---\nsee [[hub]] and [[other]]\n' "$1" "$2" "$3" > "$V/memory/$1.md"; }
+          mk hub current ''
+          mk other current ''
+          mk old superseded 'superseded_by: hub\n'
+          grep -qx 'superseded_by: hub' "$V/memory/old.md" || { echo "  FIXTURE BROKEN: the successor line did not land in the frontmatter"; exit 1; }
+          printf -- '- [[hub]] — h\n- [[other]] — o\n- [[old]] — o\n' > "$V/index.md"
+          out="$(./bin/lint-memory.sh --wiki "$V" --strict 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && echo "  ok   a conforming superseded note passes under --strict" \
+            || { echo "  FAIL the conforming fixture is red: $out"; fail=1; }
+          # 1. delete ONLY the successor line -> warned by file and field; fails under --strict
+          sed -i '/^superseded_by:/d' "$V/memory/old.md"
+          grep -q '^superseded_by:' "$V/memory/old.md" && { echo "  FIXTURE BROKEN: the field was not removed"; fail=1; }
+          out="$(./bin/lint-memory.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && echo "  ok   warn-first: the default run still passes" \
+            || { echo "  FAIL the default tier failed on a missing successor: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -A3 '^old$' | grep -q 'superseded without superseded_by' \
+            && echo "  ok   ...and names the note and the field" \
+            || { echo "  FAIL the missing successor is not reported under the note: $out"; fail=1; }
+          ./bin/lint-memory.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && { echo "  FAIL --strict passed a superseded note with no successor"; fail=1; } \
+            || echo "  ok   --strict fails it"
+          # 2. NEAR-MISS: a successor that is no page must ERROR, in the default tier
+          mk old superseded 'superseded_by: nowhere\n'
+          out="$(./bin/lint-memory.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" != 0 ] && echo "  ok   a successor that is no page ERRORS" \
+            || { echo "  FAIL presence-only: a dangling successor passed: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'superseded_by: \[\[nowhere\]\] is no page' \
+            && echo "  ok   ...naming the dangling slug" \
+            || { echo "  FAIL the dangling slug is not named: $out"; fail=1; }
+          # 3. NEAR-MISS: the pairing — current + successor warns; current + none passes
+          mk old current 'superseded_by: hub\n'
+          out="$(./bin/lint-memory.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q "superseded_by: present but status: is 'current'" \
+            && echo "  ok   a successor on a current note warns" \
+            || { echo "  FAIL current + superseded_by was not warned about (rc=$rc): $out"; fail=1; }
+          mk old current ''
+          ./bin/lint-memory.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && echo "  ok   current with no successor passes under --strict" \
+            || { echo "  FAIL a plain current note was flagged"; fail=1; }
+          # 4. created: — one warning, exit unchanged; missing both -> two warnings
+          sed -i '/^created:/d' "$V/memory/other.md"
+          out="$(./bin/lint-memory.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c 'missing frontmatter: created')" = 1 ] \
+            && echo "  ok   missing created: is exactly one warning and does not fail" \
+            || { echo "  FAIL created: warning count or exit wrong (rc=$rc): $out"; fail=1; }
+          sed -i '/^updated:/d' "$V/memory/other.md"
+          out="$(./bin/lint-memory.sh --wiki "$V" 2>&1)" || true
+          [ "$(printf '%s\n' "$out" | grep -A4 '^other$' | grep -c 'missing frontmatter')" = 2 ] \
+            && echo "  ok   missing both produces two warnings — the second check runs" \
+            || { echo "  FAIL expected two warnings on the note missing both: $out"; fail=1; }
+          exit "$fail"
+
       - name: The run that adopts a release applies with THAT release's updater
         run: |
           # REGRESSION: update.sh checks out the new tag from the checkout it is executing
