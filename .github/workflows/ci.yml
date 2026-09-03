@@ -3886,6 +3886,13 @@ jobs:
           printf '%s' "$out" | grep -q 'rebase main' \
             && echo "  ok   ...and offers the remedy against local main" \
             || { echo "  FAIL no remedy offered"; fail=1; }
+          # NEAR-MISS for case (4) below: ahead-only is the common commit-now-push-later state,
+          # and a fix keyed on "canonical differs from origin" would print the heavier divergence
+          # remedy on every ordinary session — which is how a correct warning becomes one nobody
+          # reads. Proposal: worktree-staleness-warning-omits-the-behind-case.
+          printf '%s' "$out" | grep -q 'DIVERGED' \
+            && { echo "  FAIL the ahead-only state was reported as divergence"; fail=1; } \
+            || echo "  ok   ahead-only is not called divergence"
 
           # the base is still origin/main: this warns, it must never silently re-base
           [ "$(git -C "$W" rev-parse HEAD)" = "$(git -C "$V" rev-parse origin/main)" ] \
@@ -3904,6 +3911,55 @@ jobs:
           printf '%s' "$out3" | grep -q 'lacks' \
             && { echo "  FAIL warned about a base that omits nothing"; fail=1; } \
             || echo "  ok   a level base is not warned about"
+
+          # (4) AHEAD AND BEHIND — Proposal: worktree-staleness-warning-omits-the-behind-case.
+          # The warning measured one count and printed `rebase main` unconditionally. When
+          # canonical main is ALSO behind origin/main (another session's unpushed commit here,
+          # merges landed on the remote since), that command detaches the branch from
+          # origin/main: its push is refused as non-fast-forward and integrate refuses too,
+          # correctly, since fast-forwarding main to a branch that no longer contains
+          # origin/main would discard remote history. Observed live at 1 ahead / 1 behind.
+          # The right sentence already existed in this file — on integrate's refusal, reached
+          # only after the damage. The test runs the commands the warning PRINTS, rather than
+          # matching its wording, so a better-worded fix still passes.
+          W4="$(WIKI_WT_SESSION=f4 "$VW" ensure 2>/dev/null)"
+          git clone -q "$T/origin.git" "$T/peer" 2>/dev/null
+          printf 'landed on the remote\n' > "$T/peer/remote.md"
+          git -C "$T/peer" add -A; git -C "$T/peer" commit -qm "remote work"; git -C "$T/peer" push -q origin main
+          git -C "$V" fetch -q origin main                         # behind: fetched, not merged
+          printf 'another session, unpushed\n' > "$V/local.md"
+          git -C "$V" add -A; git -C "$V" commit -qm "local unpushed" # ahead
+          # Precondition: the fixture really is in the ahead-AND-behind state, or (4) tests (1).
+          [ "$(git -C "$V" rev-list --count origin/main..main)" = 1 ] \
+            && [ "$(git -C "$V" rev-list --count main..origin/main)" = 1 ] \
+            || { echo "  FIXTURE BROKEN: canonical is not 1 ahead / 1 behind"; fail=1; }
+          out4="$(WIKI_WT_SESSION=f4 "$VW" ensure 2>&1 >/dev/null)"
+          printf '%s\n' "$out4"
+          printf '%s' "$out4" | grep -q 'origin/main lacks' \
+            && echo "  ok   the ahead half is still reported" \
+            || { echo "  FAIL the ahead warning vanished when behind was added"; fail=1; }
+          printf '%s' "$out4" | grep -q 'DIVERGED' \
+            && echo "  ok   the behind half is measured and named" \
+            || { echo "  FAIL divergence was not named — the second count is not taken"; fail=1; }
+          printf '%s' "$out4" | grep -q 'Rebase before surveying or writing:' \
+            && { echo "  FAIL the ahead-only remedy was printed in the divergent state"; fail=1; } \
+            || echo "  ok   the ahead-only remedy is withheld"
+          # Run exactly the commands the warning prints, in order. If following the printed
+          # advice leaves the branch outside origin/main's history, the advice is the defect.
+          cmds="$(printf '%s\n' "$out4" | sed -n 's/^ *\(git -C .*\)$/\1/p')"
+          [ "$(printf '%s\n' "$cmds" | grep -c .)" -ge 1 ] \
+            || { echo "  FAIL no runnable command printed for the divergent state"; fail=1; }
+          while IFS= read -r c; do [ -n "$c" ] && eval "$c" >/dev/null 2>&1; done <<< "$cmds"
+          br4="$(git -C "$W4" rev-parse --abbrev-ref HEAD)"
+          git -C "$V" merge-base --is-ancestor origin/main "$br4" \
+            && echo "  ok   following the printed remedy keeps the branch a descendant of origin/main" \
+            || { echo "  FAIL the printed remedy detached the branch from origin/main"; fail=1; }
+          git -C "$V" merge-base --is-ancestor main "$br4" \
+            && echo "  ok   ...and of local main, so integrate can fast-forward to it" \
+            || { echo "  FAIL local main is not an ancestor of the branch after the remedy"; fail=1; }
+          ( cd "$W4" && "$VW" integrate >/dev/null 2>&1 ) \
+            && echo "  ok   integrate reconciles the state the remedy leaves" \
+            || { echo "  FAIL integrate refused after following the printed remedy"; fail=1; }
 
           exit "$fail"
 
