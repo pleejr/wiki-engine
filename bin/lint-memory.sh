@@ -16,9 +16,15 @@
 #   WARN    — missing updated:
 #   WARN    — missing created: (v1.78.0) — `skill-candidates` reads it to decide whether
 #             a procedure recurred, so a note without it is invisible to that pass
-#   WARN    — status: superseded with no superseded_by: (v1.78.0) — the retired note says
-#             nothing about where to go; combined with the index-drift exemption below it
-#             can also leave the map, so it is reachable only by stale inbound links
+#   WARN    — status: superseded with no superseded_by: AND no successor the record can
+#             identify (v1.78.0, refined v1.79.1). Before warning, the lint SEARCHES for a
+#             candidate: a [[link]] on a line of the retired note that says it was
+#             superseded / replaced / retracted / merged, or a line in another memory note
+#             that says it supersedes / replaces this one. Exactly one distinct candidate
+#             satisfies the check and is reported as INFERRED with the line to add; two
+#             candidates, none, or one that resolves to no page still warn. Keyed on the
+#             supersession wording, never on the first or any link — a related-reading
+#             link must not become a forward pointer.
 #   WARN    — superseded_by: present on a note whose status: is not superseded (v1.78.0)
 #   WARN    — a [[link]] that resolves to no page in the vault (allowed as a stub,
 #             flagged so you can see genuinely stale links)
@@ -85,6 +91,21 @@ fm_get() {
 }
 
 has_frontmatter() { [ "$(head -1 "$1")" = "---" ]; }
+
+# successor_candidates FILE SLUG — the distinct slugs the record names as FILE's successor,
+# one per line. Keyed on supersession WORDING on the same line as the link, in either
+# direction, so a related-reading link never qualifies. `|| true` everywhere: no match is
+# the ordinary answer, and pipefail must not turn it into an abort (see the loop below).
+successor_candidates() {
+  local file="$1" me="$2"
+  {
+    # the link that FOLLOWS the wording (within 40 characters), not every link on the line
+    grep -oiE '(superseded|replaced|retracted|absorbed|folded|merged)( in favou?r of| into| by)?[^[]{0,40}\[\[[^]|#]+' "$file" 2>/dev/null \
+      | sed -E 's/.*\[\[//' || true
+    grep -liE "(supersedes|replaces|absorbs|folds in|retires)[^[]{0,40}\[\[${me}([]|#])" "$MEMDIR"/*.md 2>/dev/null \
+      | sed -e 's|.*/||' -e 's|\.md$||' || true
+  } | grep -vxF "$me" | LC_ALL=C sort -u || true
+}
 
 errors=0 warnings=0
 err()  { errors=$((errors+1));   printf '  ✗ %s\n' "$1"; }
@@ -161,7 +182,23 @@ EOF
   sby="$(fm_get "$f" superseded_by)"
   sby="${sby#\[\[}"; sby="${sby%\]\]}"     # tolerate the wikilink spelling of one slug
   if [ "$status" = "superseded" ] && [ -z "$sby" ]; then
-    warn "status: superseded without superseded_by: — a reader arriving from an old link is not forwarded"
+    # Search the record for the successor before warning. Two sources, both keyed on
+    # supersession WORDING on the same line as the link, so ordinary related-reading links
+    # never qualify: (1) the retired note's own body — "superseded by [[x]]"; (2) another
+    # memory note's body — "supersedes [[this]]". Distinct candidates are unioned.
+    cands="$(successor_candidates "$f" "$slug")"
+    ncand="$(printf '%s' "$cands" | grep -c . || true)"
+    if [ "$ncand" -eq 1 ]; then
+      if has_slug "$cands"; then
+        printf '  · superseded_by: inferred as [[%s]] from the supersession wording in the record — add `superseded_by: %s` to make it explicit\n' "$cands" "$cands"
+      else
+        warn "status: superseded without superseded_by:; the record names [[$cands]] as the successor but no such page exists"
+      fi
+    elif [ "$ncand" -gt 1 ]; then
+      warn "status: superseded without superseded_by:; the record names $ncand candidates ($(printf '%s' "$cands" | tr '\n' ' ' | sed 's/ $//')) — name the one to forward to"
+    else
+      warn "status: superseded without superseded_by: — no successor identified in the record; a reader arriving from an old link is not forwarded"
+    fi
   fi
   if [ -n "$sby" ]; then
     case "$sby" in

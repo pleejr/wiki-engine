@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.79.1] — 2026-09-03
+
+Patch — `lint-memory.sh` infers a retired note's successor from the record before warning that none is declared. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Changed
+- **A `status: superseded` note with no `superseded_by:` is searched before it is warned about.** v1.78.0 shipped the missing-successor case as a warning, leaving *error by default* as an open decision; the operator chose a third shape — find the successor, and warn only when it cannot be found. The search is deterministic and keyed on **supersession wording next to the link**, in either direction: a `[[link]]` that follows *superseded / replaced / retracted / absorbed / folded / merged (by / into / in favour of)* within forty characters in the retired note's own body, or a memory note whose body says it *supersedes / replaces / absorbs / folds in / retires* `[[this]]`. Exactly one distinct candidate that resolves to a page satisfies the check and is reported as inferred, with the exact `superseded_by:` line to add; none, two, or one that resolves to nothing still warns, naming what it found. CI asserts the three near-misses that make this safe: an ordinary link on the retired note is not promoted to a forward pointer (the proposal's own objection to auto-inserting the first link, honoured), two candidates are named and neither chosen, and a named successor that is no page does not pass. The engine-dev vault has no superseded notes, so it adopts unchanged.
+
 ## [1.79.0] — 2026-09-03
 
 Minor — the `log.md` entry rule is stated once as what is practised, measured by `lint-log.sh` (warn-first), and the file gets a size story: `rotate-log.sh` moves whole quarters into `log/` byte for byte. Adopt with `bin/adopt.sh` or `update.sh`. **An upgrading vault should expect warnings equal to its count of entries over 400 words, entries linking nothing, and header-date inversions** (54 on the engine-dev vault: 33 / 20 / 1); they fail only under `lint.sh --strict`.

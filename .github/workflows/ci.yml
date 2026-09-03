@@ -635,6 +635,55 @@ jobs:
             || { echo "  FAIL expected two warnings on the note missing both: $out"; fail=1; }
           exit "$fail"
 
+      - name: A superseded note's successor is inferred from the record before warning
+        run: |
+          # Operator decision after memory-note-lifecycle-fields shipped warn-first: a retired
+          # note with no superseded_by: should first SEARCH the record for its successor, and
+          # warn only when none can be identified. Keyed on supersession wording next to the
+          # link, in either direction. The near-misses are the point: an ordinary link on the
+          # retired note must not become its forward pointer, two candidates must not pick one,
+          # and a candidate that resolves to nothing must not pass.
+          V="$RUNNER_TEMP/infer"; rm -rf "$V"; mkdir -p "$V/memory"; fail=0
+          mk() { printf -- '---\ntitle: %s\ntype: memory\nboundary: personal\ncreated: 2026-01-01\nupdated: 2026-01-02\nstatus: %s\n---\n%s\n' "$1" "$2" "$3" > "$V/memory/$1.md"; }
+          mk hub current 'the current rule; see [[other]] and [[old-body]]'
+          mk other current 'unrelated; see [[hub]] and [[old-body]]'
+          printf -- '- [[hub]] — h\n- [[other]] — o\n- [[new-in]] — n\n' > "$V/index.md"
+          run() { ./bin/lint-memory.sh --wiki "$V" 2>&1; }
+          # 1. own-body wording -> inferred, no warning, and --strict passes
+          mk old-body superseded 'Superseded by [[hub]] on 2026-02-01. Related reading: [[other]].'
+          out="$(run)"; printf '%s\n' "$out" | grep -A1 '^old-body$' | grep -q 'inferred as \[\[hub\]\]' \
+            && echo "  ok   the successor is inferred from the note's own wording, naming hub not other" \
+            || { echo "  FAIL own-body inference: $out"; fail=1; }
+          ./bin/lint-memory.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && echo "  ok   an inferred successor satisfies --strict" \
+            || { echo "  FAIL --strict still warned on an inferred successor"; run; fail=1; }
+          # 2. inbound wording -> inferred (the superseding note is written now, so step 1 had
+          #    no dangling link to trip --strict on)
+          mk new-in current 'this supersedes [[old-inbound]]; see [[hub]]'
+          mk old-inbound superseded 'an old rule with ordinary links [[hub]] and [[other]]'
+          out="$(run)"; printf '%s\n' "$out" | grep -A1 '^old-inbound$' | grep -q 'inferred as \[\[new-in\]\]' \
+            && echo "  ok   a note that says it supersedes this one is found from the other direction" \
+            || { echo "  FAIL inbound inference: $out"; fail=1; }
+          rm "$V/memory/old-inbound.md" "$V/memory/new-in.md"; sed -i '/new-in/d' "$V/index.md"
+          # 3. NEAR-MISS: ordinary links, no wording -> still warns, names no candidate
+          mk old-plain superseded 'an old rule; see [[hub]] and [[other]] for context'
+          out="$(run)"; printf '%s\n' "$out" | grep -A1 '^old-plain$' | grep -q 'no successor identified' \
+            && echo "  ok   an ordinary link is not promoted to a forward pointer" \
+            || { echo "  FAIL a plain link was inferred as the successor: $out"; fail=1; }
+          rm "$V/memory/old-plain.md"
+          # 4. NEAR-MISS: two candidates -> warns naming both, picks neither
+          mk old-two superseded 'replaced by [[hub]]. Earlier it was merged into [[other]].'
+          out="$(run)"; printf '%s\n' "$out" | grep -A1 '^old-two$' | grep -q 'names 2 candidates (hub other)' \
+            && echo "  ok   two candidates are named, neither chosen" \
+            || { echo "  FAIL ambiguity was not reported: $out"; fail=1; }
+          rm "$V/memory/old-two.md"
+          # 5. NEAR-MISS: the named successor is no page -> warns, does not pass
+          mk old-gone superseded 'superseded by [[nowhere]]; see [[hub]]'
+          out="$(run)"; printf '%s\n' "$out" | grep -A4 '^old-gone$' | grep -q 'names \[\[nowhere\]\] as the successor but no such page' \
+            && echo "  ok   a successor that resolves to nothing still warns" \
+            || { echo "  FAIL a dangling inferred successor passed: $out"; fail=1; }
+          exit "$fail"
+
       - name: The run that adopts a release applies with THAT release's updater
         run: |
           # REGRESSION: update.sh checks out the new tag from the checkout it is executing
