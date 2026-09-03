@@ -45,9 +45,9 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `bump-pinned-huggingface-hub-1-26-0` | shipped | derived |
 | `bump-pinned-huggingface-hub-1-28-0` | shipped | v1.73.1 |
 | `bump-pinned-huggingface-hub-1-29-0` | shipped | v1.73.4 |
-| `bump-pinned-huggingface-hub-1-30-0` | open | received 2026-09-03 |
+| `bump-pinned-huggingface-hub-1-30-0` | shipped | derived |
 | `bump-pinned-onnxruntime-1-29-0` | shipped | v1.73.1 |
-| `bump-pinned-tokenizers-0-23-2` | open | received 2026-09-03 |
+| `bump-pinned-tokenizers-0-23-2` | shipped | derived |
 | `canonical-commit-refusal-strands-staged-work-and-names-no-way-to-carry-it` | shipped | v1.73.2 |
 | `capture-scales-with-harness-fanout` | shipped | v1.65.0 |
 | `checkpoint-mining-offer-can-use-native-agent` | shipped | derived |

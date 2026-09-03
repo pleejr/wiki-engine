@@ -1,6 +1,7 @@
 ---
 slug: bump-pinned-huggingface-hub-1-30-0
-outcome: open
+outcome: accepted
+reason: "accepted as proposed and shipped as proposed — one pin, one commit, nothing else moved. The block arrived with the whole 3.12–3.14 range covered by a nine-venv measurement taken before either pin advanced (baseline, huggingface_hub-only, sibling-only, on each interpreter): pip check clean, 768-dim non-degenerate vectors, and the 1.30.0 vectors bit-identical to the 1.29.0 baseline on every interpreter. Intake confirmed the file-level claims against PyPI metadata (wheel form, requires_python, the fastembed range) and the diff, and rag_deps_check.load_pins() still parses the file. The sibling pin lands in its own commit in the same release, as the v1.73.1 precedent did."
 received: 2026-09-03
 ---
 
