@@ -4,7 +4,6 @@ description: Ingest or refresh ONE repo's wiki page in the wiki vault ($WIKI_PAT
 status: active
 summary: ingest/refresh one repo's wiki page with git-ref provenance.
 updated: 2026-07-13
-used_by: []
 ---
 
 # wiki-repo — ingest or refresh one repo

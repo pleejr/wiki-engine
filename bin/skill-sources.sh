@@ -27,6 +27,7 @@ fi
 resolve_dir() {   # $1=remote $2=dir(optional) -> prints absolute dir
   local remote="$1" dir="$2"
   [ -n "$dir" ] || dir="$HOME/Documents/repos/$(basename "$remote" .git)"
+  # shellcheck disable=SC2088  # a LITERAL leading ~/ is what this expands by hand
   case "$dir" in "~/"*) dir="$HOME/${dir#\~/}";; esac
   printf '%s' "$dir"
 }

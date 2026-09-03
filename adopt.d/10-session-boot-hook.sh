@@ -11,6 +11,7 @@
 set -uo pipefail
 
 : "${WIKI:?}"; : "${ENGINE:?}"; : "${ENSURE_HOOK:?}"
+# shellcheck source=bin/adopt-lib.sh
 . "${ADOPT_LIB:?}" || exit 3
 
 # ENGINE ASSETS — unconditional, above the ephemeral guard. Both were unguarded: a

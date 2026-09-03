@@ -4,7 +4,6 @@ description: Drive the engine's proposal queue to empty and keep going until not
 status: active
 summary: the engine-dev outer loop — intake, fix the class, ship, release, adopt, re-verify, repeat until nothing is outstanding.
 updated: 2026-08-12
-used_by: []
 ---
 
 # drain — run the engine-dev loop until nothing is outstanding

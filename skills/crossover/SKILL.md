@@ -4,7 +4,6 @@ description: This skill should be used to migrate vault pages (memory notes, pro
 status: active
 summary: "migrate vault items to a vault on another machine over copy-paste — one block per page — with sha256-verified soft-delete + tombstone sweep."
 updated: 2026-07-24
-used_by: []
 ---
 
 # crossover — move vault items across a machine/boundary gap

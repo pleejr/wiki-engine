@@ -4,7 +4,6 @@ description: Idempotent adoption of the wiki-engine on a machine — bring up a 
 status: active
 summary: idempotent: scaffold a new vault OR wire an already-cloned one, then seed — safe to re-run.
 updated: 2026-07-16
-used_by: []
 ---
 
 # wiki-adopt — stand up a vault on a new machine in one session

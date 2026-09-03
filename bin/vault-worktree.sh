@@ -202,8 +202,23 @@ behind_count() { git -C "$WIKI" rev-list --count "$1..$2" 2>/dev/null || true; }
 # every wt/* branch and change what `ensure` promises. The remedy is one rebase away, and
 # the caller cannot ask for it if nobody tells them. `integrate` already reconciles local
 # <main> before rebasing, so committed work is not at risk either way.
+#
+# THE REMEDY DEPENDS ON A SECOND COUNT this function once never took. `rebase <main>` is
+# correct only while canonical <main> CONTAINS <base>: then the rebased branch is still a
+# descendant of origin/<main>, and `integrate` can fast-forward <main> to it. When <main>
+# is ALSO BEHIND origin/<main> — another session's unpushed commit here, merges landed on
+# the remote since — the same command detaches the branch from origin/<main>, its push is
+# refused as non-fast-forward, and `integrate` refuses too ("DIVERGED — nothing was
+# integrated"), correctly, because fast-forwarding <main> to a branch that no longer
+# contains origin/<main> would discard remote history. Observed live: 1 ahead, 1 behind,
+# the printed command followed to the letter, and the operator several steps past the
+# tool that put them there. `integrate` already printed the right sentence on its refusal
+# — move the LOCAL REF first — but that surface is reached only after the damage; this is
+# the one that speaks first, so it has to say the same thing. Rebasing the BRANCH onto
+# origin/<main> instead is not the fix either (see integrate's own note): <main> then
+# stops being an ancestor of the branch and the fast-forward refuses.
 warn_if_local_main_ahead() {
-  local wt="$1" branch="$2" base="$3" mainref n
+  local wt="$1" branch="$2" base="$3" mainref n b
   mainref="$(git -C "$WIKI" symbolic-ref --short HEAD 2>/dev/null || echo main)"
   # Same ref (a fetch failed, so the base already IS local <main>) — nothing to compare.
   if [ "$mainref" = "$base" ]; then return 0; fi
@@ -214,7 +229,25 @@ warn_if_local_main_ahead() {
   log "vault-worktree: $mainref holds $n commit(s) $base lacks — committed locally, never pushed."
   log "  This worktree CANNOT SEE that work: a search for it returns nothing and exits 0,"
   log "  which reads as 'never written' — so a survey done here can miss what already exists."
-  log "  Rebase before surveying or writing:  git -C $wt rebase $mainref"
+  # Both counts before any remedy: is canonical <main> ALSO behind the base it lags?
+  b="$(behind_count "$mainref" "$base")"
+  case "$b" in 0|''|*[!0-9]*)
+    # Ahead only: <main> already contains <base>, so this keeps the branch a descendant of it.
+    log "  Rebase before surveying or writing:  git -C $wt rebase $mainref"
+    ;;
+  *)
+    # Ahead AND behind: canonical has diverged. The branch must stay a descendant of <base>
+    # or nothing can integrate it, so the LOCAL REF moves first, then the branch follows.
+    # The wrong command is deliberately NOT printed, even as a warning: a reader scanning
+    # for something to paste takes the first `git` they see.
+    log "  $mainref is ALSO $b commit(s) behind $base — canonical has DIVERGED, so rebasing this"
+    log "  branch onto $mainref as it stands would detach it from $base: its push is refused and"
+    log "  integrate declines to reconcile it. Move the LOCAL REF first (canonical must be clean),"
+    log "  then rebase the branch onto the result:"
+    log "    git -C $WIKI rebase $base $mainref"
+    log "    git -C $wt rebase $mainref"
+    ;;
+  esac
 }
 
 retire_branch() {

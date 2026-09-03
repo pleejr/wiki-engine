@@ -82,6 +82,7 @@ if [ -f "$SRC_FILE" ]; then
   while read -r remote dir _rest; do
     case "$remote" in ''|'#'*) continue;; esac
     [ -n "$dir" ] || dir="$HOME/Documents/repos/$(basename "$remote" .git)"
+    # shellcheck disable=SC2088  # a LITERAL leading ~/ is what this expands by hand
     case "$dir" in "~/"*) dir="$HOME/${dir#\~/}";; esac
     [ -d "$dir/.git" ] || miss="${miss:+$miss, }$(basename "$dir")"
   done < "$SRC_FILE"
