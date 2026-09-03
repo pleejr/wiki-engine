@@ -1,6 +1,7 @@
 ---
 slug: soft-wrap-lint-covers-the-ignored-raw-sessions-buffer
-outcome: open
+outcome: accepted
+reason: "accepted — observation reproduced at HEAD in a scaffolded fixture exactly as reported (reflow --check exits 1 on the ignored buffer alone; lint.sh prints `would reflow:` for it while link integrity reports 0 content-node pages in the same run), and the suggested fix taken as proposed: the soft-wrap section now reads `vault_pages "$WIKI" raw`, so the whole of raw/ is exempt rather than only git-ignored files. The reporter's own reservation decided it: raw/articles, raw/papers and raw/transcripts are tracked verbatim sources and a reflow of a transcript is corruption, not normalization; skipping only ignored files would have kept linting them and put a git query inside a walk that has none. The frontmatter-properties check deliberately keeps its unpruned population — that footgun applies to any page Obsidian renders, raw/ pages carry engine-written frontmatter, and the capture buffer carries none, so it cannot refuse over the buffer. The second, smaller item was taken too: the verdict line now names the failing sections (`lint: FAILURES above — in: soft-wrap`), and the near-miss control asserts it. CI pins all of it with the two controls that separate this fix from a blanket exemption: a hard-wrapped tracked raw/transcripts file passes and a hard-wrapped notes/ page is still refused by name; every assertion was proven red against the previous lint.sh."
 received: 2026-09-02
 ---
 
