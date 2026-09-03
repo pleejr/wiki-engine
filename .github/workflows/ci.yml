@@ -4254,6 +4254,57 @@ jobs:
             || { echo "  FAIL the restore did not put USAGE.md back"; fail=1; }
           exit "$fail"
 
+      - name: lint-docs rejects a skill description the router would cut
+        run: |
+          # Proposal: skills-descriptions-exceed-router-cut. The host truncates each description
+          # at ~1536 characters before routing, and the clauses past that point are the
+          # `Distinct from` / `NOT for` exclusions — so an over-long description keeps firing on
+          # its triggers while the rules that hand a case to a sibling silently stop applying.
+          # Three shipped descriptions were over the cut and nothing measured them. Prove the
+          # gate can go red, and that its warning tier is a warning: a check that errors at 1400
+          # would have been the always-red gate this repo keeps having to un-bypass.
+          fail=0
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   the live skills pass as they stand" \
+            || { echo "  FAIL lint-docs is red before the fixture is applied"; fail=1; }
+          F=skills/wiki-repo/SKILL.md
+          cp "$F" "$RUNNER_TEMP/SKILL.keep"
+          base="$(awk '/^description:/{sub(/^description:[ \t]*/,""); print length($0); exit}' "$F")"
+          # (1) over the budget by a clause: pad to 1501+ characters
+          pad="$(printf '%*s' $((1501 - base)) '' | tr ' ' x)"
+          perl -pi -e 'if (!$d && /^description: /) { s/$/ '"$pad"'/; $d=1 }' "$F"
+          len="$(awk '/^description:/{sub(/^description:[ \t]*/,""); print length($0); exit}' "$F")"
+          [ "$len" -gt 1500 ] \
+            && echo "  ok   fixture applied: description is now $len characters" \
+            || { echo "  FIXTURE BROKEN: description is $len characters, not over 1500"; fail=1; }
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          printf '%s\n' "$out" | grep -q "wiki-repo/SKILL.md description is $len characters" \
+            && echo "  ok   ...and lint-docs names the file and the length" \
+            || { echo "  FAIL lint-docs did not name the over-long description: $out"; fail=1; }
+          [ "$rc" != "0" ] \
+            && echo "  ok   ...and exits non-zero, so CI fails on it" \
+            || { echo "  FAIL lint-docs exited 0 with a description over the cut"; fail=1; }
+          # (2) NEAR-MISS: inside the budget but past the warning line must WARN and pass —
+          #     the tier exists so a description is named before it crosses, not refused at it.
+          cp "$RUNNER_TEMP/SKILL.keep" "$F"
+          pad="$(printf '%*s' $((1450 - base)) '' | tr ' ' x)"
+          perl -pi -e 'if (!$d && /^description: /) { s/$/ '"$pad"'/; $d=1 }' "$F"
+          len="$(awk '/^description:/{sub(/^description:[ \t]*/,""); print length($0); exit}' "$F")"
+          [ "$len" -gt 1400 ] && [ "$len" -le 1500 ] \
+            || { echo "  FIXTURE BROKEN: near-miss description is $len characters, not in (1400,1500]"; fail=1; }
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          cp "$RUNNER_TEMP/SKILL.keep" "$F"
+          [ "$rc" = "0" ] \
+            && echo "  ok   a description under 1500 is not refused" \
+            || { echo "  FAIL a $len-character description was refused: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q "warning: skills/wiki-repo/SKILL.md description is $len" \
+            && echo "  ok   ...but is warned about by name, before it crosses" \
+            || { echo "  FAIL no warning for a description past 1400: $out"; fail=1; }
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   skill restored, gate green again" \
+            || { echo "  FAIL the restore did not put the skill back"; fail=1; }
+          exit "$fail"
+
       - name: A handoff skill cannot site the Expected-versus-fix rule on one surface only
         run: |
           # The defect was ASYMMETRY: the rule lived in the intake section, which only the

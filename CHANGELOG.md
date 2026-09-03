@@ -4,6 +4,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.74.0] — 2026-09-03
+
+Minor — every skill description now fits inside the host router's ~1536-character cut, and `lint-docs.sh` gains a check so none can cross it again. Adopt with `bin/adopt.sh` or `update.sh`.
+
+### Changed
+- **Three skill descriptions rewritten under the cut: `engine-proposal` (2446 → 1358 characters), `skill-candidates` (1982 → 1335), `prove-the-test-can-fail` (1845 → 1277).** The host presents each description to its routing step truncated at roughly 1536 characters, and the description's shape is what/when, `Triggers:`, then `Distinct from` and `NOT for` — so the clauses that fell past the cut were exactly the exclusions. For `engine-proposal` and `skill-candidates` every exclusion clause was unseen; for `prove-the-test-can-fail` the `NOT for` was. Each skill kept routing on its positive triggers while the rules that hand a case to a sibling (`crossover`, `checkpoint`, `drain`) silently stopped applying — fail-open, with nothing to say why a skill fired on a case its own description assigns elsewhere.
+  - **The reporter's drafts were taken as written.** Each keeps what/when, the commands that matter, an explicit `Triggers:` line, `Distinct from` and `NOT for`, and moves rationale to the body. Four `engine-proposal` trigger phrases were dropped in the rewrite ("here is a HANDOFF block", "the engine is broken here", "what happened to the proposal I sent", "is that engine proposal still open"); the engine has no trigger-eval set to score them against, and the routing surface the drafts keep names the same situations in fewer words. Consumers' `index.md` catalogs are unaffected: all three skills carry a `summary:`, which is what `gen-skills-index.sh` renders.
+
+### Added
+- **`lint-docs.sh` check 8 — a description over 1500 characters fails the build; over 1400 warns.** Measured against the *value* (the `description: ` prefix stripped), because measuring the raw line shifts every number by 13 and two correct measurements then read as a disagreement. The error tier sits a margin under the cut; the warning tier names a description creeping toward it before it crosses, and CI asserts that a 1450-character description is warned about *and passes* — an error at 1400 would have been one more always-red gate. The check does not shorten anything: which clauses survive is the author's call. Proven red against the three descriptions as shipped in v1.73.6, and CI drives it red on a padded fixture with the length named. `Proposal: skills-descriptions-exceed-router-cut`
+
 ## [1.73.6] — 2026-09-03
 
 Patch — `vault-worktree.sh ensure`'s staleness warning reads both counts before printing a remedy, so following it never detaches a session branch from `origin/<main>`. Adopt with `bin/adopt.sh` or `update.sh`.
