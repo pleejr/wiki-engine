@@ -1,6 +1,7 @@
 ---
 slug: lints-for-always-loaded-surfaces
-outcome: open
+outcome: partially-accepted
+reason: "partially-accepted — (a), (b), (d) and (e) built as proposed: lint-index-hooks.sh warns over INDEX_HOOK_WARN_WORDS (25) and on an inlined date with --strict to promote, reads only index.md and skips the generated blocks; lint-always-on.sh reports per-section counts and fails a section over always_on_budget_words with no engine default; the seam question decided for .wiki-gates.conf because lint.sh check 10 already composes that file and resolve_seam_file already reaches it from a worktree, so a second file would be a second seam for one kind of value; SCHEMA states the hook rule beside the summary rule; lint.sh runs both as sections 11 and 12. Every acceptance criterion holds in CI, including the controls the report asked for: the counts move with the input, a 24-word undated hook and a dated NOTE body are not flagged, a budget above the count passes. PARTIAL on (c): the word cap on lint-summary-volatility.sh is built, applies to done pages, and flags a 40-word summary — but as a WARNING by default with --strict to fail, not as a finding that fails the run. Technical reason: the length finding is not ratcheted through the adoption baseline the marker check uses, and 38 of 63 summaries on the engine-dev vault exceed 25 words, so an error tier would redden the pre-commit gate on arrival for pages unrelated to the commit — the bypass-teaching shape the report itself names as the reason (a) is warn-first. Re-measured before shipping: 169 hooks / 138 over / 12 dated here, and lint.sh on the live vault passes with the new sections reporting."
 received: 2026-09-03
 ---
 
