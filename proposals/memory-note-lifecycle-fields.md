@@ -1,6 +1,7 @@
 ---
 slug: memory-note-lifecycle-fields
-outcome: open
+outcome: partially-accepted
+reason: "partially-accepted — all three findings reproduced at HEAD (lint-memory.sh line 141 honours a value SCHEMA never defines; no successor field anywhere in the engine; created: unchecked while skill-candidates counts by it). Built as proposed: (a) SCHEMA states current / superseded and the behaviour attached to superseded; (b) superseded_by: as ONE slug with the resolve check as an ERROR, a list as an ERROR, and a successor on a non-superseded note as a WARN — external refs deliberately do not satisfy the resolve check, decided as the report suggested; (c) no supersedes:; (d) created: as a WARN matching updated:. CI covers the near-miss the report flagged as the one that matters — a successor that resolves to nothing errors, so presence-only cannot pass — plus the pairing controls and the two-warnings control for created:. PARTIAL on the severity of the missing-successor case: it ships as a WARNING with --strict to fail, not as the default ERROR the report specified. Technical reason, not taste: the report's own (e) sizes the blast radius at N failures where N is the vault's count of superseded notes (47 on the reporting vault), which is a frontmatter-schema change needing a hand migration — this engine's CHANGELOG defines that as a MAJOR bump, and the drain loop stops on MAJOR/migration rather than deciding it alone. Promoting the default to an error is recorded as an open decision for the maintainer. Re-measured before sizing the note: the engine-dev vault has 153 notes, 0 superseded, 0 successor fields, 0 missing created:, so it adopts with no new warnings."
 received: 2026-09-03
 ---
 
