@@ -5,6 +5,11 @@
 #   2. frontmatter props     — wikilink-valued properties must be a quoted YAML block
 #                              list; catches Obsidian's "invalid properties"
 #   3. soft-wrap drift       — reflow.sh --check (hard wraps that would render broken)
+#                              over CURATED pages only: raw/ is exempt, because its
+#                              tracked folders hold verbatim sources (reflowing a
+#                              transcript is corruption, not normalization) and
+#                              raw/sessions is a git-ignored buffer that can never
+#                              enter the commit this gate protects
 #   4. skills catalog drift  — gen-skills-index.sh --check
 #   5. projects catalog drift — gen-projects-index.sh --check
 #   6. boundary present      — every content-node page (the non-raw node folders in
@@ -23,15 +28,23 @@
 #  10. foreign boundary      — no other-boundary identifiers in this vault's pages.
 #                              OPT-IN: inactive until the vault supplies a patterns
 #                              file, and says so rather than passing silently
+#  11. index hooks           — lint-index-hooks.sh: an index.md hook is one clause; a hook
+#                              over INDEX_HOOK_WARN_WORDS or carrying a date warns (fails
+#                              under --strict). The map is loaded on every turn.
+#  12. always-on budget      — lint-always-on.sh: per-section word counts of the vault's
+#                              CLAUDE.md; fails a section over the budget the vault
+#                              declares in .wiki-gates.conf, reports and passes otherwise
 #
 # Checks 6–9 are vault-invariant GATES: they must hold at zero, so lint.sh doubles
-# as the enforced write-time gate (vault CI + pre-commit) — see the pleejr-wiki
-# engine-gates-at-zero project. 6–8 carry no per-vault values, so they ship
+# as the enforced write-time gate (vault CI + pre-commit): a gate held at zero has no
+# backlog of known violations to normalize. 6–8 carry no per-vault values, so they ship
 # engine-default-on; 9 needs a consumer-specific denylist and therefore sits behind
 # the vault seam ($WIKI/.wiki-gates.conf) — the engine composes it, the vault fills
 # it in, and the engine names no consumer's strings.
 #
-# Exit 1 if any check fails.
+# Exit 1 if any check fails. The closing verdict NAMES the failing sections — the
+# refusal is read at the bottom of ~500 lines of passing output, and a bare "FAILURES
+# above" once cost a scroll past 50 stub warnings to find one `would reflow:` line.
 #
 # Usage:
 #   lint.sh                 lint the working tree cwd is in when that is a different
@@ -40,7 +53,8 @@
 #                           stderr. See resolve_wiki_root in bin/wiki-root-lib.sh.
 #   lint.sh --wiki DIR      lint DIR — never second-guessed; --wiki "$WIKI_PATH" forces
 #                           canonical from anywhere
-#   lint.sh --strict        pass --strict through to lint-memory (warnings fail)
+#   lint.sh --strict        pass --strict through to lint-memory, lint-links,
+#                           lint-summary-volatility and lint-index-hooks (warnings fail)
 set -uo pipefail   # deliberately not -e: run all checks, then aggregate
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -81,11 +95,19 @@ while IFS= read -r p; do PAGES+=("$p"); done < <(vault_pages "$WIKI")
 [ "${#PAGES[@]}" -gt 0 ] || { echo "error: no pages under $WIKI" >&2; exit 1; }
 
 rc=0
-section() { printf '\n=== %s ===\n' "$1"; }
+CUR=""; FAILED=()
+section() { CUR="$1"; printf '\n=== %s ===\n' "$1"; }
+# fail — mark the run red AND remember which section did it, once per section, so the
+# verdict at the bottom can name it. Every check reports through this, never `rc=1`.
+fail() {
+  rc=1
+  [ "${#FAILED[@]}" -gt 0 ] && [ "${FAILED[${#FAILED[@]}-1]}" = "$CUR" ] && return 0
+  FAILED+=("$CUR")
+}
 
 # 1. memory ---------------------------------------------------------------------
 section "memory notes"
-"$SCRIPT_DIR/lint-memory.sh" --wiki "$WIKI" $STRICT || rc=1
+"$SCRIPT_DIR/lint-memory.sh" --wiki "$WIKI" $STRICT || fail
 
 # 2. frontmatter properties -----------------------------------------------------
 # A wikilink in frontmatter is valid only as a quoted block-list item
@@ -107,26 +129,37 @@ for f in "${PAGES[@]}"; do
   if [ -n "$bad" ]; then
     printf '%s\n' "$f"
     printf '%s\n' "$bad"
-    fp=1; rc=1
+    fp=1; fail
   fi
 done
 [ "$fp" -eq 0 ] && echo "ok: no inline wikilink properties (use quoted block lists)"
 
 # 3. soft-wrap drift ------------------------------------------------------------
+# The population is the CURATED pages — everything vault_pages walks except raw/. This
+# script already treats raw/ as not-a-content-node for boundary, provenance and link
+# integrity (NODE_DIRS below prunes it); soft-wrap alone read the unpruned walk, so a
+# hard-wrapped line in the git-ignored raw/sessions buffer — a file that cannot be staged,
+# cannot enter the commit, and cannot reach another machine — refused commits of unrelated
+# tracked content, and the remedy on offer was --no-verify. The convention is a RENDERING
+# rule for prose the vault authored; raw/ is verbatim capture with no rendering contract.
 section "soft-wrap"
-if out="$("$SCRIPT_DIR/reflow.sh" --check "${PAGES[@]}")"; then
+PROSE_PAGES=()
+while IFS= read -r p; do PROSE_PAGES+=("$p"); done < <(vault_pages "$WIKI" raw)
+if [ "${#PROSE_PAGES[@]}" -eq 0 ]; then
+  echo "ok: no curated pages to check"
+elif out="$("$SCRIPT_DIR/reflow.sh" --check "${PROSE_PAGES[@]}")"; then
   echo "ok: no hard-wrap drift"
 else
-  printf '%s\n' "$out"; rc=1
+  printf '%s\n' "$out"; fail
 fi
 
 # 4. skills catalog drift -------------------------------------------------------
 section "skills catalog"
-"$SCRIPT_DIR/gen-skills-index.sh" --check --wiki "$WIKI" || rc=1
+"$SCRIPT_DIR/gen-skills-index.sh" --check --wiki "$WIKI" || fail
 
 # 5. projects catalog drift -----------------------------------------------------
 section "projects catalog"
-"$SCRIPT_DIR/gen-projects-index.sh" --check --wiki "$WIKI" || rc=1
+"$SCRIPT_DIR/gen-projects-index.sh" --check --wiki "$WIKI" || fail
 
 # content-node pages: the flat, non-raw node folders the engine defines as the
 # vault's curated nodes. Root hubs (CLAUDE.md/index.md/log.md/README.md) and raw/
@@ -158,7 +191,7 @@ for d in "${NODE_DIRS[@]}"; do
   for f in "$WIKI/$d"/*.md; do
     [ -f "$f" ] || continue
     if ! fm_has "boundary:" "$f"; then
-      printf '  ✗ %s — no boundary: in frontmatter\n' "${f#$WIKI/}"; bp=1; rc=1
+      printf '  ✗ %s — no boundary: in frontmatter\n' "${f#$WIKI/}"; bp=1; fail
     fi
   done
 done
@@ -189,7 +222,7 @@ else
       if [ "$pb" != "$vb" ]; then
         printf '  ✗ %s — boundary: %s, but this vault declares %s\n' "${f#$WIKI/}" "$pb" "$vb"
         printf '      A mis-stamped page is dropped from semantic recall with no message.\n'
-        bm=1; rc=1
+        bm=1; fail
       fi
     done
   done
@@ -209,7 +242,7 @@ if [ -d "$WIKI/repos" ]; then
     fm_has "ref:"     "$f" || miss="$miss ref:"
     fm_has "sha:"     "$f" || miss="$miss sha:"
     if [ -n "$miss" ]; then
-      printf '  ✗ %s — missing provenance:%s\n' "${f#$WIKI/}" " $miss"; pp=1; rc=1
+      printf '  ✗ %s — missing provenance:%s\n' "${f#$WIKI/}" " $miss"; pp=1; fail
     fi
   done
 fi
@@ -239,7 +272,7 @@ if [ -d "$WIKI/repos" ]; then
       printf '  ✗ %s — ref: %s is a git-describe string, not a tag\n' "${f#$WIKI/}" "$r"
       printf '      Record the base tag (%s); the commit offset is already in sha:.\n' \
         "$(printf '%s' "$r" | sed -E 's/-[0-9]+-g[0-9a-f]{7,}$//')"
-      rt=1; rc=1
+      rt=1; fail
     fi
   done
 fi
@@ -253,11 +286,11 @@ fi
 # warning: lint.sh is the pre-commit gate, and a warn on pre-existing offenders is
 # standing noise on every commit forever.
 section "summary volatility"
-"$SCRIPT_DIR/lint-summary-volatility.sh" --wiki "$WIKI" || rc=1
+"$SCRIPT_DIR/lint-summary-volatility.sh" --wiki "$WIKI" $STRICT || fail
 
 # 9. link integrity -------------------------------------------------------------
 section "link integrity"
-"$SCRIPT_DIR/lint-links.sh" --wiki "$WIKI" $STRICT || rc=1
+"$SCRIPT_DIR/lint-links.sh" --wiki "$WIKI" $STRICT || fail
 
 # 10. foreign boundary ----------------------------------------------------------
 # The motivating case for the whole gates project: a personal-boundary vault should
@@ -314,7 +347,7 @@ else
             done <<EOF
 $hits
 EOF
-            fb=1; rc=1
+            fb=1; fail
           fi
         done <<EOF
 $pats
@@ -325,6 +358,23 @@ EOF
   fi
 fi
 
+# 11. index hooks ----------------------------------------------------------------
+# The two ALWAYS-LOADED surfaces — the index.md hooks and the vault CLAUDE.md — were the two
+# nothing measured, while every derived and per-page surface had a check. Both warn-first:
+# the engine cannot know a vault's backlog, and a gate red on arrival teaches the bypass.
+section "index hooks"
+"$SCRIPT_DIR/lint-index-hooks.sh" --wiki "$WIKI" $STRICT || fail
+
+# 12. always-on budget -----------------------------------------------------------
+section "always-on budget"
+"$SCRIPT_DIR/lint-always-on.sh" --wiki "$WIKI" || fail
+
 echo
-[ "$rc" -eq 0 ] && echo "lint: all checks passed" || echo "lint: FAILURES above"
+if [ "$rc" -eq 0 ]; then
+  echo "lint: all checks passed"
+else
+  names=""
+  for n in "${FAILED[@]}"; do names="$names, $n"; done
+  echo "lint: FAILURES above — in: ${names#, }"
+fi
 exit $rc

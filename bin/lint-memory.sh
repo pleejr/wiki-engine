@@ -6,11 +6,30 @@
 #   ERROR   — missing frontmatter, or missing title/type/boundary
 #   ERROR   — type not one of: memory | lesson | decision | preference
 #   ERROR   — fewer than 2 outbound [[wikilinks]] (SCHEMA: >=2 per page)
+#   ERROR   — superseded_by: names a slug that is no page in this vault (v1.78.0). A
+#             forwarding pointer to nothing is worse than none: it reads as a resolved
+#             redirect. A slug declared in the external-refs file does not satisfy it
+#             either — forwarding a reader to a page the vault does not contain is the
+#             failure the field exists to prevent.
+#   ERROR   — superseded_by: is a list. ONE slug: a note superseded by three has no
+#             unambiguous forward target; a fan-out points at a hub page instead.
 #   WARN    — missing updated:
+#   WARN    — missing created: (v1.78.0) — `skill-candidates` reads it to decide whether
+#             a procedure recurred, so a note without it is invisible to that pass
+#   WARN    — status: superseded with no superseded_by: (v1.78.0) — the retired note says
+#             nothing about where to go; combined with the index-drift exemption below it
+#             can also leave the map, so it is reachable only by stale inbound links
+#   WARN    — superseded_by: present on a note whose status: is not superseded (v1.78.0)
 #   WARN    — a [[link]] that resolves to no page in the vault (allowed as a stub,
 #             flagged so you can see genuinely stale links)
 #   WARN    — an active note not referenced anywhere in index.md (catalog drift)
 #   (a note with status: superseded is exempt from the index-drift check)
+#
+# The memory-node status vocabulary is `current | superseded` (SCHEMA.md). The missing-
+# successor case is a WARNING, not an error, on purpose: a vault arriving with N superseded
+# notes and no successor fields would otherwise fail its pre-commit gate on N pages unrelated
+# to the commit — a hand migration, and the always-red gate that teaches --no-verify. Under
+# --strict it fails, which is how a vault that has filled its successors promotes it.
 #
 # Exit 1 if any ERROR (or any WARN under --strict); else 0.
 #
@@ -108,6 +127,7 @@ for f in "${notes[@]}"; do
     [ -n "$(fm_get "$f" "$k")" ] || err "missing frontmatter: $k"
   done
   [ -n "$(fm_get "$f" updated)" ] || warn "missing frontmatter: updated"
+  [ -n "$(fm_get "$f" created)" ] || warn "missing frontmatter: created (skill-candidates counts recurrence by it)"
 
   # valid type
   typ="$(fm_get "$f" type)"
@@ -136,8 +156,22 @@ for f in "${notes[@]}"; do
 $links
 EOF
 
-  # index.md catalog drift (active notes only)
+  # lifecycle: status + superseded_by pairing (SCHEMA: memory status is current|superseded)
   status="$(fm_get "$f" status)"
+  sby="$(fm_get "$f" superseded_by)"
+  sby="${sby#\[\[}"; sby="${sby%\]\]}"     # tolerate the wikilink spelling of one slug
+  if [ "$status" = "superseded" ] && [ -z "$sby" ]; then
+    warn "status: superseded without superseded_by: — a reader arriving from an old link is not forwarded"
+  fi
+  if [ -n "$sby" ]; then
+    case "$sby" in
+      *,*|*' '*|*'['*|*']'*) err "superseded_by: must name ONE slug (got '$sby'); a fan-out points at a hub page";;
+      *) has_slug "$sby" || err "superseded_by: [[$sby]] is no page in this vault — a forwarding pointer to nothing reads as a resolved redirect";;
+    esac
+    [ "$status" = "superseded" ] || warn "superseded_by: present but status: is '${status:-<missing>}', not superseded"
+  fi
+
+  # index.md catalog drift (active notes only)
   if [ "$status" != "superseded" ] && [ -f "$INDEX" ]; then
     grep -qF "[[$slug]]" "$INDEX" || warn "not referenced in index.md (catalog drift)"
   fi

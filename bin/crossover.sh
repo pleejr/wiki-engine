@@ -499,6 +499,7 @@ do_finalize() {
     # '#' delimiter so the '/' in <dest> (org/repo) can't break the s-command.
     local today marker; today="$(date -u +%Y-%m-%d)"
     marker="$slug (migrated -> $dest, $today)"
+    # shellcheck disable=SC2046  # word splitting intended below: the lib returns a list of --exclude-dir= flags
     while IFS= read -r f; do
       [[ -n "$f" ]] || continue
       sed -i.bak -E "s#\[\[$slug\]\]#$marker#g" "$f"

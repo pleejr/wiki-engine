@@ -6,7 +6,7 @@
 # A `verified:` block records that a human/agent confirmed the content correct:
 #   verified:
 #     date: 2026-07-24
-#     by:   preston
+#     by:   <human-id>
 #     against: <sha>     # repo pages: the sources.sha it was confirmed against
 #
 # For a repo page the stamp is CURRENT only while verified.against == sources.sha,
