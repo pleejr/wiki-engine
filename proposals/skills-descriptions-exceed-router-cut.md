@@ -1,6 +1,7 @@
 ---
 slug: skills-descriptions-exceed-router-cut
-outcome: open
+outcome: accepted
+reason: "accepted — the measurement reproduced exactly at HEAD (2446 / 1982 / 1845 with the prefix stripped, every NOT for past 1536), and both halves of the suggested fix were taken as proposed: the three drafted descriptions verbatim (1358 / 1335 / 1277 by the same awk) and a length check in lint-docs.sh (check 8) failing above 1500 and warning above 1400, measured against the value so the two frames cannot read as a disagreement. The four dropped engine-proposal trigger phrases were accepted as the judgement call the report named it; the engine has no trigger-eval set and the kept surface names the same situations. Consumer index.md catalogs are unaffected — all three skills carry a summary:, which is what gen-skills-index.sh renders, so the catalog-regeneration note does not apply here. CI proves the gate red on a padded fixture with the length named, and asserts the warning tier is a warning: a 1451-character description is named and passes, because an error at 1400 would have been one more always-red gate."
 received: 2026-09-03
 ---
 
