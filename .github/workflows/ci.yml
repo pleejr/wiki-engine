@@ -3264,6 +3264,92 @@ jobs:
 
           exit "$fail"
 
+      - name: An index hook over budget or carrying a date is named, and a near-miss is not
+        run: |
+          # Proposal: lints-for-always-loaded-surfaces. index.md is loaded on every turn, and
+          # nothing measured its hooks. Red before green on the SUBJECT: one 40-word hook with
+          # a date, under --strict, must fail naming that line; a 24-word undated hook must
+          # not; and a hook whose NOTE body carries a date must not — the rule is about the hook
+          # line, and a check that opened the note would pass its own obvious test and fail on
+          # every real vault. Control: the summary counts must move with the input.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-hooks"
+          git config --global user.email ci@example.com; git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-hooks.json"
+          V="$RUNNER_TEMP/hooks-vault"
+          ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
+            --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+          fail=0
+          ./bin/lint-index-hooks.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && echo "  ok   a scaffolded index passes under --strict" \
+            || { echo "  FAIL the scaffolded index has findings"; fail=1; }
+          long="- [[long-note]] — $(printf 'word %.0s' $(seq 1 38)) on 2026-01-01"
+          printf '%s\n' "$long" >> "$V/index.md"
+          [ "$(grep -c '^- \[\[long-note\]\]' "$V/index.md")" = 1 ] \
+            || { echo "  FIXTURE BROKEN: the long hook was not appended"; fail=1; }
+          out="$(./bin/lint-index-hooks.sh --wiki "$V" --strict 2>&1)" && rc=0 || rc=$?
+          [ "$rc" != 0 ] && echo "  ok   --strict fails on a 40-word dated hook" \
+            || { echo "  FAIL --strict passed a 40-word dated hook"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'hook is 4[0-9] words.*\[\[long-note\]\]' \
+            && echo "  ok   ...naming the hook and its length" \
+            || { echo "  FAIL the finding does not name the hook: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'inlines a date.*\[\[long-note\]\]' \
+            && echo "  ok   ...and the inlined date" \
+            || { echo "  FAIL the date was not reported: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q '1 over 25 words, 1 dated' \
+            && echo "  ok   the counts moved with the input (control against a constant check)" \
+            || { echo "  FAIL the summary counts did not reflect the fixture: $out"; fail=1; }
+          ./bin/lint-index-hooks.sh --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   without --strict it warns and passes (warn-first)" \
+            || { echo "  FAIL the default tier failed the vault"; fail=1; }
+          # NEAR-MISSES
+          sed -i '/^- \[\[long-note\]\]/d' "$V/index.md"
+          short="- [[short-note]] — $(printf 'word %.0s' $(seq 1 24))"
+          printf '%s\n' "$short" >> "$V/index.md"
+          printf -- '---\ntitle: short\nboundary: personal\n---\nwritten 2026-01-01, revised 2026-02-02\n' > "$V/notes/short-note.md"
+          out="$(./bin/lint-index-hooks.sh --wiki "$V" --strict 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && echo "  ok   a 24-word undated hook is not flagged" \
+            || { echo "  FAIL a 24-word hook was flagged: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'inlines a date' \
+            && { echo "  FAIL a date in the NOTE body was read as a hook finding"; fail=1; } \
+            || echo "  ok   a date inside the note is not the hook's business"
+          exit "$fail"
+
+      - name: The always-on budget is the vault's, and a section over it is named
+        run: |
+          # Proposal: lints-for-always-loaded-surfaces. No budget -> counts and a pass; a budget
+          # below the count -> fail naming the section; a budget above -> pass, so the failure is
+          # attributable to the number and not to the file being read at all.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-alwayson"
+          git config --global user.email ci@example.com; git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-alwayson.json"
+          V="$RUNNER_TEMP/alwayson-vault"
+          ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
+            --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+          fail=0
+          printf '\n## Working preferences\n\n%s\n' "$(printf 'word %.0s' $(seq 1 60))" >> "$V/CLAUDE.md"
+          out="$(./bin/lint-always-on.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && echo "  ok   no budget declared: reports and passes" \
+            || { echo "  FAIL failed with no budget declared: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q '60 words  ## Working preferences' \
+            && echo "  ok   ...with the section's count" \
+            || { echo "  FAIL the count is missing or wrong: $out"; fail=1; }
+          printf 'always_on_budget_words = 40\n' >> "$V/.wiki-gates.conf"
+          out="$(./bin/lint-always-on.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" != 0 ] && echo "  ok   a budget below the count fails" \
+            || { echo "  FAIL passed a section over its declared budget: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'Working preferences.*budget of 40' \
+            && echo "  ok   ...naming the section and the budget" \
+            || { echo "  FAIL the failing section is not named: $out"; fail=1; }
+          sed -i 's/^always_on_budget_words = 40$/always_on_budget_words = 80/' "$V/.wiki-gates.conf"
+          ./bin/lint-always-on.sh --wiki "$V" >/dev/null 2>&1 \
+            && echo "  ok   a budget above the count passes (the number decides, not the file)" \
+            || { echo "  FAIL failed with the budget above the count"; fail=1; }
+          out="$(./bin/lint.sh --wiki "$V" 2>&1)" || true
+          printf '%s\n' "$out" | grep -q '=== index hooks ===' && printf '%s\n' "$out" | grep -q '=== always-on budget ===' \
+            && echo "  ok   lint.sh runs both as named sections" \
+            || { echo "  FAIL lint.sh does not carry the new sections"; fail=1; }
+          exit "$fail"
+
       - name: A project summary must name identity, not state
         run: |
           # The gate is a PROXY for a SCHEMA rule, enforced through a content-hashed
@@ -3347,6 +3433,39 @@ jobs:
             && { echo "  FAIL gate references a model or network verb"; fail=1; } \
             || echo "  ok   gate invokes no model and no network verb"
 
+          exit "$fail"
+
+      - name: A 40-word summary on a done page is warned about, and fails only under --strict
+        run: |
+          # Proposal: lints-for-always-loaded-surfaces. summary: is identity, which does not
+          # freeze differently by status — but the volatility check skipped done pages entirely
+          # and measured markers, never length, so a 54-word summary passed. Control: the same
+          # page was skipped before this change, so the warning is attributable to the cap.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-sumcap"
+          git config --global user.email ci@example.com; git config --global user.name CI
+          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-sumcap.json"
+          V="$RUNNER_TEMP/sumcap-vault"
+          ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
+            --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+          fail=0
+          long="$(printf 'word %.0s' $(seq 1 40))"
+          printf -- '---\ntitle: Long\ntype: project\nstatus: done\nsummary: "%s"\nboundary: personal\n---\n# Long\n' "$long" > "$V/projects/long.md"
+          out="$(./bin/lint-summary-volatility.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          [ "$rc" = 0 ] && echo "  ok   warn-first: a long summary does not fail the default run" \
+            || { echo "  FAIL the default tier failed on a long summary: $out"; fail=1; }
+          printf '%s\n' "$out" | grep -q 'projects/long.md (status: done) — summary is 40 words' \
+            && echo "  ok   ...but the done page is warned about, by length" \
+            || { echo "  FAIL no length warning for the done page: $out"; fail=1; }
+          ./bin/lint-summary-volatility.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && { echo "  FAIL --strict passed a 40-word summary"; fail=1; } \
+            || echo "  ok   --strict fails it"
+          # NEAR-MISS: 25 words exactly is within budget.
+          ok25="$(printf 'word %.0s' $(seq 1 25))"
+          printf -- '---\ntitle: Ok\ntype: project\nstatus: active\nsummary: "%s"\nboundary: personal\n---\n# Ok\n' "$ok25" > "$V/projects/ok.md"
+          rm "$V/projects/long.md"
+          ./bin/lint-summary-volatility.sh --wiki "$V" --strict >/dev/null 2>&1 \
+            && echo "  ok   a 25-word summary is not flagged" \
+            || { echo "  FAIL a summary at the budget was flagged"; fail=1; }
           exit "$fail"
 
       - name: The capture hook cannot deadlock a later session's integrate

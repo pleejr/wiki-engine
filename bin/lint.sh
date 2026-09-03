@@ -28,6 +28,12 @@
 #  10. foreign boundary      — no other-boundary identifiers in this vault's pages.
 #                              OPT-IN: inactive until the vault supplies a patterns
 #                              file, and says so rather than passing silently
+#  11. index hooks           — lint-index-hooks.sh: an index.md hook is one clause; a hook
+#                              over INDEX_HOOK_WARN_WORDS or carrying a date warns (fails
+#                              under --strict). The map is loaded on every turn.
+#  12. always-on budget      — lint-always-on.sh: per-section word counts of the vault's
+#                              CLAUDE.md; fails a section over the budget the vault
+#                              declares in .wiki-gates.conf, reports and passes otherwise
 #
 # Checks 6–9 are vault-invariant GATES: they must hold at zero, so lint.sh doubles
 # as the enforced write-time gate (vault CI + pre-commit): a gate held at zero has no
@@ -47,7 +53,8 @@
 #                           stderr. See resolve_wiki_root in bin/wiki-root-lib.sh.
 #   lint.sh --wiki DIR      lint DIR — never second-guessed; --wiki "$WIKI_PATH" forces
 #                           canonical from anywhere
-#   lint.sh --strict        pass --strict through to lint-memory (warnings fail)
+#   lint.sh --strict        pass --strict through to lint-memory, lint-links,
+#                           lint-summary-volatility and lint-index-hooks (warnings fail)
 set -uo pipefail   # deliberately not -e: run all checks, then aggregate
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -279,7 +286,7 @@ fi
 # warning: lint.sh is the pre-commit gate, and a warn on pre-existing offenders is
 # standing noise on every commit forever.
 section "summary volatility"
-"$SCRIPT_DIR/lint-summary-volatility.sh" --wiki "$WIKI" || fail
+"$SCRIPT_DIR/lint-summary-volatility.sh" --wiki "$WIKI" $STRICT || fail
 
 # 9. link integrity -------------------------------------------------------------
 section "link integrity"
@@ -350,6 +357,17 @@ EOF
     [ "$fb" -eq 0 ] && echo "ok: no foreign-boundary identifiers in content-node pages"
   fi
 fi
+
+# 11. index hooks ----------------------------------------------------------------
+# The two ALWAYS-LOADED surfaces — the index.md hooks and the vault CLAUDE.md — were the two
+# nothing measured, while every derived and per-page surface had a check. Both warn-first:
+# the engine cannot know a vault's backlog, and a gate red on arrival teaches the bypass.
+section "index hooks"
+"$SCRIPT_DIR/lint-index-hooks.sh" --wiki "$WIKI" $STRICT || fail
+
+# 12. always-on budget -----------------------------------------------------------
+section "always-on budget"
+"$SCRIPT_DIR/lint-always-on.sh" --wiki "$WIKI" || fail
 
 echo
 if [ "$rc" -eq 0 ]; then

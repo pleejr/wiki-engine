@@ -35,9 +35,18 @@
 #
 # Deterministic: no network, no model. Exit 1 on any finding; 0 otherwise.
 #
+# A WORD CAP, WARN-FIRST (v1.77.0). `summary:` is identity, and identity fits in a clause; a
+# 54-word summary passed here as long as it carried no state marker, because this measured
+# markers and never length. Over SUMMARY_MAX_WORDS (default 25) warns — on `done` pages too,
+# since identity does not freeze differently by status — and `--strict` promotes it to a
+# failure. Warn rather than error because it is not ratcheted through the baseline: measured on
+# one vault, 38 of 63 summaries were over 25 words, so an error tier would redden the gate on
+# arrival for pages unrelated to the commit, which teaches --no-verify.
+#
 # Usage:
-#   lint-summary-volatility.sh [--wiki DIR] [--seed-baseline] [--quiet]
+#   lint-summary-volatility.sh [--wiki DIR] [--seed-baseline] [--quiet] [--strict]
 #     --seed-baseline   rewrite the baseline to grandfather ALL current findings (adoption)
+#     --strict          a summary over SUMMARY_MAX_WORDS fails instead of warning
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,12 +54,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKI=""   # explicit --wiki only; the default is resolved below, not here
 SEED=0
 QUIET=0
+STRICT=0
+MAX_WORDS="${SUMMARY_MAX_WORDS:-25}"
+case "$MAX_WORDS" in ''|*[!0-9]*) echo "error: SUMMARY_MAX_WORDS must be a number (got '$MAX_WORDS')" >&2; exit 1;; esac
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --wiki) WIKI="$2"; shift 2;;
     --seed-baseline) SEED=1; shift;;
     --quiet) QUIET=1; shift;;
+    --strict) STRICT=1; shift;;
     -h|--help) sed -n '1,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 1;;
   esac
@@ -142,6 +155,7 @@ if [ ! -d "$PROJ_DIR" ]; then
 fi
 
 declare -a HITS=()
+declare -a LONG=()
 checked=0
 skipped_done=0
 
@@ -152,6 +166,11 @@ for f in "$PROJ_DIR"/*.md; do
   status="$(get_field "$f" status)"
   [ -n "$summary" ] || continue
   checked=$((checked+1))
+
+  # Length is checked BEFORE the status gate: a summary names identity whatever the status,
+  # so a done page's 40 words are as much a finding as an active page's.
+  nwords="$(printf '%s' "$summary" | wc -w | tr -d ' ')"
+  [ "$nwords" -gt "$MAX_WORDS" ] && LONG+=("$slug	$nwords	$status")
 
   # A terminal project's claim is frozen; anything else is a live assertion. Unknown or
   # missing status falls through to CHECKED on purpose — fail closed, so `status: activo`
@@ -199,9 +218,18 @@ if [ "$SEED" = 1 ]; then
   exit 0
 fi
 
+# Word-cap warnings first (they never touch the exit status unless --strict), then markers.
+for l in "${LONG[@]:-}"; do
+  [ -n "$l" ] || continue
+  echo "  ! projects/$(printf '%s' "$l" | cut -f1).md (status: $(printf '%s' "$l" | cut -f3)) — summary is $(printf '%s' "$l" | cut -f2) words (budget $MAX_WORDS); identity fits in a clause"
+done
 if [ "${#HITS[@]}" -eq 0 ]; then
-  [ "$QUIET" = 1 ] || echo "ok: $checked project summar$([ "$checked" = 1 ] && echo y || echo ies) checked ($skipped_done done/frozen, skipped); no volatility markers"
+  [ "$QUIET" = 1 ] || echo "ok: $checked project summar$([ "$checked" = 1 ] && echo y || echo ies) checked ($skipped_done done/frozen, skipped for markers); no volatility markers; ${#LONG[@]} over $MAX_WORDS words"
   [ "$QUIET" = 1 ] || echo "    (a proxy for the SCHEMA rule — no finding is not evidence a summary is stable)"
+  if [ "$STRICT" = 1 ] && [ "${#LONG[@]}" -gt 0 ]; then
+    echo "summary-volatility: ${#LONG[@]} summar$([ "${#LONG[@]}" = 1 ] && echo y || echo ies) over $MAX_WORDS words — failing under --strict" >&2
+    exit 1
+  fi
   exit 0
 fi
 
