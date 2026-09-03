@@ -34,6 +34,10 @@
 #  12. always-on budget      — lint-always-on.sh: per-section word counts of the vault's
 #                              CLAUDE.md; fails a section over the budget the vault
 #                              declares in .wiki-gates.conf, reports and passes otherwise
+#  13. log entries           — lint-log.sh: log.md (and log/*.md archives) hold one dated
+#                              entry per session in the template shape (error otherwise);
+#                              an entry over LOG_ENTRY_WARN_WORDS, linking nothing, or
+#                              dated before the one above it warns (fails under --strict)
 #
 # Checks 6–9 are vault-invariant GATES: they must hold at zero, so lint.sh doubles
 # as the enforced write-time gate (vault CI + pre-commit): a gate held at zero has no
@@ -54,7 +58,8 @@
 #   lint.sh --wiki DIR      lint DIR — never second-guessed; --wiki "$WIKI_PATH" forces
 #                           canonical from anywhere
 #   lint.sh --strict        pass --strict through to lint-memory, lint-links,
-#                           lint-summary-volatility and lint-index-hooks (warnings fail)
+#                           lint-summary-volatility, lint-index-hooks and lint-log
+#                           (warnings fail)
 set -uo pipefail   # deliberately not -e: run all checks, then aggregate
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -368,6 +373,10 @@ section "index hooks"
 # 12. always-on budget -----------------------------------------------------------
 section "always-on budget"
 "$SCRIPT_DIR/lint-always-on.sh" --wiki "$WIKI" || fail
+
+# 13. log entries -----------------------------------------------------------------
+section "log entries"
+"$SCRIPT_DIR/lint-log.sh" --wiki "$WIKI" $STRICT || fail
 
 echo
 if [ "$rc" -eq 0 ]; then

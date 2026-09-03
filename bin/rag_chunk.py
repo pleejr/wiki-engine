@@ -99,7 +99,7 @@ def _split_size(pairs, limit):
 # LIST_PACK is deliberately well below MAX_CHARS. A flat list page — an append-only log of
 # dated entries, one `# ` title and no sections — has no structure for the two heading levels
 # to find, so it fell through to size packing and filled every chunk to the embedder's cap.
-# Measured on a real log: 187 self-contained entries, median 1,475 characters, packed ~2.9 to
+# Measured on a real log (2026-08): 187 self-contained entries, median 1,475 characters, packed ~2.9 to
 # a chunk at a median 5,115. Nothing was lost — every character was embedded — but one vector
 # then had to represent three unrelated days, and the lead entry dominated it, so a query
 # phrased from memory ranked the diluted chunk below shorter topical pages. Present in the
@@ -108,6 +108,13 @@ def _split_size(pairs, limit):
 # The entries were already the right retrieval unit; the splitter had no rule that saw them.
 # Packing to a smaller budget rather than one-item-per-chunk keeps a page of many tiny bullets
 # from exploding into a chunk each, while an ordinary long entry still stands alone.
+# Re-measured 2026-09-03 on the same vault at 242 entries: median 1,505 characters — the
+# constant still describes the corpus it was tuned on. A second vault reported 443 entries at
+# a median of ~2,400, i.e. the tuning drifting with the file's growth; that is what
+# rotate-log.sh exists to bound. The constant was NOT moved on that report, because a median
+# alone is not a recall measurement; re-tune against a recall comparison, and record the
+# corpus and date here when you do, so the next reader can tell a stale constant from a
+# current one.
 LIST_PACK = 2000
 
 _LIST_START = ("- ", "* ", "+ ")
