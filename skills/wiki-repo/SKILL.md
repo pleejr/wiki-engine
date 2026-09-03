@@ -3,7 +3,7 @@ name: wiki-repo
 description: Ingest or refresh ONE repo's wiki page in the wiki vault ($WIKI_PATH) with git-ref provenance. Use when documenting a repository for the vault, or when a repo's existing wiki page is stale (its recorded ref/sha differs from HEAD). Single repo only — no cross-repo synthesis.
 status: active
 summary: ingest/refresh one repo's wiki page with git-ref provenance.
-updated: 2026-07-13
+updated: 2026-09-03
 ---
 
 # wiki-repo — ingest or refresh one repo
@@ -43,4 +43,4 @@ Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's c
 
 ## Rules
 - `boundary:` **must match what the vault declares in its own `CLAUDE.md`** — read it, never assume; the engine is boundary-agnostic and names no value. **No secrets** copied into the page (no `.env` values, keys, tokens).
-- In-session by default; never from a hook that fires on an event its own child can re-trigger. A bounded, deliberately-initiated run — a scheduled staleness refresh, say — is legitimate when it carries a re-entry sentinel, is concurrency-bounded, and terminates. See the **Hard safety rule** in the engine's `CLAUDE.md`.
+- **In-session, on demand; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule). A bounded, deliberately-initiated run — a scheduled staleness refresh, say — is legitimate under that rule's guards.

@@ -3,7 +3,7 @@ name: wiki-adopt
 description: Idempotent adoption of the wiki-engine on a machine — bring up a vault whether or not one exists yet. No vault present → scaffold it (new-wiki.sh, pinning this engine) then wire + seed; vault already cloned (a second/Nth machine) → just wire the machine. Either path converges through wire-machine.sh (engine submodule + skill links + WIKI_PATH + always-on CLAUDE.md import + recall runtime + feature-adoption), and is safe to re-run. Run from a standalone wiki-engine clone; the human starts the session, so there is no `claude` spawn. One-time and interactive — in-session, not a hook.
 status: active
 summary: idempotent: scaffold a new vault OR wire an already-cloned one, then seed — safe to re-run.
-updated: 2026-07-16
+updated: 2026-09-03
 ---
 
 # wiki-adopt — stand up a vault on a new machine in one session
@@ -55,7 +55,7 @@ The front door for adopting **the wiki-engine loop** on a machine. It **converge
 6. **Report.** Summarize what was created and wired, and tell the user the vault is live for the next session (new shell picks up `WIKI_PATH`; the always-on import loads the router automatically).
 
 ## Rules
-- **In-session, on demand.** Adoption is a one-time interactive bring-up, so there is nothing here worth automating — and never from a hook that fires on an event its own child can re-trigger, which is the structure that produced the `.ai-os` fork-bomb. The rule targets runaway agent generation, not headless `claude`. See the **Hard safety rule** in the engine's `CLAUDE.md`.
+- **In-session, on demand; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule). Adoption is a one-time interactive bring-up, so there is nothing here worth automating.
 - **Idempotent — safe to re-run.** Scaffolding is create-new (`new-wiki.sh` refuses over an existing vault); wiring converges via `wire-machine.sh` (add-only, `--check`-able). For ongoing *content* curation use `checkpoint`/`wiki-repo`.
 - The `--wire-*` flags assume a single-vault machine; never run them where the other boundary's vault also lives.
 - Respect the boundary and the no-secrets rule at every step.

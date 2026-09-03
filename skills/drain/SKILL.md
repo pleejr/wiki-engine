@@ -3,7 +3,7 @@ name: drain
 description: Drive the engine's proposal queue to empty and keep going until nothing is outstanding — intake each report, reproduce it, fix the CLASS, test red-before-green, ship, release, adopt into the consuming vault, and re-verify what the release just made stale. Runs the whole loop autonomously and stops only for decisions that genuinely need direction (a breaking change, destroying unrecoverable work, or a taste call the code cannot settle). Use when the user says "drain the queue", "work the queue until it's empty", "intake everything outstanding", "keep going until there's nothing left", or hands over a batch of reports. Distinct from `engine-proposal` (which files ONE report or intakes ONE arrival) and from `verify` / `update` (single passes this loop calls): drain is the outer loop that runs them until the work-list is empty and says so with evidence.
 status: active
 summary: the engine-dev outer loop — intake, fix the class, ship, release, adopt, re-verify, repeat until nothing is outstanding.
-updated: 2026-08-12
+updated: 2026-09-03
 ---
 
 # drain — run the engine-dev loop until nothing is outstanding
@@ -87,6 +87,6 @@ The loop ends when every list in §1 is empty, and the report says so with the c
 
 ## Rules
 
-- **In-session and human-initiated.** Never wire this to a lifecycle hook: the loop merges, tags and releases, and a hook whose trigger its own child can re-fire is the fork-bomb structure the engine's `CLAUDE.md` forbids.
+- **In-session and human-initiated; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule) — the loop merges, tags and releases.
 - **Deterministic tools do the mechanics; judgement stays here.** `engine-proposal.sh`, `lint*.sh`, `update.sh`, `verify-status.sh` and `upkeep.sh` find and record the work — deciding *is it correct?* is this skill's job.
 - **One item at a time, to completion.** Parallel intake belongs to a peer fleet, not to this loop.

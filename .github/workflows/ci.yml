@@ -4317,6 +4317,45 @@ jobs:
             || { echo "  FAIL the restore did not put the skill back"; fail=1; }
           exit "$fail"
 
+      - name: lint-docs catches a skill reference file nothing links to
+        run: |
+          # Proposal: skill-bodies-carry-design-history. Content moved from a SKILL.md body into
+          # references/ is loaded only when the body links to it; an orphan reference file is
+          # content that silently left the skill. Prove the gate reds on an orphan, and that a
+          # mention inside a code fence does not count as a link (the near-miss).
+          fail=0
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   the live skills pass as they stand" \
+            || { echo "  FAIL lint-docs is red before the fixture is applied"; fail=1; }
+          D=skills/engine-proposal/references; F="$D/orphan-fixture.md"
+          [ -d "$D" ] || { echo "  FIXTURE BROKEN: $D does not exist"; exit 1; }
+          printf '# orphan\n\nnothing links here\n' > "$F"
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          printf '%s\n' "$out" | grep -q 'references/orphan-fixture.md is linked from nowhere' \
+            && echo "  ok   lint-docs names the orphan reference" \
+            || { echo "  FAIL lint-docs did not name the orphan: $out"; fail=1; }
+          [ "$rc" != "0" ] \
+            && echo "  ok   ...and exits non-zero" \
+            || { echo "  FAIL lint-docs exited 0 with an orphan reference file"; fail=1; }
+          # NEAR-MISS: a mention inside a code fence is a quoted example, not a link.
+          B=skills/engine-proposal/SKILL.md; cp "$B" "$RUNNER_TEMP/SKILL.keep"
+          printf '\n```\nsee references/orphan-fixture.md\n```\n' >> "$B"
+          out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
+          cp "$RUNNER_TEMP/SKILL.keep" "$B"
+          [ "$rc" != "0" ] \
+            && echo "  ok   a fenced mention does not satisfy the link check" \
+            || { echo "  FAIL a path quoted inside a code fence was accepted as a link"; fail=1; }
+          # ...and a real prose link does.
+          printf '\nSee [orphan](references/orphan-fixture.md).\n' >> "$B"
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   a prose link satisfies it" \
+            || { echo "  FAIL a linked reference file was still reported"; fail=1; }
+          cp "$RUNNER_TEMP/SKILL.keep" "$B"; rm -f "$F"
+          ./bin/lint-docs.sh >/dev/null 2>&1 \
+            && echo "  ok   fixture removed, gate green again" \
+            || { echo "  FAIL the restore did not put the tree back"; fail=1; }
+          exit "$fail"
+
       - name: A handoff skill cannot site the Expected-versus-fix rule on one surface only
         run: |
           # The defect was ASYMMETRY: the rule lived in the intake section, which only the
