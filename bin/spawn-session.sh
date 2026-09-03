@@ -3,6 +3,9 @@
 # consumer's machine supplies. The engine knows that a session can be spawned; it never knows
 # how. Same seam as session-checks.d/: the engine composes a drop-in it does not ship.
 #
+# Since v1.76.0 this is the FALLBACK path: `checkpoint` starts the host's native subagent first
+# and reaches for this adapter only on a host with none. The contract below is unchanged.
+#
 # Why this exists: a skill that ends by telling the operator to "run that separately, in its
 # own session" makes them perform the handoff by hand at the exact moment the separation was
 # meant to relieve — the end of unrelated work. So the accepted branch collapses toward the
