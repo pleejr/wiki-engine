@@ -85,6 +85,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `release-title-splitter-cuts-inside-code-spans` | shipped | derived |
 | `session-banner-pending-proposal-nudge` | alias | engine-proposal-file-queue |
 | `session-banner-reimplements-lease-liveness` | shipped | derived |
+| `skills-descriptions-exceed-router-cut` | open | received 2026-09-03 |
 | `skills-hardcode-boundary-value` | shipped | derived |
 | `soft-wrap-lint-covers-the-ignored-raw-sessions-buffer` | shipped | derived |
 | `statusline-composable-segments` | shipped | derived |
