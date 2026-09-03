@@ -1,6 +1,7 @@
 ---
 slug: worktree-staleness-warning-omits-the-behind-case
-outcome: open
+outcome: accepted
+reason: "accepted — the six-step fixture the reporter wrote but had not run was run at HEAD and behaves exactly as claimed: at 1 ahead / 1 behind, ensure prints `rebase <main>`, following it leaves the branch outside origin/<main>'s history (merge-base --is-ancestor non-zero) and integrate exits 3 with the DIVERGED refusal. Suggested fix (a)-(c) taken as proposed: a second behind_count and a branch on it; ahead-only keeps today's line; ahead-and-behind names the divergence and prints the two commands that move the local ref first. One wording decision beyond the report: the wrong command is not printed even inside a warning, since a reader scanning for something to paste takes the first `git` they see. (d) — refusing to hand back a worktree while canonical is divergent — declined as raised: ensure is the first thing a session runs and a refusal there blocks work on a condition the session did not create, while warn-and-name leaves nothing unrecoverable. (e) taken literally: CI asserts ahead-only is NOT called divergence, and the divergent case is tested by running the commands the warning prints rather than matching its text, then requiring the branch to descend from both origin/<main> and <main> and integrate to succeed. The report's own Expected-versus-fix check was correct and useful: the fix produces the first form of the Expected, and that is the form shipped."
 received: 2026-09-03
 ---
 
