@@ -1653,6 +1653,14 @@ jobs:
           if [ "$(readlink "$K/scrutinize")" = /elsewhere/skills/scrutinize ] && [ -d "$K/verify" ]; then ck 0 "a foreign link and a real directory are untouched"; else ck 1 "a foreign link and a real directory are untouched"; fi
           if ! grep -q session-boot "$S"; then ck 0 "step 10 wired no SessionStart hook beside the plugin's"; else ck 1 "step 10 wired no SessionStart hook beside the plugin's"; fi
 
+          # A directory marketplace runs the plugin straight from a git checkout, where
+          # `git describe` also answers. The plugin's version is still the manifest's: reading
+          # describe there flips the marker whenever the same release also runs from a cache.
+          rm -f "$V/.engine-adopted"
+          echo '{"source":"startup"}' | CLAUDE_PLUGIN_ROOT="$GITHUB_WORKSPACE" CLAUDE_PLUGIN_DATA="$D" WIKI_PATH="$V" ./bin/session-boot.sh >/dev/null || true
+          got="$(cat "$V/.engine-adopted" 2>/dev/null || true)"
+          if [ "$got" = "v$ver+plugin" ]; then ck 0 "adoption marker is the manifest version when the plugin runs from a git checkout"; else ck 1 "adoption marker is the manifest version when the plugin runs from a git checkout (got: $got)"; fi
+
           legacy="$(echo '{"source":"startup"}' | WIKI_PATH="$V" ./bin/session-boot.sh)"
           if [ -z "$legacy" ]; then ck 0 "a legacy settings boot beside the enabled plugin is silent"; else ck 1 "a legacy settings boot beside the enabled plugin is silent"; fi
           rc=0; echo '{}' | WIKI_PATH="$V" ./bin/rag-capture.sh || rc=$?

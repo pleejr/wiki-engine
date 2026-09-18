@@ -13,8 +13,8 @@
 #   engine_superseded_by_plugin  plugin on, but this copy was not started by it — the
 #                           legacy settings hook firing beside the plugin's own. Callers
 #                           exit quietly so a session boots and captures exactly once.
-#   engine_release          the version this engine tree is: `git describe` in a checkout,
-#                           the manifest's version in a plugin cache (which is not a repo).
+#   engine_release          the version this engine tree is: the manifest's version for the
+#                           tree the plugin runs from (cache or checkout), else `git describe`.
 #
 # "Enabled" is read from user settings, never inferred from where a file sits: the same
 # tree is reached as a submodule and as a plugin source, so position proves nothing.
@@ -35,8 +35,14 @@ engine_superseded_by_plugin() {
 }
 
 engine_release() { # <engine-dir>
-  local e="${1:?engine dir}" v
-  if git -C "$e" rev-parse --git-dir >/dev/null 2>&1; then
+  local e="${1:?engine dir}" v plugin=0
+  # The tree the plugin runs from is versioned by its manifest even when it is a git checkout
+  # (a directory marketplace): `git describe` there would name the same release differently
+  # from its cache copy, and the adoption marker would flip between the two.
+  if engine_running_as_plugin && [ "$(cd "$e" 2>/dev/null && pwd -P)" = "$(cd "$CLAUDE_PLUGIN_ROOT" && pwd -P)" ]; then
+    plugin=1
+  fi
+  if [ "$plugin" -eq 0 ] && git -C "$e" rev-parse --git-dir >/dev/null 2>&1; then
     git -C "$e" describe --tags --always 2>/dev/null && return 0
   fi
   v="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$e/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
