@@ -1623,6 +1623,56 @@ jobs:
             || { echo "isolated wiring did not record the vault"; exit 1; }
           echo "ok: ephemeral vault contained; isolated wiring still works"
 
+      - name: Plugin delivery acts once, and adoption stands down only where the plugin takes over
+        run: |
+          # Since 1.80.0 the engine is also the wiki-engine plugin, and a machine mid-switch
+          # carries both deliveries. Each surface must act exactly once: the plugin's hooks
+          # run, a legacy settings hook beside them stays silent, and adoption stops wiring
+          # what the plugin now carries — while a machine WITHOUT the plugin is unchanged.
+          #
+          # The plugin copy is made without .git, because an installed plugin is a cache
+          # copy, not a checkout: version must come from the manifest there.
+          C="$RUNNER_TEMP/cache"; rsync -a --exclude .git "$GITHUB_WORKSPACE/" "$C/"
+          D="$RUNNER_TEMP/pdata"; K="$RUNNER_TEMP/pskills"; S="$RUNNER_TEMP/psettings.json"
+          V="$RUNNER_TEMP/pvault"; mkdir -p "$V" "$K"; ln -sfn "$GITHUB_WORKSPACE" "$V/engine"
+          ver="$(jq -r .version .claude-plugin/plugin.json)"
+          ln -sfn /v/engine/skills/checkpoint "$K/checkpoint"        # ours: must go
+          ln -sfn /elsewhere/skills/scrutinize "$K/scrutinize"       # not ours: must stay
+          mkdir -p "$K/verify"                                        # real dir: must stay
+          printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": true } }\n' > "$S"
+          export CLAUDE_SETTINGS="$S" CLAUDE_SKILLS_DIR="$K"
+          # Each check is an `if`, never `cond; ck $?`: steps run under `bash -e`, where a failed
+          # test on its own line ends the step before it can report which check failed.
+          fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+
+          if out="$(echo '{"source":"startup"}' | CLAUDE_PLUGIN_ROOT="$C" CLAUDE_PLUGIN_DATA="$D" WIKI_PATH="$V" "$C/bin/session-boot.sh")"; then ck 0 "plugin boot exits 0"; else ck 1 "plugin boot exits 0"; fi
+          if printf '%s' "$out" | jq -r .systemMessage | grep -qF "v$ver"; then ck 0 "banner names the plugin's release (v$ver), not the submodule's"; else ck 1 "banner names the plugin's release (v$ver), not the submodule's"; fi
+          if [ "$(readlink "$D/engine")" = "$C" ]; then ck 0 "boot keeps \$CLAUDE_PLUGIN_DATA/engine pointing at the running engine"; else ck 1 "boot keeps \$CLAUDE_PLUGIN_DATA/engine pointing at the running engine"; fi
+          if [ "$(cat "$V/.engine-adopted" 2>/dev/null)" = "v$ver+plugin" ]; then ck 0 "adoption marker is the manifest version (and the delivery mode) in a non-git cache"; else ck 1 "adoption marker is the manifest version (and the delivery mode) in a non-git cache"; fi
+          if [ ! -e "$K/checkpoint" ]; then ck 0 "step 20 removed its own engine skill link"; else ck 1 "step 20 removed its own engine skill link"; fi
+          if [ "$(readlink "$K/scrutinize")" = /elsewhere/skills/scrutinize ] && [ -d "$K/verify" ]; then ck 0 "a foreign link and a real directory are untouched"; else ck 1 "a foreign link and a real directory are untouched"; fi
+          if ! grep -q session-boot "$S"; then ck 0 "step 10 wired no SessionStart hook beside the plugin's"; else ck 1 "step 10 wired no SessionStart hook beside the plugin's"; fi
+
+          legacy="$(echo '{"source":"startup"}' | WIKI_PATH="$V" ./bin/session-boot.sh)"
+          if [ -z "$legacy" ]; then ck 0 "a legacy settings boot beside the enabled plugin is silent"; else ck 1 "a legacy settings boot beside the enabled plugin is silent"; fi
+          rc=0; echo '{}' | WIKI_PATH="$V" ./bin/rag-capture.sh || rc=$?
+          if [ "$rc" -eq 0 ] && [ ! -d "$V/raw/sessions" ]; then ck 0 "a legacy capture beside the enabled plugin writes nothing"; else ck 1 "a legacy capture beside the enabled plugin writes nothing"; fi
+
+          # Switching the plugin OFF at the SAME engine version must re-run adoption: steps 10
+          # and 20 now owe the hook and the links back. The cache copy is that same version.
+          printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": false } }\n' > "$S"
+          "$C/bin/apply-adopt.sh" --wiki "$V" --settings "$S" >/dev/null 2>&1 || true
+          if grep -q session-boot "$S" && [ -L "$K/checkpoint" ]; then ck 0 "switching the plugin off at the same version re-wires the hook and the skill links"; else ck 1 "switching the plugin off at the same version re-wires the hook and the skill links"; fi
+
+          # Control: the same machine WITHOUT the plugin must behave exactly as before.
+          printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": false } }\n' > "$S"
+          ln -sfn /v/engine/skills/checkpoint "$K/checkpoint"
+          legacy="$(echo '{"source":"startup"}' | WIKI_PATH="$V" ./bin/session-boot.sh)"
+          if printf '%s' "$legacy" | jq -e .systemMessage >/dev/null; then ck 0 "control: with the plugin disabled the settings boot runs"; else ck 1 "control: with the plugin disabled the settings boot runs"; fi
+          if grep -q session-boot "$S"; then ck 0 "control: step 10 wires the SessionStart hook again"; else ck 1 "control: step 10 wires the SessionStart hook again"; fi
+          if [ -L "$K/checkpoint" ]; then ck 0 "control: step 20 keeps the engine skill link"; else ck 1 "control: step 20 keeps the engine skill link"; fi
+          exit "$fail"
+
       - name: Containing one surface must not license writing the other
         run: |
           # REGRESSION: redirecting --settings is the DOCUMENTED way to contain a throwaway

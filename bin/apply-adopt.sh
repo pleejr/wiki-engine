@@ -50,6 +50,11 @@ done
 [ -d "$ADOPT_D" ] || exit 0   # engine has no adoption steps; nothing to do
 
 pinned="$(engine_release "$ENGINE")"   # a plugin cache is not a git repo; read the manifest
+# The delivery mode is part of what was adopted: steps 10 and 20 do opposite things with the
+# plugin on and off, so a machine that switches either way must re-run them. Keyed on the
+# version alone, switching the plugin OFF left the machine with no boot hook and no skill
+# links until the next release happened to change the version.
+if CLAUDE_SETTINGS="$SETTINGS" engine_plugin_enabled; then pinned="$pinned+plugin"; fi
 marker_file="$WIKI/.engine-adopted"
 adopted="$( [ -f "$marker_file" ] && cat "$marker_file" 2>/dev/null || echo "" )"
 
