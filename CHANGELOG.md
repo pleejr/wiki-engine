@@ -4,6 +4,22 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.80.0] — 2026-09-18
+
+Minor — the engine also ships as a Claude Code plugin, `wiki-engine@wiki-engine`, beside the vault submodule. Nothing changes for a vault that does not enable it. Adopt with `bin/adopt.sh` or `update.sh`; to switch a machine to plugin delivery, see USAGE "Plugin delivery".
+
+### Added
+- **The repo is a plugin and its own marketplace.** `.claude-plugin/plugin.json` names the plugin; `.claude-plugin/marketplace.json` pins it to the release tag, so a consumer receives a tagged tree, never a branch head. `hooks/hooks.json` carries the SessionStart boot and the SessionEnd capture that adoption and hand-wiring used to put in `settings.json`.
+- **`bin/plugin-lib.sh`** answers the questions that keep the two delivery paths from both acting: is the plugin enabled (read from user settings, never inferred from where a file sits), was this script started by the plugin, and which release this tree is when it is a plugin cache rather than a git checkout.
+- **`lint-docs.sh` sections 10 and 11.** A skill body must reach engine scripts as `${CLAUDE_SKILL_DIR}/../../bin/<name>`, and every script it names must exist; the old `$WIKI_PATH/engine/bin/` form is refused because it exists only under the submodule. The plugin manifest's version, the marketplace entry's version and ref, and the newest CHANGELOG release must name one release, and every `hooks/hooks.json` command must name an executable script and state a timeout.
+
+### Changed
+- **Skill bodies resolve the engine through their own directory.** `${CLAUDE_SKILL_DIR}` is substituted under both deliveries, and `../../bin/` from it resolves physically to the engine that delivered the skill: the vault's pinned submodule through a symlink, the plugin cache under the plugin.
+- **A legacy settings hook stays silent beside the enabled plugin.** `session-boot.sh` and `rag-capture.sh` exit quietly when the plugin is enabled and they were not started by it, so a machine mid-switch boots and captures once. `ensure-hook.sh` stays add-only, so step 10 names the redundant `settings.json` entry instead of deleting it.
+- **Adoption stands down where the plugin takes over.** With the plugin enabled, step 10 no longer adds the SessionStart hook, and step 20 removes the skill symlinks it made into an engine's `skills/` (a link to anything else, or a real directory, is left alone), since the plugin provides those skills as `wiki-engine:<name>`. The adoption marker records the manifest's version when the engine is not a git checkout.
+- **The banner and the version preflight report the running plugin**, and name the vault's submodule pin when it differs, because the vault's pre-commit gate and CI still run that copy.
+- **Under the plugin, boot keeps `${CLAUDE_PLUGIN_DATA}/engine` pointing at the running engine.** `${CLAUDE_PLUGIN_ROOT}` moves on every plugin update; anything outside Claude Code that needs the engine reads this link.
+
 ## [1.79.1] — 2026-09-03
 
 Patch — `lint-memory.sh` infers a retired note's successor from the record before warning that none is declared. Adopt with `bin/adopt.sh` or `update.sh`.

@@ -29,6 +29,26 @@ DEST="${ADOPT_SKILLS_DIR:?}"
 # the wrong one, with skill links this time. See bin/adopt-lib.sh for the rule.
 require_engine_asset "$SRC" dir "the engine's own skills, which the machine links to"
 
+# Plugin delivery: the plugin provides these skills as wiki-engine:<name>. A symlink left in
+# the skills dir would load every engine skill twice, so remove the links this step made —
+# a symlink named after an engine skill whose target is some engine's skills/<name>. A real
+# directory or a link to anything else is not ours and is never touched.
+if [ "${ADOPT_PLUGIN:-0}" = "1" ]; then
+  [ "${ADOPT_WIRE_SKILLS:-1}" = "1" ] || exit 0
+  for s in "$SRC"/*/; do
+    [ -d "$s" ] || continue
+    name="$(basename "$s")"; tgt="$DEST/$name"
+    [ -L "$tgt" ] || continue
+    case "$(readlink "$tgt")" in
+      */engine/skills/"$name"|*/engine/skills/"$name"/|*/wiki-engine/skills/"$name"|*/wiki-engine/skills/"$name"/) ;;
+      *) continue ;;
+    esac
+    if [ -n "${ADOPT_CHECK:-}" ]; then echo "would unlink $name (the wiki-engine plugin provides it)"
+    else rm -f "$tgt" && echo "unlink $name (the wiki-engine plugin provides it)"; fi
+  done
+  exit 0
+fi
+
 # Never repoint the MACHINE's live skills at an EPHEMERAL vault (test / CI / scratchpad).
 # Worse than the stale-hook case this mirrors: these symlinks are what Claude Code loads,
 # so aiming them at a throwaway engine breaks every engine skill on the machine the moment

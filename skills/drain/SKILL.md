@@ -21,9 +21,9 @@ bin/engine-proposal.sh queue              # open (awaiting intake) AND awaiting-
 gh pr list --state open                   # fix branches, including ones from weeks ago
 gh run list --branch main --limit 3       # is main itself green?
 bin/lint-docs.sh && bin/lint-proposals.sh # the gates, before adding to them
-"$WIKI_PATH"/engine/bin/doctor.sh         # is the consumer behind the latest tag?
-"$WIKI_PATH"/engine/bin/verify-status.sh  # pages a release made verified-stale
-"$WIKI_PATH"/engine/bin/upkeep.sh next    # the consumer's own queue
+"${CLAUDE_SKILL_DIR}"/../../bin/doctor.sh         # is the consumer behind the latest tag?
+"${CLAUDE_SKILL_DIR}"/../../bin/verify-status.sh  # pages a release made verified-stale
+"${CLAUDE_SKILL_DIR}"/../../bin/upkeep.sh next    # the consumer's own queue
 ```
 
 **An old pull request is work-list, not debt.** Read its diff before deciding its fate — it can hold a *better* answer than what shipped since. Check its closing comment before calling anything abandoned: a rebase-and-squash under another branch closes the original exactly the way a rejection does.

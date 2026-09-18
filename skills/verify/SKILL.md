@@ -23,7 +23,7 @@ Freshness and correctness are different axes. A repo page is *fresh* when its re
 
 ## Steps
 
-1. **Find the work** — `$WIKI_PATH/engine/bin/verify-status.sh --todo` (or `upkeep.sh scan` then `upkeep.sh next`). Each line is a `repos/<slug>.md` needing a pass.
+1. **Find the work** — `${CLAUDE_SKILL_DIR}/../../bin/verify-status.sh --todo` (or `upkeep.sh scan` then `upkeep.sh next`). Each line is a `repos/<slug>.md` needing a pass.
 2. **Confirm the anchor sha** — compare the page's `sources.sha` with the clone's `git rev-parse --short HEAD` (tagged repos: `git describe --tags`).
    - **sha moved** → freshness, not verification: run **`wiki-repo`** to refresh (bumps the sha), *then* verify the refreshed page.
    - **sha matches** → verify at that sha; you're confirming the page against exactly what it claims to describe.
@@ -36,7 +36,7 @@ Freshness and correctness are different axes. A repo page is *fresh* when its re
      by:   <human-id | claude>   # whoever actually confirmed it
      against: <sources.sha>   # MUST equal sources.sha, or it reads as stale
    ```
-6. **Close out** — `$WIKI_PATH/engine/bin/upkeep.sh done verify:<slug>`; run `$WIKI_PATH/engine/bin/verify-status.sh` to confirm the page now shows ✓; run `$WIKI_PATH/engine/bin/lint.sh` (the gate). Commit the changed page(s) with a `log.md` entry stating **what was checked** and **any drift fixed** (link the source-repo PR if you opened one).
+6. **Close out** — `${CLAUDE_SKILL_DIR}/../../bin/upkeep.sh done verify:<slug>`; run `${CLAUDE_SKILL_DIR}/../../bin/verify-status.sh` to confirm the page now shows ✓; run `${CLAUDE_SKILL_DIR}/../../bin/lint.sh` (the gate). Commit the changed page(s) with a `log.md` entry stating **what was checked** and **any drift fixed** (link the source-repo PR if you opened one).
 
 ## Rules (non-negotiable)
 

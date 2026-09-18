@@ -11,18 +11,18 @@ updated: 2026-07-22
 Converge the wiki-engine loop on this machine, low-friction and safe. Everything here is **deterministic** — `doctor.sh`, `update.sh`, `wire-machine.sh` — and **never** spawns `claude`. **Engine-only by design:** a consumer's separate skill collection (with its own tags/versioning) is converged by *that* consumer's own sync, not here — the session banner may nudge you toward it separately (see `session-checks.d`). Requires `$WIKI_PATH`.
 
 ## 1. Report freshness
-Run `"$WIKI_PATH"/engine/bin/doctor.sh` — pinned engine vs latest tag, RAG deps, embedding model. Reports only.
+Run `"${CLAUDE_SKILL_DIR}"/../../bin/doctor.sh` — pinned engine vs latest tag, RAG deps, embedding model. Reports only.
 
 ## 2. Offer an engine version bump (only if behind)
 If `doctor` shows the pin behind, **ask the user** before advancing. On confirmation:
 ```sh
-"$WIKI_PATH"/engine/bin/update.sh
+"${CLAUDE_SKILL_DIR}"/../../bin/update.sh
 ```
 It advances the submodule pin to the latest same-MAJOR tag and stages it (it refuses a MAJOR bump — that needs a reviewed migration). Then remind the user to review the CHANGELOG and commit the pin.
 
 ## 3. Converge machine wiring
 ```sh
-"$WIKI_PATH"/engine/bin/wire-machine.sh --wiki "$WIKI_PATH" --check
+"${CLAUDE_SKILL_DIR}"/../../bin/wire-machine.sh --wiki "$WIKI_PATH" --check
 ```
 If it reports pending, run it again without `--check`. Add-only and idempotent — it initializes the submodule, re-links the engine's own skills to the (possibly newly-bumped) pin, ensures `WIKI_PATH` / the `CLAUDE.md` import / `.rag`, and runs feature-adoption.
 

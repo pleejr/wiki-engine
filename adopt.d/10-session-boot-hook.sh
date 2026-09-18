@@ -28,6 +28,17 @@ require_engine_asset "$ENSURE_HOOK" file "the add-only hook writer"
 # one could never be false, the other missed CI temp paths.
 [ "${ADOPT_WIRE_SETTINGS:-1}" = "1" ] || exit 0
 
+# Plugin delivery: the plugin's hooks/hooks.json carries SessionStart. Adding a settings
+# entry would boot twice. ensure-hook is add-only by design, so a legacy entry is left for
+# the operator to delete; session-boot.sh already stays silent when it fires beside the
+# plugin, so leaving it costs one no-op per session, not a double boot.
+if [ "${ADOPT_PLUGIN:-0}" = "1" ]; then
+  if grep -q 'engine/bin/session-boot.sh' "${CLAUDE_SETTINGS:-/nonexistent}" 2>/dev/null; then
+    echo "note: wiki-engine plugin is enabled; the settings.json SessionStart entry running engine/bin/session-boot.sh is now redundant and can be deleted"
+  fi
+  exit 0
+fi
+
 cmd="WIKI_PATH=$WIKI $ENGINE/bin/session-boot.sh"
 
 "$ENSURE_HOOK" \

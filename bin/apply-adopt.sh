@@ -28,7 +28,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE="$(cd "$SCRIPT_DIR/.." && pwd)"
 ADOPT_D="$ENGINE/adopt.d"
 
-DEFAULT_WIKI="$(cd "$ENGINE/.." 2>/dev/null && pwd || true)"   # engine is $WIKI/engine
+. "$SCRIPT_DIR/plugin-lib.sh"
+# Under the plugin the engine lives in the plugin cache, so its parent is not a vault.
+if engine_running_as_plugin; then DEFAULT_WIKI=""
+else DEFAULT_WIKI="$(cd "$ENGINE/.." 2>/dev/null && pwd || true)"; fi   # engine is $WIKI/engine
 WIKI="${WIKI_PATH:-$DEFAULT_WIKI}"
 FORCE=0; CHECK=0
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
@@ -46,7 +49,7 @@ done
 [ -n "$WIKI" ] || { echo "apply-adopt: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 0; }
 [ -d "$ADOPT_D" ] || exit 0   # engine has no adoption steps; nothing to do
 
-pinned="$(git -C "$ENGINE" describe --tags --always 2>/dev/null || echo unknown)"
+pinned="$(engine_release "$ENGINE")"   # a plugin cache is not a git repo; read the manifest
 marker_file="$WIKI/.engine-adopted"
 adopted="$( [ -f "$marker_file" ] && cat "$marker_file" 2>/dev/null || echo "" )"
 
@@ -111,7 +114,10 @@ case "$WIKI" in
     [ "$SETTINGS" != "$_real_settings" ]          || ADOPT_WIRE_SETTINGS=0
     [ "$ADOPT_SKILLS_DIR" != "$_real_skills" ]    || ADOPT_WIRE_SKILLS=0 ;;
 esac
-export ADOPT_WIRE_SETTINGS ADOPT_WIRE_SKILLS ADOPT_SKILLS_DIR
+# With the wiki-engine plugin enabled, the plugin carries the SessionStart hook and the
+# skills itself; steps 10 and 20 then stand down instead of wiring a second copy.
+ADOPT_PLUGIN=0; engine_plugin_enabled && ADOPT_PLUGIN=1
+export ADOPT_WIRE_SETTINGS ADOPT_WIRE_SKILLS ADOPT_SKILLS_DIR ADOPT_PLUGIN
 # Name the surface AND the redirect that would allow it — a bare "skipping machine-level
 # wiring" told the caller nothing about which knob to turn.
 [ "$ADOPT_WIRE_SETTINGS" -eq 0 ] && \
