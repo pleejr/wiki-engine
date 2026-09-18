@@ -10,7 +10,7 @@ updated: 2026-09-03
 
 A consumer vault (one that only *runs* the engine) discovers engine ideas and defects mid-work, each soaked in private context. This skill makes the handoff repeatable and boundary-safe: genericize, gate through a mechanical scan, submit as a file in the engine's `proposals/` queue — **without writing anything into the consumer vault.** On the engine-dev end it drives intake (§6).
 
-**Vault**: `$WIKI_PATH` — the consumer vault on *this* machine; must be set. The deterministic gate is `$WIKI_PATH/engine/bin/engine-proposal.sh`; this skill owns the genericization and the judgement.
+**Vault**: `$WIKI_PATH` — the consumer vault on *this* machine; must be set. The deterministic gate is `${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh`; this skill owns the genericization and the judgement.
 
 ## Routing — this vs crossover vs checkpoint
 
@@ -116,7 +116,7 @@ Keep the slug stable — it names the resulting project and is the reporter's on
 ## 4. Scan — the boundary gate (mechanical, fail-closed)
 
 ```bash
-$WIKI_PATH/engine/bin/engine-proposal.sh scan --vault "$WIKI_PATH" --file <draft.md>
+${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh scan --vault "$WIKI_PATH" --file <draft.md>
 ```
 
 It flags the consumer's own identifiers (vault slug, directory name, git user/email), home paths, emails, non-generic `boundary:` tags and secret assignments. Any finding → revise (§2) and re-scan until `scan clean`. It is a **backstop, not a substitute** for §2 — it catches only what it can derive, so read the block once more yourself.
@@ -126,9 +126,9 @@ It flags the consumer's own identifiers (vault slug, directory name, git user/em
 **Proposals are files in the engine's `proposals/` queue, submitted by pull request.**
 
 ```bash
-$WIKI_PATH/engine/bin/engine-proposal.sh submit --vault "$WIKI_PATH" --slug <slug> --file <draft.md>
+${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh submit --vault "$WIKI_PATH" --slug <slug> --file <draft.md>
 # read what it prints, then:
-$WIKI_PATH/engine/bin/engine-proposal.sh push   --vault "$WIKI_PATH" --slug <slug>
+${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh push   --vault "$WIKI_PATH" --slug <slug>
 ```
 
 **`submit` and `push` are two verbs on purpose.** The engine repository is **public**, so a pushed proposal is permanently public. `submit` runs the fail-closed scan first, prepares the branch locally, and prints the exact text that will become public; `push` performs the irreversible act (forking on demand — the fork is public too). **Read the printed block before pushing**: the scan matches identifiers it can derive; it cannot judge whether the prose discloses something private, and there is no bypass flag. Engine CI is a backstop, not the gate. `stash` is retired and warns; the block is now the file content of `proposals/<slug>.md`. Do **not** run `checkpoint` and do **not** create a node here — the engine-dev vault owns the result.
@@ -136,7 +136,7 @@ $WIKI_PATH/engine/bin/engine-proposal.sh push   --vault "$WIKI_PATH" --slug <slu
 ## 5b. Ask what happened to it — `status`, not a grep
 
 ```bash
-$WIKI_PATH/engine/bin/engine-proposal.sh status --vault "$WIKI_PATH" [--slug <slug>]
+${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh status --vault "$WIKI_PATH" [--slug <slug>]
 ```
 
 Reports **shipped** (with the release), **merged**, **rejected** (with the reason), **partially accepted**, **open** (do not re-send) or **unknown** (never arrived — re-send). A bare `status` sees only this machine's records; `--slug` asks about any proposal. It resolves against `origin/main` and prints the horizon — if it says `HEAD` only, run `update` first. Never hand-maintain a `status:` line or answer "did it ship?" with a grep of the commit log.

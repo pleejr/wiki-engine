@@ -22,6 +22,20 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKI="${WIKI_PATH:-}"
 
+# Plugin delivery (1.80.0+). With the wiki-engine plugin enabled, its own SessionStart hook
+# runs this script; a legacy settings.json hook firing beside it stays silent, so a session
+# boots exactly once. See bin/plugin-lib.sh.
+if [ -f "$SCRIPT_DIR/plugin-lib.sh" ]; then
+  . "$SCRIPT_DIR/plugin-lib.sh"
+  engine_superseded_by_plugin && exit 0
+  if engine_running_as_plugin && [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
+    # A stable path to the running engine. CLAUDE_PLUGIN_ROOT moves on every plugin update;
+    # anything outside Claude Code that needs the engine (a statusLine, a vault pre-commit)
+    # reads this link instead.
+    mkdir -p "$CLAUDE_PLUGIN_DATA" 2>/dev/null && ln -sfn "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_DATA/engine" 2>/dev/null || true
+  fi
+fi
+
 ctx=""   # accumulates human-readable text destined for the model (additionalContext)
 adopt_fail=0
 

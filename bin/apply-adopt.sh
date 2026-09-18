@@ -28,10 +28,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE="$(cd "$SCRIPT_DIR/.." && pwd)"
 ADOPT_D="$ENGINE/adopt.d"
 
-DEFAULT_WIKI="$(cd "$ENGINE/.." 2>/dev/null && pwd || true)"   # engine is $WIKI/engine
+. "$SCRIPT_DIR/plugin-lib.sh"
+# Under the plugin the engine lives in the plugin cache, so its parent is not a vault.
+if engine_running_as_plugin; then DEFAULT_WIKI=""
+else DEFAULT_WIKI="$(cd "$ENGINE/.." 2>/dev/null && pwd || true)"; fi   # engine is $WIKI/engine
 WIKI="${WIKI_PATH:-$DEFAULT_WIKI}"
 FORCE=0; CHECK=0
-SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
+SETTINGS="${CLAUDE_SETTINGS:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}"   # the file Claude Code reads
 while [ $# -gt 0 ]; do
   case "$1" in
     --wiki)     WIKI="$2"; shift 2;;
@@ -46,7 +49,12 @@ done
 [ -n "$WIKI" ] || { echo "apply-adopt: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 0; }
 [ -d "$ADOPT_D" ] || exit 0   # engine has no adoption steps; nothing to do
 
-pinned="$(git -C "$ENGINE" describe --tags --always 2>/dev/null || echo unknown)"
+pinned="$(engine_release "$ENGINE")"   # a plugin cache is not a git repo; read the manifest
+# The delivery mode is part of what was adopted: steps 10 and 20 do opposite things with the
+# plugin on and off, so a machine that switches either way must re-run them. Keyed on the
+# version alone, switching the plugin OFF left the machine with no boot hook and no skill
+# links until the next release happened to change the version.
+if CLAUDE_SETTINGS="$SETTINGS" engine_plugin_enabled; then pinned="$pinned+plugin"; fi
 marker_file="$WIKI/.engine-adopted"
 adopted="$( [ -f "$marker_file" ] && cat "$marker_file" 2>/dev/null || echo "" )"
 
@@ -111,7 +119,10 @@ case "$WIKI" in
     [ "$SETTINGS" != "$_real_settings" ]          || ADOPT_WIRE_SETTINGS=0
     [ "$ADOPT_SKILLS_DIR" != "$_real_skills" ]    || ADOPT_WIRE_SKILLS=0 ;;
 esac
-export ADOPT_WIRE_SETTINGS ADOPT_WIRE_SKILLS ADOPT_SKILLS_DIR
+# With the wiki-engine plugin enabled, the plugin carries the SessionStart hook and the
+# skills itself; steps 10 and 20 then stand down instead of wiring a second copy.
+ADOPT_PLUGIN=0; engine_plugin_enabled && ADOPT_PLUGIN=1
+export ADOPT_WIRE_SETTINGS ADOPT_WIRE_SKILLS ADOPT_SKILLS_DIR ADOPT_PLUGIN
 # Name the surface AND the redirect that would allow it — a bare "skipping machine-level
 # wiring" told the caller nothing about which knob to turn.
 [ "$ADOPT_WIRE_SETTINGS" -eq 0 ] && \

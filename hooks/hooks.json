@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/session-boot.sh\"",
+            "statusMessage": "engine boot",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "RAG_CAPTURE_TRANSCRIPT_PATH=1 \"${CLAUDE_PLUGIN_ROOT}/bin/rag-capture.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

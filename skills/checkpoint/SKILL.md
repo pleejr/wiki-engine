@@ -14,26 +14,26 @@ Run this deliberately at the end of a work session. **Vault**: `$WIKI_PATH` — 
 
 Two sessions otherwise share one working tree, where simultaneous writes are silent last-writer-wins. Before editing any vault file:
 
-- `WORK="$($WIKI_PATH/engine/bin/vault-worktree.sh ensure)" || { echo "not isolated — resolve before writing"; }` — creates or reuses a per-session worktree on its own `wt/<session>` branch off `origin/main` and prints its path. **Check the exit status**: non-zero means it could not isolate and printed canonical instead. **Read its stderr** — it is the only place a stale base is mentioned, and the returned path looks identical either way: a reattached branch behind `origin/main`, or canonical `main` holding unpushed commits the fresh cut lacks. **Rebase before you survey, not just before you write** — a stale base corrupts *reads*, so a `grep` for work that already exists prints nothing and exits 0. Idempotent within a session; opt out with `WIKI_WORKTREE=0`.
+- `WORK="$(${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh ensure)" || { echo "not isolated — resolve before writing"; }` — creates or reuses a per-session worktree on its own `wt/<session>` branch off `origin/main` and prints its path. **Check the exit status**: non-zero means it could not isolate and printed canonical instead. **Read its stderr** — it is the only place a stale base is mentioned, and the returned path looks identical either way: a reattached branch behind `origin/main`, or canonical `main` holding unpushed commits the fresh cut lacks. **Rebase before you survey, not just before you write** — a stale base corrupts *reads*, so a `grep` for work that already exists prints nothing and exits 0. Idempotent within a session; opt out with `WIKI_WORKTREE=0`.
 - Make **all edits to TRACKED vault content** — and every commit and lint run — against `$WORK`, never `$WIKI_PATH` directly.
 - **Carve-out: git-ignored per-machine state is edited in canonical `$WIKI_PATH`.** A worktree checks out tracked files only, so that state is not there, and its absence looks exactly like "nothing to do". The two are `raw/sessions/*.md` (§3) and `.rag/` (§5); any step added here that touches an ignored path must name canonical the same way.
-- Run engine tooling from canonical — the `engine/` submodule is not checked out inside a worktree: `$WIKI_PATH/engine/bin/lint.sh --wiki "$WORK"`.
+- Run engine tooling from canonical — the `engine/` submodule is not checked out inside a worktree: `${CLAUDE_SKILL_DIR}/../../bin/lint.sh --wiki "$WORK"`.
 - **Stage explicit paths, never `git add -A`** — it is exactly how one session swept a peer's uncommitted work into its own commit.
 - Optional: `vault-worktree.sh lease projects/ memory/` declares what you will touch and warns if a live peer declared the same area.
-- When the writes are committed, `$WIKI_PATH/engine/bin/vault-worktree.sh integrate` (from inside `$WORK`) rebases your branch onto `main` in your worktree and fast-forwards `main` under a lock — exit **3**: resolve the conflict and re-run; **4**: another session holds the lock. Then `$WIKI_PATH/engine/bin/vault-worktree.sh gc "$WORK"` retires this worktree (clean only; never discards uncommitted work or an unmerged branch).
+- When the writes are committed, `${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh integrate` (from inside `$WORK`) rebases your branch onto `main` in your worktree and fast-forwards `main` under a lock — exit **3**: resolve the conflict and re-run; **4**: another session holds the lock. Then `${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh gc "$WORK"` retires this worktree (clean only; never discards uncommitted work or an unmerged branch).
 
 ## 1. Project state (if a project is active)
 - Open/create `$WIKI_PATH/projects/<slug>.md` (frontmatter `type: project`, `status: active|paused|done`, `repos: [[...]]`).
 - **Overwrite** the **Current state** section with where things stand; update **Next steps**.
 - **Append** (never overwrite) to **Key decisions** if a decision was made.
 - Keep the page's frontmatter `status:` (`active|paused|done`) and one-line `summary:` current — these drive the generated `index.md` Projects buckets (§4). Closing a project = flip `status: done`.
-- Append **one dated entry** to `$WIKI_PATH/log.md` — one physical line, `- **YYYY-MM-DD (tag)** — …`, linking the notes this session distilled; `lint-log.sh` warns over `LOG_ENTRY_WARN_WORDS` (400). When the file has outgrown the quarter, `$WIKI_PATH/engine/bin/rotate-log.sh` (from `$WORK`) moves older entries to `log/` — text unchanged.
+- Append **one dated entry** to `$WIKI_PATH/log.md` — one physical line, `- **YYYY-MM-DD (tag)** — …`, linking the notes this session distilled; `lint-log.sh` warns over `LOG_ENTRY_WARN_WORDS` (400). When the file has outgrown the quarter, `${CLAUDE_SKILL_DIR}/../../bin/rotate-log.sh` (from `$WORK`) moves older entries to `log/` — text unchanged.
 
 ## 2. Distill memory (raw → curated)
 - Review what emerged this session — Claude Code's native per-project memory **and** any `$WIKI_PATH/raw/sessions/` entries auto-captured by `rag-capture.sh` — as raw input.
 - Promote **durable** facts into `$WIKI_PATH/memory/` notes with the right `type`: `preference` (how I work) · `decision` (a chosen path + why) · `lesson` (a hard-won rule).
 - Give each ≥2 `[[wikilinks]]`; mark any note it supersedes as `status: superseded`.
-- Add/refresh the `$WIKI_PATH/index.md` memory entry. For **project** pages, don't hand-edit the index Projects buckets — regenerate them from frontmatter: `$WIKI_PATH/engine/bin/gen-projects-index.sh --wiki "$WORK"` (splices between the `<!-- projects:start/end -->` sentinels, same pattern as the skills catalog).
+- Add/refresh the `$WIKI_PATH/index.md` memory entry. For **project** pages, don't hand-edit the index Projects buckets — regenerate them from frontmatter: `${CLAUDE_SKILL_DIR}/../../bin/gen-projects-index.sh --wiki "$WORK"` (splices between the `<!-- projects:start/end -->` sentinels, same pattern as the skills catalog).
 - **The notes this step writes are the evidence base for `skill-candidates`** (§6), which reads them back out to find procedures repeated often enough to deserve a skill. Nothing here needs to anticipate that — just date the notes and keep them specific about what was *done*, since a note recording only a conclusion cannot later be counted as an occurrence.
 
 ## 3. Prune the raw source (keep the vault authoritative)
@@ -46,17 +46,17 @@ Two sessions otherwise share one working tree, where simultaneous writes are sil
 - Pruning is **in-session and human-initiated** — never a hook, never an unattended sweep; no sentinel or concurrency bound makes an unattended delete correct.
 
 ## 4. Lint before finishing
-- Run `$WIKI_PATH/engine/bin/lint.sh --wiki "$WORK"` (the umbrella: memory notes + frontmatter-property validity + soft-wrap drift + skills-catalog drift + projects-catalog drift), pointing it at the worktree from §0. Fix any failures before you consider the checkpoint done — don't commit a vault that fails lint.
+- Run `${CLAUDE_SKILL_DIR}/../../bin/lint.sh --wiki "$WORK"` (the umbrella: memory notes + frontmatter-property validity + soft-wrap drift + skills-catalog drift + projects-catalog drift), pointing it at the worktree from §0. Fix any failures before you consider the checkpoint done — don't commit a vault that fails lint.
 
 ## 5. Refresh semantic recall (if enabled)
-- If the vault has a `.rag` index (`$WIKI_PATH/.rag/index.jsonl` exists), run `$WIKI_PATH/engine/bin/rag-build.sh` **against canonical `$WIKI_PATH` after the §0 worktree is integrated** — the `.rag/` index is untracked and lives only in the canonical checkout — so this session's notes are recallable next session (incremental; only changed files re-embed). Skip if there is no index or the embedder is down; recall is optional. `rag-build.sh` is deterministic and hook-safe on its own; it is `checkpoint` that must stay in-session.
+- If the vault has a `.rag` index (`$WIKI_PATH/.rag/index.jsonl` exists), run `${CLAUDE_SKILL_DIR}/../../bin/rag-build.sh` **against canonical `$WIKI_PATH` after the §0 worktree is integrated** — the `.rag/` index is untracked and lives only in the canonical checkout — so this session's notes are recallable next session (incremental; only changed files re-embed). Skip if there is no index or the embedder is down; recall is optional. `rag-build.sh` is deterministic and hook-safe on its own; it is `checkpoint` that must stay in-session.
 
 ## 6. Offer the mining pass — do not run it
 
 `skill-candidates` reads the notes §2 just wrote and reports procedures repeated often enough to deserve a skill. **End the checkpoint by offering it, and stop there.**
 
 - **Defer** — the default; writes nothing.
-- **Accept** — start the host's native subagent (fresh, or a fork of this session) with: *"Run the `skill-candidates` mining pass read-only over `$WIKI_PATH`: return the ranked candidate report with dated evidence and the catalog-overlap check. Ask no questions; write nothing."* When its report returns, run `skill-candidates` §6a–§7 here — the questions need the operator, the verdicts a worktree. No native subagent tool → `$WIKI_PATH/engine/bin/spawn-session.sh --cwd "$WIKI_PATH" --what 'the skill-mining pass' --prompt '<same prompt>'`; relay what it prints and stop.
+- **Accept** — start the host's native subagent (fresh, or a fork of this session) with: *"Run the `skill-candidates` mining pass read-only over `$WIKI_PATH`: return the ranked candidate report with dated evidence and the catalog-overlap check. Ask no questions; write nothing."* When its report returns, run `skill-candidates` §6a–§7 here — the questions need the operator, the verdicts a worktree. No native subagent tool → `${CLAUDE_SKILL_DIR}/../../bin/spawn-session.sh --cwd "$WIKI_PATH" --what 'the skill-mining pass' --prompt '<same prompt>'`; relay what it prints and stop.
 
 Why here: mining reads the notes this pass just committed, and §0's worktree is retired. Never from a lifecycle hook (engine `CLAUDE.md`).
 

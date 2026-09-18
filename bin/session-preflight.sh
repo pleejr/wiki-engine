@@ -25,7 +25,20 @@ echo "=== Session preflight (versions) ==="
 
 # wiki-engine — delegate to the sibling engine-version.sh (deterministic, no claude). -
 ev="$SCRIPT_DIR/engine-version.sh"
-if [ ! -x "$ev" ]; then
+[ -f "$SCRIPT_DIR/plugin-lib.sh" ] && . "$SCRIPT_DIR/plugin-lib.sh"
+if command -v engine_running_as_plugin >/dev/null 2>&1 && engine_running_as_plugin; then
+  # Plugin delivery: the marketplace pins and updates the engine, so there is no submodule
+  # to compare against origin. Report what runs, and the vault's pin when it differs — the
+  # vault's pre-commit gate and CI still run THAT copy until the vault drops the submodule.
+  run_ver="$(engine_release "$(cd "$SCRIPT_DIR/.." && pwd)")"
+  echo "wiki-engine: plugin $run_ver (updates arrive through the plugin marketplace)"
+  if [ -n "$WIKI" ] && [ -d "$WIKI/engine" ]; then
+    pin_ver="$(git -C "$WIKI/engine" describe --tags --always 2>/dev/null || true)"
+    if [ -n "$pin_ver" ] && [ "$pin_ver" != "$run_ver" ]; then
+      echo "wiki-engine: the vault's engine/ submodule is pinned at $pin_ver — its pre-commit gate and CI run that copy, not the plugin"
+    fi
+  fi
+elif [ ! -x "$ev" ]; then
   echo "wiki-engine: engine-version.sh not found beside this script — skipping"
 else
   ev_out="$("$ev" 2>/dev/null)"; ev_rc=$?

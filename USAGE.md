@@ -78,6 +78,15 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 
 ## Setup & activation
 
+- **Plugin delivery (1.80.0+):** the engine is also the Claude Code plugin `wiki-engine@wiki-engine`. It carries the skills (as `wiki-engine:<name>`), the SessionStart boot, and the SessionEnd capture, and updates itself from the marketplace's release tag. The vault is still read from `$WIKI_PATH`, which must reach Claude Code's environment (your shell profile, or `env.WIKI_PATH` in `~/.claude/settings.json`). To switch a machine:
+
+  ```sh
+  claude plugin marketplace add pleejr/wiki-engine
+  claude plugin install wiki-engine@wiki-engine --scope user
+  ```
+
+  The next session's boot removes the engine skill symlinks adoption made and stops wiring the settings hook; a `settings.json` SessionStart or SessionEnd entry naming `engine/bin/session-boot.sh` or `rag-capture.sh` then does nothing and can be deleted by hand. The vault keeps its `engine/` submodule for now: its pre-commit gate, CI and statusLine still run the pinned copy, and the banner says when the two differ.
+
 - **New machine (idempotent adoption):** clone the engine standalone, run `bin/link-skills.sh` (so Claude Code can discover the skills), start Claude from any folder, run the **`wiki-adopt`** skill. It detects state and converges: **no vault** → scaffold + wire + seed; **vault already cloned** (a second/Nth machine) → just wire this machine — `bin/wire-machine.sh --wiki DIR --wire-shell --wire-claude-md` (preview with `--check`). Re-run-safe. Single-vault machines only.
 - **New vault (scaffolder):** `bin/new-wiki.sh --path … --boundary personal|work --email …` (prompts for anything omitted; auto-provisions RAG unless `--no-rag`; add `--wire-shell --wire-claude-md --create-remote OWNER/NAME` to automate activation), then run `wiki-onboard` to seed it.
 - **Turn on semantic recall (existing vault):** `engine/bin/rag-setup.sh && engine/bin/rag-build.sh`. Then just prompt — `wiki-context` recalls automatically.

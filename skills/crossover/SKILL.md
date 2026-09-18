@@ -43,9 +43,9 @@ When unsure, prefer **copy** — a duplicated note is cheap; a wrongly-deleted o
 ## 2. Export (origin session)
 
 ```bash
-$WIKI_PATH/engine/bin/crossover.sh export --vault "$WIKI_PATH" --batch <id> \
+${CLAUDE_SKILL_DIR}/../../bin/crossover.sh export --vault "$WIKI_PATH" --batch <id> \
   memory/lesson-foo.md comparisons/bar.md            # move batch
-$WIKI_PATH/engine/bin/crossover.sh export --vault "$WIKI_PATH" --batch <id> --copy \
+${CLAUDE_SKILL_DIR}/../../bin/crossover.sh export --vault "$WIKI_PATH" --batch <id> --copy \
   memory/dual-note.md                                 # copy batch
 ```
 
@@ -56,7 +56,7 @@ Hand the blocks to the user **one at a time** — each `##CROSSOVER v1 EXPORT �
 To repair one lossy paste, re-emit just that block — pass the **same full path list** so the batch identity is unchanged:
 
 ```bash
-$WIKI_PATH/engine/bin/crossover.sh export --vault "$WIKI_PATH" --batch <id> --block 2 \
+${CLAUDE_SKILL_DIR}/../../bin/crossover.sh export --vault "$WIKI_PATH" --batch <id> --block 2 \
   memory/lesson-foo.md comparisons/bar.md            # re-emits block 2 only
 ```
 
@@ -65,7 +65,7 @@ $WIKI_PATH/engine/bin/crossover.sh export --vault "$WIKI_PATH" --batch <id> --bl
 On the other machine, in its own vault session:
 
 ```bash
-$WIKI_PATH/engine/bin/crossover.sh import --vault "$WIKI_PATH" < paste-block
+${CLAUDE_SKILL_DIR}/../../bin/crossover.sh import --vault "$WIKI_PATH" < paste-block
 ```
 
 Run it **once per pasted block** — import accumulates into `.crossover/<id>.inbound`, so blocks may arrive in any order and across separate sessions. It re-verifies every hash, writes files to the same relative paths, and **rewrites `boundary:` to whatever the destination vault declares in its own `CLAUDE.md`** — read by `bin/vault-boundary.sh`, not named by the engine. A destination with no parseable declaration has its pages left untouched rather than guessed at; `lint.sh` reports the resulting mismatch at the next write.
@@ -79,7 +79,7 @@ Once all-verified, do the curation the script deliberately leaves to you: add th
 ## 4. Finalize (origin session)
 
 ```bash
-$WIKI_PATH/engine/bin/crossover.sh finalize --vault "$WIKI_PATH" --batch <id> < paste-receipt
+${CLAUDE_SKILL_DIR}/../../bin/crossover.sh finalize --vault "$WIKI_PATH" --batch <id> < paste-receipt
 ```
 
 On a bundle match it removes the files and rewrites every `[[slug]]` reference to a tombstone (`slug (migrated -> <dest>, <date>)`) — never a silent deletion — and records `.crossover/<id>.finalized`. On any mismatch it refuses and reports which item differs; re-emit the block for that item (`--block N`), import it at the destination, and try again with the new receipt. **Unchanged by the split transport** — the gate is still one all-verified receipt whose bundle matches the whole batch.

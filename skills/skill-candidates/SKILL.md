@@ -16,7 +16,7 @@ A skill is worth writing when a procedure **repeats**, and the end of a session 
 
 **Reads canonical `$WIKI_PATH`; writes its verdicts through a worktree of its own**, taken at the start of the verdict half:
 
-- `WORK="$($WIKI_PATH/engine/bin/vault-worktree.sh ensure)" || { echo "not isolated — resolve before writing"; }` — **check the exit status** and read its stderr for a stale base; the full contract is `checkpoint` §0.
+- `WORK="$(${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh ensure)" || { echo "not isolated — resolve before writing"; }` — **check the exit status** and read its stderr for a stale base; the full contract is `checkpoint` §0.
 - **Read the evidence from canonical `$WIKI_PATH`, write the verdicts to `$WORK`.** The session buffer is git-ignored, so it exists only in canonical; a worktree's empty copy is indistinguishable from a quiet month.
 - Commit, `vault-worktree.sh integrate`, then `gc "$WORK"`.
 
@@ -78,7 +78,7 @@ grep -A6 '^\*\*How to apply' "$WIKI_PATH"/memory/*.md
 grep -in '<phrase>' "$WIKI_PATH"/log.md "$WIKI_PATH"/log/*.md 2>/dev/null | tail -20
 ```
 
-**Count `created:`, never `updated:`** — `updated:` migrates toward the present as notes are amended, so counting it makes every subject look like it recurred this week; a note created weeks ago and amended recently is itself a second occurrence. Recall is a **second lens, not a replacement**: `"$WIKI_PATH"/engine/bin/recall.sh "did this the same way again"` points at pages to open. Read the prior verdicts (§7) before reporting.
+**Count `created:`, never `updated:`** — `updated:` migrates toward the present as notes are amended, so counting it makes every subject look like it recurred this week; a note created weeks ago and amended recently is itself a second occurrence. Recall is a **second lens, not a replacement**: `"${CLAUDE_SKILL_DIR}"/../../bin/recall.sh "did this the same way again"` points at pages to open. Read the prior verdicts (§7) before reporting.
 
 ## 3. What a candidate looks like in the record
 

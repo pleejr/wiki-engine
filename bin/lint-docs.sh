@@ -353,7 +353,56 @@ for d in "$ROOT"/skills/*/references; do
   done
 done
 
+# 10. skill bodies reach the engine through their own directory, and every target exists ---
+#
+# Since 1.80.0 a skill is delivered two ways: symlinked from a vault's engine/ submodule, or
+# as the wiki-engine plugin, where there is no $WIKI_PATH/engine at all. `${CLAUDE_SKILL_DIR}`
+# is substituted under both, and `${CLAUDE_SKILL_DIR}/../../bin/` resolves physically to
+# the engine that delivered the skill. The old `$WIKI_PATH/engine/bin/` form works only under
+# the submodule, so it is refused; and because this form was never checked before, every
+# script it names must exist.
+for body in "$ROOT"/skills/*/SKILL.md; do
+  skill="$(basename "$(dirname "$body")")"
+  if grep -nE '\$\{?WIKI_PATH\}?"?/engine/bin/' "$body" >/dev/null; then
+    grep -nE '\$\{?WIKI_PATH\}?"?/engine/bin/' "$body" | sed "s#^#lint-docs: skills/$skill/SKILL.md:#" >&2
+    echo "lint-docs:   reach engine scripts as \${CLAUDE_SKILL_DIR}/../../bin/<name> — \$WIKI_PATH/engine does not exist under plugin delivery" >&2
+    fail=1
+  fi
+  grep -oE 'CLAUDE_SKILL_DIR\}"?/\.\./\.\./bin/[A-Za-z0-9._-]+' "$body" | sed -E 's#.*/bin/##' | sort -u | while read -r f; do
+    [ -e "$ROOT/bin/$f" ] || { echo "lint-docs: skills/$skill/SKILL.md runs bin/$f, which does not exist" >&2; echo x; }
+  done | grep -q x && fail=1
+done
+
+# 11. the plugin manifest, its marketplace pin, its hooks and the CHANGELOG agree ---------
+#
+# Consumers of the plugin receive exactly what the marketplace pins: a release TAG, never a
+# branch head. So the manifest's version, the marketplace entry's version and ref, and the
+# newest CHANGELOG release must name one release — a bump that misses any of them ships
+# either an unreleased tree or a stale one under the new number. And a hooks.json command
+# naming a bin/ script that is not there fails at every session start on every machine.
+pj="$ROOT/.claude-plugin/plugin.json"; mj="$ROOT/.claude-plugin/marketplace.json"; hj="$ROOT/hooks/hooks.json"
+if [ -f "$pj" ]; then
+  ver="$(jq -r '.version // empty' "$pj" 2>/dev/null)"
+  top="$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$ROOT/CHANGELOG.md" | tr -d '#[] ')"
+  mver="$(jq -r '.plugins[] | select(.name=="wiki-engine") | .version // empty' "$mj" 2>/dev/null)"
+  mref="$(jq -r '.plugins[] | select(.name=="wiki-engine") | .source.ref // empty' "$mj" 2>/dev/null)"
+  if [ -z "$ver" ] || [ "$ver" != "$top" ] || [ "$mver" != "$ver" ] || [ "$mref" != "v$ver" ]; then
+    echo "lint-docs: plugin release pins disagree — plugin.json version '$ver', marketplace version '$mver' ref '$mref', newest CHANGELOG release '$top'" >&2
+    echo "lint-docs:   a release sets all four to one version (ref = v<version>)" >&2
+    fail=1
+  fi
+  if [ -f "$hj" ]; then
+    jq -r '.. | objects | select(has("command")) | .command' "$hj" \
+      | grep -oE 'CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9._/-]+' | sed 's#CLAUDE_PLUGIN_ROOT}/##' | sort -u | while read -r f; do
+        [ -x "$ROOT/$f" ] || { echo "lint-docs: hooks/hooks.json runs $f, which is missing or not executable" >&2; echo x; }
+      done | grep -q x && fail=1
+    if jq -e '[.. | objects | select(has("command")) | has("timeout")] | all | not' "$hj" >/dev/null; then
+      echo "lint-docs: every hooks/hooks.json command states a timeout" >&2; fail=1
+    fi
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces; every skill description fits the router's cut; every references/ file is linked from its skill"
+  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces; every skill description fits the router's cut; every references/ file is linked from its skill; skill bodies reach bin/ through their own directory; plugin pins, hooks and CHANGELOG agree"
 fi
 exit "$fail"
