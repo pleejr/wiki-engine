@@ -33,9 +33,45 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 ENGINE="$WIKI/engine"
-[ -d "$ENGINE/.git" ] || [ -f "$ENGINE/.git" ] || { echo "error: no engine submodule at $ENGINE" >&2; exit 1; }
-
 core_major() { printf '%s' "$1" | sed -E 's/^v//; s/[.-].*$//'; }
+
+# --- a vault WITHOUT the submodule (plugin delivery) ------------------------------------
+# The plugin marketplace already advanced the engine; what the vault owns is the record of
+# the release it needs, `.engine-version`, which its CI checks out. So "update" here means:
+# record the running release there and run adoption from it. The file is ordinary tracked
+# content, so it is written in the caller's worktree, or deferred when canonical is gated —
+# the same rule as the repo page below. Same MAJOR refusal as the submodule path.
+if [ ! -e "$ENGINE/.git" ] && [ -f "$WIKI/.engine-version" ]; then
+  . "$SCRIPT_DIR/plugin-lib.sh"
+  running="$(engine_release "$(cd "$SCRIPT_DIR/.." && pwd)")"
+  required="$(vault_engine_required "$WIKI")"
+  if [ "$running" = "$required" ]; then
+    echo "update: .engine-version already records $running"
+  elif [ "$(core_major "$running")" != "$(core_major "$required")" ]; then
+    echo "update: ⚠ the running engine $running and the vault's $required differ in MAJOR — review the CHANGELOG migration; not applied." >&2
+    exit 1
+  elif engine_version_lt "$running" "$required"; then
+    echo "update: the running engine $running is older than the vault's $required — run: claude plugin update wiki-engine@wiki-engine" >&2
+    exit 1
+  else
+    tree="$(WIKI_PATH="$WIKI" resolve_wiki_root "" 2>/dev/null)" || tree="$WIKI"
+    if [ "$tree" = "$WIKI" ] && [ -n "$(canonical_commit_gated "$WIKI")" ]; then
+      echo "update: .engine-version is tracked content and this vault gates canonical commits. Run from a worktree:"
+      echo "  WORK=\"\$($SCRIPT_DIR/vault-worktree.sh ensure)\" && (cd \"\$WORK\" && $SCRIPT_DIR/update.sh --wiki \"$WIKI\")"
+      exit 0
+    fi
+    printf '%s\n' "$running" > "$tree/.engine-version"
+    git -C "$tree" add .engine-version 2>/dev/null || true
+    echo "update: .engine-version $required -> $running (staged in $tree)"
+  fi
+  "$SCRIPT_DIR/adopt.sh" --wiki "$WIKI"
+  if [ -x "$WIKI/.rag/venv/bin/python" ]; then
+    "$SCRIPT_DIR/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
+  fi
+  exit 0
+fi
+
+[ -d "$ENGINE/.git" ] || [ -f "$ENGINE/.git" ] || { echo "error: no engine submodule at $ENGINE, and no .engine-version (plugin delivery)" >&2; exit 1; }
 
 # --- TWO PHASES, because this script replaces itself halfway through --------------------
 # ADVANCE (fetch, compare, check out the new tag) and APPLY (adopt, RAG re-sync, the repo

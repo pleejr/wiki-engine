@@ -38,6 +38,23 @@ if command -v engine_running_as_plugin >/dev/null 2>&1 && engine_running_as_plug
       echo "wiki-engine: the vault's engine/ submodule is pinned at $pin_ver — its pre-commit gate and CI run that copy, not the plugin"
     fi
   fi
+  # A vault without the submodule records the release it needs; its CI runs that tag.
+  req_ver=""; [ -n "$WIKI" ] && req_ver="$(vault_engine_required "$WIKI")"
+  if [ -n "$req_ver" ] && [ "$req_ver" != "$run_ver" ]; then
+    if [ "$(printf '%s' "${req_ver#v}" | cut -d. -f1)" != "$(printf '%s' "${run_ver#v}" | cut -d. -f1)" ]; then
+      echo "wiki-engine: ⚠ the vault requires $req_ver and the plugin is $run_ver — a different MAJOR; follow the CHANGELOG migration"
+      action="${action}- wiki-engine: the plugin ($run_ver) and the vault's .engine-version ($req_ver) differ in MAJOR version. Tell the user; do not change either without their confirmation.
+"
+      summary="${summary:+$summary · }engine MAJOR ${run_ver}≠${req_ver}"
+    elif engine_version_lt "$run_ver" "$req_ver"; then
+      echo "wiki-engine: ⚠ the vault requires $req_ver but the plugin is $run_ver — update the plugin"
+      action="${action}- wiki-engine: plugin $run_ver is older than the vault's .engine-version $req_ver. Offer to run: claude plugin update wiki-engine@wiki-engine (then restart).
+"
+      summary="${summary:+$summary · }engine ${run_ver}<${req_ver}"
+    else
+      echo "wiki-engine: the vault records $req_ver in .engine-version — its CI runs that tag until update.sh records $run_ver"
+    fi
+  fi
 elif [ ! -x "$ev" ]; then
   echo "wiki-engine: engine-version.sh not found beside this script — skipping"
 else

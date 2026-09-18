@@ -15,6 +15,9 @@
 #                           exit quietly so a session boots and captures exactly once.
 #   engine_release          the version this engine tree is: the manifest's version for the
 #                           tree the plugin runs from (cache or checkout), else `git describe`.
+#   vault_engine_required   the engine release a vault WITHOUT a submodule records in its
+#                           `.engine-version` (empty for a submodule vault, or none recorded).
+#   engine_version_lt       whether release A sorts before release B (`v`-prefixed or not).
 #
 # "Enabled" is read from user settings, never inferred from where a file sits: the same
 # tree is reached as a submodule and as a plugin source, so position proves nothing.
@@ -47,4 +50,20 @@ engine_release() { # <engine-dir>
   fi
   v="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$e/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
   [ -n "$v" ] && printf 'v%s\n' "$v" || echo unknown
+}
+
+# A vault on plugin delivery drops its `engine/` submodule and records the release it needs
+# in `.engine-version`, one tag per file (e.g. `v1.81.0`). Vault CI checks out that tag; the
+# preflight compares it with the running plugin. A vault that still has the submodule is
+# versioned by the submodule, so the file is ignored there.
+vault_engine_required() { # <wiki>
+  local w="${1:?wiki}"
+  [ -e "$w/engine/.git" ] && return 0
+  [ -f "$w/.engine-version" ] || return 0
+  tr -d '[:space:]' < "$w/.engine-version"
+}
+
+engine_version_lt() { # <a> <b>
+  local a="${1#v}" b="${2#v}"
+  [ "$a" != "$b" ] && [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -1)" = "$a" ]
 }

@@ -85,7 +85,19 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
   claude plugin install wiki-engine@wiki-engine --scope user
   ```
 
-  The next session's boot removes the engine skill symlinks adoption made and stops wiring the settings hook; a `settings.json` SessionStart or SessionEnd entry naming `engine/bin/session-boot.sh` or `rag-capture.sh` then does nothing and can be deleted by hand. The vault keeps its `engine/` submodule for now: its pre-commit gate, CI and statusLine still run the pinned copy, and the banner says when the two differ.
+  The next session's boot removes the engine skill symlinks adoption made and stops wiring the settings hook; a `settings.json` SessionStart or SessionEnd entry naming `engine/bin/session-boot.sh` or `rag-capture.sh` then does nothing and can be deleted by hand. A vault may keep its `engine/` submodule: its pre-commit gate, CI and statusLine still run the pinned copy, and the banner says when the two differ.
+
+- **Dropping the vault's submodule (1.81.0+, plugin delivery):** the vault records the release it needs in `.engine-version` (one tag, e.g. `v1.81.0`) instead of pinning a gitlink. Nothing else in the engine changes, and a vault that keeps its submodule is unaffected.
+
+  ```sh
+  git rm engine && git rm --cached .gitmodules 2>/dev/null; rm -f .gitmodules
+  echo v1.81.0 > .engine-version && echo engine/ >> .gitignore
+  ```
+
+  - **Pre-commit** finds the engine as `engine/` if present, else `$WIKI_ENGINE`, else the pointer the plugin's boot keeps at `~/.claude/plugins/data/wiki-engine-*/engine`. The hook is not overwritten by adoption, so copy the new `scaffold/pre-commit` over an existing one.
+  - **CI** checks the recorded tag out into the ignored `engine/` path: an `actions/checkout` of `pleejr/wiki-engine` with `ref:` read from `.engine-version`, then `./engine/bin/lint.sh --wiki .`.
+  - **The router import** in the vault's `CLAUDE.md` becomes `@~/.claude/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md`, and the statusLine command points at `…/engine/bin/statusline.sh` under the same directory.
+  - **Updating:** the marketplace advances the plugin; `update.sh` then records the running release in `.engine-version` (in your worktree, since the file is tracked) and runs adoption. It refuses a MAJOR difference. The session banner says when the plugin is older than the vault's record, or in a different MAJOR.
 
 - **New machine (idempotent adoption):** clone the engine standalone, run `bin/link-skills.sh` (so Claude Code can discover the skills), start Claude from any folder, run the **`wiki-adopt`** skill. It detects state and converges: **no vault** → scaffold + wire + seed; **vault already cloned** (a second/Nth machine) → just wire this machine — `bin/wire-machine.sh --wiki DIR --wire-shell --wire-claude-md` (preview with `--check`). Re-run-safe. Single-vault machines only.
 - **New vault (scaffolder):** `bin/new-wiki.sh --path … --boundary personal|work --email …` (prompts for anything omitted; auto-provisions RAG unless `--no-rag`; add `--wire-shell --wire-claude-md --create-remote OWNER/NAME` to automate activation), then run `wiki-onboard` to seed it.
