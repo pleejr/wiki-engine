@@ -21,6 +21,9 @@ Minor — the engine also ships as a Claude Code plugin, `wiki-engine@wiki-engin
 - **The banner and the version preflight report the running plugin**, and name the vault's submodule pin when it differs, because the vault's pre-commit gate and CI still run that copy.
 - **Under the plugin, boot keeps `${CLAUDE_PLUGIN_DATA}/engine` pointing at the running engine.** `${CLAUDE_PLUGIN_ROOT}` moves on every plugin update; anything outside Claude Code that needs the engine reads this link.
 
+### Fixed
+- **A throwaway vault could wire itself into a live machine's settings when `CLAUDE_CONFIG_DIR` was set.** `apply-adopt.sh`, `ensure-hook.sh` and `ensure-statusline.sh` defaulted to `$HOME/.claude/settings.json`, while the ephemeral-vault guard treated `$CLAUDE_CONFIG_DIR/settings.json` as the real file, judged the write redirected, and let it through. Found in a real session: a scratch vault's SessionStart hook landed in the operator's settings. All three now default to the file Claude Code reads, `${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json`; a CI step drives all three with the variable set.
+
 ## [1.79.1] — 2026-09-03
 
 Patch — `lint-memory.sh` infers a retired note's successor from the record before warning that none is declared. Adopt with `bin/adopt.sh` or `update.sh`.

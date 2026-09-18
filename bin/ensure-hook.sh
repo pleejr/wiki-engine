@@ -53,7 +53,7 @@
 set -uo pipefail
 
 EVENT=""; MATCHER=""; COMMAND=""; STATUS=""; CHECK=0; TIMEOUT=""; TIMEOUT_SET=0
-SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
+SETTINGS="${CLAUDE_SETTINGS:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}"   # the file Claude Code reads
 while [ $# -gt 0 ]; do
   case "$1" in
     --event)    EVENT="$2"; shift 2;;

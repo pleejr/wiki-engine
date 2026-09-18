@@ -25,7 +25,7 @@
 set -uo pipefail
 
 COMMAND=""; MARKER=""; PADDING=""; CHECK=0
-SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
+SETTINGS="${CLAUDE_SETTINGS:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}"   # the file Claude Code reads
 while [ $# -gt 0 ]; do
   case "$1" in
     --command)  COMMAND="$2"; shift 2;;

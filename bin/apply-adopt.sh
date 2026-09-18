@@ -34,7 +34,7 @@ if engine_running_as_plugin; then DEFAULT_WIKI=""
 else DEFAULT_WIKI="$(cd "$ENGINE/.." 2>/dev/null && pwd || true)"; fi   # engine is $WIKI/engine
 WIKI="${WIKI_PATH:-$DEFAULT_WIKI}"
 FORCE=0; CHECK=0
-SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
+SETTINGS="${CLAUDE_SETTINGS:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}"   # the file Claude Code reads
 while [ $# -gt 0 ]; do
   case "$1" in
     --wiki)     WIKI="$2"; shift 2;;

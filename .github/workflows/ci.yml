@@ -1673,6 +1673,29 @@ jobs:
           if [ -L "$K/checkpoint" ]; then ck 0 "control: step 20 keeps the engine skill link"; else ck 1 "control: step 20 keeps the engine skill link"; fi
           exit "$fail"
 
+      - name: CLAUDE_CONFIG_DIR moves the settings every wiring tool writes
+        run: |
+          # With CLAUDE_CONFIG_DIR set, Claude Code reads $CLAUDE_CONFIG_DIR/settings.json, and
+          # apply-adopt's ephemeral-vault guard treated THAT file as the real one — while the
+          # default write target stayed $HOME/.claude/settings.json. The guard then judged
+          # the write "redirected" and let a throwaway vault wire its SessionStart hook into
+          # $HOME/.claude/settings.json: a live machine's file, pointing at a vault about to
+          # be deleted. Found in a real session. Every tool that writes settings must default
+          # to the one Claude Code reads.
+          export HOME="$RUNNER_TEMP/cdhome"; mkdir -p "$HOME/.claude/skills"; echo '{}' > "$HOME/.claude/settings.json"
+          export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/cdcfg"; mkdir -p "$CLAUDE_CONFIG_DIR/skills"
+          V="$RUNNER_TEMP/cdvault"; mkdir -p "$V"; ln -sfn "$GITHUB_WORKSPACE" "$V/engine"
+          fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          WIKI_PATH="$V" ./bin/apply-adopt.sh --force >/dev/null 2>&1 || true
+          if ! grep -q session-boot "$HOME/.claude/settings.json"; then ck 0 "an ephemeral vault leaves \$HOME/.claude/settings.json alone"; else ck 1 "an ephemeral vault leaves \$HOME/.claude/settings.json alone"; fi
+          if [ ! -e "$CLAUDE_CONFIG_DIR/settings.json" ] || ! grep -q session-boot "$CLAUDE_CONFIG_DIR/settings.json"; then ck 0 "...and the config dir's settings too (it is the real one)"; else ck 1 "...and the config dir's settings too (it is the real one)"; fi
+          echo '{}' > "$CLAUDE_CONFIG_DIR/settings.json"
+          ./bin/ensure-hook.sh --event SessionStart --command "true # probe" >/dev/null 2>&1 || true
+          if grep -q probe "$CLAUDE_CONFIG_DIR/settings.json" && ! grep -q probe "$HOME/.claude/settings.json"; then ck 0 "ensure-hook defaults to the config dir's settings"; else ck 1 "ensure-hook defaults to the config dir's settings"; fi
+          ./bin/ensure-statusline.sh --command "true # sl-probe" >/dev/null 2>&1 || true
+          if grep -q sl-probe "$CLAUDE_CONFIG_DIR/settings.json" && ! grep -q sl-probe "$HOME/.claude/settings.json"; then ck 0 "ensure-statusline defaults to the config dir's settings"; else ck 1 "ensure-statusline defaults to the config dir's settings"; fi
+          exit "$fail"
+
       - name: Containing one surface must not license writing the other
         run: |
           # REGRESSION: redirecting --settings is the DOCUMENTED way to contain a throwaway
