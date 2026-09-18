@@ -1672,13 +1672,65 @@ jobs:
           "$C/bin/apply-adopt.sh" --wiki "$V" --settings "$S" >/dev/null 2>&1 || true
           if grep -q session-boot "$S" && [ -L "$K/checkpoint" ]; then ck 0 "switching the plugin off at the same version re-wires the hook and the skill links"; else ck 1 "switching the plugin off at the same version re-wires the hook and the skill links"; fi
 
-          # Control: the same machine WITHOUT the plugin must behave exactly as before.
+          # Control: the same machine WITHOUT the plugin must behave exactly as before. It starts
+          # unadopted: keeping the marker made this pass only while the checkout's `git describe`
+          # differed from the manifest, so it went red on the release tag itself.
           printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": false } }\n' > "$S"
+          rm -f "$V/.engine-adopted"
           ln -sfn /v/engine/skills/checkpoint "$K/checkpoint"
           legacy="$(echo '{"source":"startup"}' | WIKI_PATH="$V" ./bin/session-boot.sh)"
           if printf '%s' "$legacy" | jq -e .systemMessage >/dev/null; then ck 0 "control: with the plugin disabled the settings boot runs"; else ck 1 "control: with the plugin disabled the settings boot runs"; fi
           if grep -q session-boot "$S"; then ck 0 "control: step 10 wires the SessionStart hook again"; else ck 1 "control: step 10 wires the SessionStart hook again"; fi
           if [ -L "$K/checkpoint" ]; then ck 0 "control: step 20 keeps the engine skill link"; else ck 1 "control: step 20 keeps the engine skill link"; fi
+          exit "$fail"
+
+      - name: A vault without the submodule records its engine, and its gates still run
+        run: |
+          # Plugin delivery lets a vault drop engine/ and record the release it needs in
+          # .engine-version. Three things then have to hold without a submodule: the preflight
+          # compares that record with the running plugin, the vault's pre-commit finds the
+          # plugin's engine through the boot hook's pointer, and update.sh advances the record.
+          C="$RUNNER_TEMP/v2cache"; rsync -a --exclude .git "$GITHUB_WORKSPACE/" "$C/"
+          V="$RUNNER_TEMP/v2vault"; G="$RUNNER_TEMP/v2cfg"; S="$G/settings.json"
+          mkdir -p "$V" "$G"; git -C "$V" init -q; git -C "$V" config user.email ci@example.invalid; git -C "$V" config user.name ci
+          printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": true } }\n' > "$S"
+          export CLAUDE_CONFIG_DIR="$G" CLAUDE_SETTINGS="$S" CLAUDE_SKILLS_DIR="$RUNNER_TEMP/v2skills"
+          ver="v$(jq -r .version .claude-plugin/plugin.json)"
+          maj="${ver#v}"; maj="${maj%%.*}"; min="${ver#v}"; min="${min#*.}"; min="${min%%.*}"
+          fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          pf() { printf '%s\n' "$1" > "$V/.engine-version"; CLAUDE_PLUGIN_ROOT="$C" WIKI_PATH="$V" "$C/bin/session-preflight.sh"; }
+
+          out="$(pf "$ver")"
+          if ! printf '%s' "$out" | grep -q 'requires\|records'; then ck 0 "preflight is quiet when the vault records the running release"; else ck 1 "preflight is quiet when the vault records the running release"; fi
+          out="$(pf "v$maj.$((min + 1)).0")"
+          if printf '%s' "$out" | grep -q 'update the plugin'; then ck 0 "preflight asks for a plugin update when the vault needs a newer release"; else ck 1 "preflight asks for a plugin update when the vault needs a newer release"; fi
+          out="$(pf "v$((maj + 1)).0.0")"
+          if printf '%s' "$out" | grep -q 'different MAJOR'; then ck 0 "preflight flags a MAJOR mismatch"; else ck 1 "preflight flags a MAJOR mismatch"; fi
+          out="$(pf "v$maj.0.0")"
+          if printf '%s' "$out" | grep -q "records v$maj.0.0"; then ck 0 "preflight notes an older record without alarm"; else ck 1 "preflight notes an older record without alarm"; fi
+
+          # pre-commit: a stand-in engine whose lint always refuses proves which engine ran.
+          F="$RUNNER_TEMP/v2fake"; mkdir -p "$F/bin"; printf '#!/bin/sh\necho FAKE-LINT-RAN\nexit 1\n' > "$F/bin/lint.sh"; chmod +x "$F/bin/lint.sh"
+          mkdir -p "$V/.githooks"; cp scaffold/pre-commit "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"; git -C "$V" config core.hooksPath .githooks
+          echo x > "$V/x.md"; git -C "$V" add x.md
+          out="$(git -C "$V" commit -qm t 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'no engine found'; then ck 0 "pre-commit skips, and says so, when no engine can be found"; else ck 1 "pre-commit skips, and says so, when no engine can be found (rc=$rc)"; fi
+          mkdir -p "$G/plugins/data/wiki-engine-wiki-engine"; ln -sfn "$F" "$G/plugins/data/wiki-engine-wiki-engine/engine"
+          echo y > "$V/y.md"; git -C "$V" add y.md
+          out="$(git -C "$V" commit -qm t 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q FAKE-LINT-RAN; then ck 0 "pre-commit runs the plugin's engine through the boot hook's pointer"; else ck 1 "pre-commit runs the plugin's engine through the boot hook's pointer (rc=$rc)"; fi
+
+          # update.sh advances the record — but .engine-version is tracked content, so in a
+          # vault whose canonical commits are gated it writes only from a worktree.
+          printf 'v%s.0.0\n' "$maj" > "$V/.engine-version"; git -C "$V" add .engine-version; git -C "$V" commit -qm base --no-verify
+          out="$("$C/bin/update.sh" --wiki "$V" 2>&1)" || true
+          if [ "$(cat "$V/.engine-version")" = "v$maj.0.0" ] && printf '%s' "$out" | grep -q 'Run from a worktree'; then ck 0 "update.sh defers the record in a gated canonical checkout"; else ck 1 "update.sh defers the record in a gated canonical checkout"; fi
+          git -C "$V" worktree add -q "$RUNNER_TEMP/v2wt" -b wt
+          (cd "$RUNNER_TEMP/v2wt" && "$C/bin/update.sh" --wiki "$V" >/dev/null 2>&1) || true
+          if [ "$(cat "$RUNNER_TEMP/v2wt/.engine-version")" = "$ver" ] && [ "$(cat "$V/.engine-version")" = "v$maj.0.0" ]; then ck 0 "update.sh records the running release in the caller's worktree"; else ck 1 "update.sh records the running release in the caller's worktree (got $(cat "$RUNNER_TEMP/v2wt/.engine-version"))"; fi
+          printf 'v%s.0.0\n' "$((maj + 1))" > "$V/.engine-version"
+          out="$("$C/bin/update.sh" --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'differ in MAJOR' && [ "$(cat "$V/.engine-version")" = "v$((maj + 1)).0.0" ]; then ck 0 "update.sh refuses a MAJOR difference and leaves the record alone"; else ck 1 "update.sh refuses a MAJOR difference and leaves the record alone"; fi
           exit "$fail"
 
       - name: CLAUDE_CONFIG_DIR moves the settings every wiring tool writes

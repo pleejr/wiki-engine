@@ -4,6 +4,23 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [1.81.0] — 2026-09-18
+
+Minor — a vault on plugin delivery can drop its `engine/` submodule and record the engine release it needs in `.engine-version`. A vault that keeps the submodule is unaffected. See USAGE "Dropping the vault's submodule".
+
+### Added
+- **`.engine-version`.** One tag per file; `vault_engine_required` in `bin/plugin-lib.sh` reads it, and ignores it in a vault that still has the submodule. `engine_version_lt` compares releases.
+- **The preflight compares the vault's record with the running plugin.** Older plugin: it asks for `claude plugin update`. Different MAJOR: it flags it and changes nothing. Newer plugin: it notes that CI still runs the recorded tag until `update.sh` records the new one.
+- **`update.sh` works on a vault without the submodule.** It records the running release in `.engine-version` and runs adoption. The file is tracked content, so it is written in the caller's worktree, and deferred with the command to run when the vault gates canonical commits. It refuses a MAJOR difference, and a plugin older than the record.
+- **CI: a vault without the submodule.** One step drives all of the above, with a stand-in engine proving which one the pre-commit ran; proven red against 1.80.0.
+
+### Changed
+- **`scaffold/pre-commit` finds the engine without a submodule:** `engine/`, else `$WIKI_ENGINE`, else the boot hook's `${CLAUDE_PLUGIN_DATA}/engine` pointer, found under `~/.claude/plugins/data/wiki-engine-*/`. With none it still skips and says so; CI enforces.
+
+### Fixed
+- **The preflight's summary broke on a non-ASCII separator.** Bash read `$run_ver≠` as one variable name and aborted under `set -u`; the new MAJOR line braces its variables.
+- **CI's plugin-delivery control only passed off a release tag.** It kept the adoption marker, so adoption re-ran only while the checkout's `git describe` differed from the manifest; on the tagged commit itself it went red. The control now starts unadopted.
+
 ## [1.80.0] — 2026-09-18
 
 Minor — the engine also ships as a Claude Code plugin, `wiki-engine@wiki-engine`, beside the vault submodule. Nothing changes for a vault that does not enable it. Adopt with `bin/adopt.sh` or `update.sh`; to switch a machine to plugin delivery, see USAGE "Plugin delivery".
