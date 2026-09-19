@@ -9,7 +9,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 - **Curated knowledge graph** — a typed node model (repo · project · skill · memory, plus concepts/entities/comparisons/queries/notes) linked by `[[wikilinks]]`, with the right freshness signal per node type. Full model in `SCHEMA.md`.
 - **Proposal round-trip** — a consumer's `HANDOFF` slug comes back: `PROPOSALS.md` records every proposal on arrival (including the ones **declined**, which produce no other artifact anywhere), the implementing commit carries a `Proposal:` trailer, and `engine-proposal.sh status` tells a consumer what shipped, what was rejected and why, and what never arrived.
 - **In-session maintenance skills** — `wiki-context` (index-first context router), `wiki-repo` (ingest/refresh a repo page with git-ref provenance), `checkpoint` (end-of-session curate + log), `wiki-onboard`/`wiki-adopt` (bootstrap), `crossover` (integrity-checked page migration between vaults), `engine-proposal` (boundary-scrub a consumer's engine-improvement idea **or bug report** into a handoff block for the engine-dev vault — the route for a defect you hit while running the engine, since a consumer vault cannot fix its own pinned engine). No orchestrator — driven by Claude Code.
-- **One-command adoption & wiring** — scaffold a new vault (`new-wiki.sh`) or wire an existing one onto a new machine (`wire-machine.sh`), idempotently; the engine is pinned per-vault as a submodule so updates never silently drift.
+- **One-command adoption & wiring** — scaffold a new vault (`new-wiki.sh`) or wire an existing one onto a new machine (`wire-machine.sh`), idempotently. The engine reaches a vault as a pinned submodule or, since 1.80.0, as the Claude Code plugin `wiki-engine@wiki-engine`, with the vault recording the release it needs in `.engine-version`; either way updates never silently drift.
 - **Write-time invariant gates (held at zero)** — `lint.sh` enforces vault invariants — memory schema, frontmatter, soft-wrap, catalog drift, **boundary present on every node**, **boundary matching the vault's own declaration**, **provenance present on every repo page**, **a clean release tag rather than a `git describe` string**, link integrity, and the opt-in foreign-boundary denylist — as a hard gate wired into CI + a pre-commit hook, not an honor-system lint.
 - **Freshness *and* correctness signals** — provenance freshness (`sources.sha` vs `HEAD`) tells you nothing *changed*; the `verified:` signal (`verify-status.sh`) records that someone *confirmed the content correct*, and is invalidated by provenance (a refresh auto-demotes a stale stamp), not a clock.
 - **Drainable upkeep queue** — `upkeep.sh` turns "what needs maintaining" (stale repo pages + un-verified pages) into a live work-list you drain one item at a time; spawn-free and bounded by the no-`claude`-in-hooks guards.
@@ -76,6 +76,22 @@ git clone <vault-remote> ~/Documents/repos/<vault>
 ```
 
 `wire-machine.sh` initializes the `engine/` submodule, links skills, sets `WIKI_PATH` + the always-on import, provisions `.rag`, and runs feature-adoption — all add-only. Preview with `--check`; re-running is a safe no-op.
+
+### Moving a machine to plugin delivery (1.80.0+)
+
+The same steps on a personal or a work machine; the engine carries no boundary. Mechanics and rationale: `USAGE.md` "Plugin delivery" and "Dropping the vault's submodule".
+
+1. **Install the plugin** (user scope, so every folder gets it):
+   ```
+   claude plugin marketplace add pleejr/wiki-engine
+   claude plugin install wiki-engine@wiki-engine --scope user
+   ```
+2. **Keep `WIKI_PATH` reaching Claude Code** — your shell profile, or `env.WIKI_PATH` in `~/.claude/settings.json`. The plugin reads the vault from it exactly as before.
+3. **Restart.** The first boot removes the engine skill symlinks adoption made, and the skills load as `wiki-engine:<name>`. Delete any `settings.json` SessionStart/SessionEnd entry naming `engine/bin/session-boot.sh` or `rag-capture.sh` — they stand down while the plugin is enabled, but only you can remove them.
+4. **Optionally drop the vault's submodule** (1.81.0+): `.engine-version` replaces the gitlink; repoint the vault `CLAUDE.md` import to `@~/.claude/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md`, the statusLine to `…/engine/bin/statusline.sh` under the same directory, copy the new `scaffold/pre-commit`, and have CI check out the recorded tag. Every machine that uses the vault must be on the plugin first, because a submodule-less vault has no `engine/` to import.
+5. **Check it:** in a new session each `wiki-engine:` skill is listed once, the boot banner appears, and `git commit` in the vault still runs the lint gate.
+
+Skills from other repos are separate: each ships its own plugins and its own switch-over steps.
 
 ### Or run the scaffolder directly
 
