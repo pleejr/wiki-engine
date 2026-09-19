@@ -93,7 +93,7 @@ WIKI="$(resolve_wiki_root "$WIKI")" || exit 1
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
 
-# vault markdown, excluding the engine submodule and non-content dirs.
+# vault markdown, excluding a leftover 1.x engine/ checkout and non-content dirs.
 # (while-read, not mapfile — macOS ships bash 3.2.)
 PAGES=()
 while IFS= read -r p; do PAGES+=("$p"); done < <(vault_pages "$WIKI")

@@ -355,12 +355,10 @@ done
 
 # 10. skill bodies reach the engine through their own directory, and every target exists ---
 #
-# Since 1.80.0 a skill is delivered two ways: symlinked from a vault's engine/ submodule, or
-# as the wiki-engine plugin, where there is no $WIKI_PATH/engine at all. `${CLAUDE_SKILL_DIR}`
-# is substituted under both, and `${CLAUDE_SKILL_DIR}/../../bin/` resolves physically to
-# the engine that delivered the skill. The old `$WIKI_PATH/engine/bin/` form works only under
-# the submodule, so it is refused; and because this form was never checked before, every
-# script it names must exist.
+# A skill is delivered by the wiki-engine plugin, where there is no $WIKI_PATH/engine at
+# all. `${CLAUDE_SKILL_DIR}/../../bin/` resolves physically to the engine that delivered the
+# skill. The 1.x `$WIKI_PATH/engine/bin/` form is refused, and every script the body names
+# must exist.
 for body in "$ROOT"/skills/*/SKILL.md; do
   skill="$(basename "$(dirname "$body")")"
   if grep -nE '\$\{?WIKI_PATH\}?"?/engine/bin/' "$body" >/dev/null; then

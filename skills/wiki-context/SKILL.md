@@ -14,7 +14,7 @@ Pull in just-enough context without inhaling the vault. This is the token-saver.
 
 ## Steps
 
-Engine staleness is reported by the SessionStart banner (`session-boot.sh`); when it flags the pin stale, run the `update` skill — this router does not re-check it.
+Engine staleness is reported by the SessionStart banner (`session-boot.sh`); when it flags the engine stale, run the `update` skill — this router does not re-check it.
 
 1. **Read `$WIKI_PATH/index.md`** (the map) and, if useful, recent `$WIKI_PATH/log.md` entries.
 2. **Semantic recall (if the vault has a `.rag` index).** If `$WIKI_PATH/.rag/index.jsonl` exists, run `${CLAUDE_SKILL_DIR}/../../bin/recall.sh --json "<the user's task/prompt>"` and treat the returned `file:line` hits as candidate pages to load — so the user can **just start prompting** without naming pages. This finds pages by *meaning* (e.g. a query about "cooling" surfaces a note that only says "thermals") that the index map or a keyword scan would miss. The index map (step 1) stays authoritative for *what exists*; recall just points at the relevant slice. If the endpoint is unreachable or no index exists, skip silently and rely on the map. Keep the index fresh with `engine/bin/rag-build.sh` (run by `checkpoint`).

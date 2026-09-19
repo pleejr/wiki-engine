@@ -10,8 +10,7 @@
 # loss). Separate worktrees (own dir + own HEAD, shared .git) make each session
 # independent, so real overlap surfaces as a visible merge/PR conflict instead. Measured
 # cost is ~0.4s and <1 MB: only tracked text is checked out — the untracked .rag/ index
-# and the (submodule) engine are NOT duplicated, so skills run engine tooling from the
-# canonical $WIKI_PATH and rebuild RAG there after integrating.
+# is NOT duplicated, so skills rebuild RAG in the canonical $WIKI_PATH after integrating.
 #
 # CONCURRENCY MODEL (four layers, each covering what the one below cannot):
 #   1. ISOLATION  — `ensure` gives each writing session its own worktree. Prevents the
@@ -436,35 +435,16 @@ case "$CMD" in
     gcd="$(cd "$(git -C "$PWD" rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd)" || exit 0
     if [ "$gd" != "$gcd" ]; then exit 0; fi        # in a linked worktree — fine
 
-    # THE ONE COMMIT THAT CANNOT BE MADE ANYWHERE ELSE: a submodule pointer. `git worktree
-    # add` never populates submodules, so the `engine/` gitlink exists only in canonical —
-    # and advancing the pin is the documented, routine way a vault adopts a release. A
-    # blanket refusal therefore made the engine's own instructions unfollowable, whose
-    # remedy was `WIKI_WORKTREE=0` — turning isolation off for the whole command to land
-    # one legitimate commit, which is how a gate trains its user to bypass it.
-    #
-    # So judge the STAGED SET, not the tree, exactly as `integrate`'s dirty-check was made
-    # path-precise for the same reason. A commit staging only gitlinks (mode 160000)
-    # cannot sweep up a peer's file work — that is the whole harm this guard exists to
-    # prevent — while `commit -am` in a shared tree stages their modified files too, so
-    # the moment anything else appears the refusal stands. Narrower, and not less safe.
     staged="$(git -C "$PWD" diff --cached --raw 2>/dev/null || true)"
-    if [ -n "$staged" ]; then
-      nongitlink="$(printf '%s\n' "$staged" | awk '$2 != "160000" && $1 !~ /^:160000/ { c++ } END { print c+0 }')"
-      if [ "$nongitlink" = "0" ]; then
-        log "vault-worktree: allowing a submodule-pointer-only commit in canonical (a worktree cannot hold one)."
-        exit 0
-      fi
-    fi
 
     log "vault-worktree: refusing a commit in the CANONICAL checkout ($WIKI)."
     log "  Another session may be editing here, and staging in a shared tree sweeps up"
     log "  its work. Take an isolated worktree first:"
-    log "      WORK=\"\$($WIKI/engine/bin/vault-worktree.sh ensure)\"   # then edit + commit in \$WORK"
+    log "      WORK=\"\$($SCRIPT_DIR/vault-worktree.sh ensure)\"   # then edit + commit in \$WORK"
 
     # THE STATE THIS REFUSAL LEAVES BEHIND, which the message used to say nothing about.
     # The work is already STAGED — the guard cannot judge anything until it is, since it
-    # reads the staged set to permit the gitlink-only commit — and `ensure` cuts a fresh
+    # reads the staged set — and `ensure` cuts a fresh
     # branch off origin/main that carries no working state. The reflex rescue for "move an
     # edit out of a checkout I should not be in" is `git diff > patch`, which reports
     # UNSTAGED changes only: against a fully-staged tree it writes a 0-byte file and exits
@@ -496,7 +476,7 @@ case "$CMD" in
       fi
     fi
 
-    log "  Integrate when done:  vault-worktree.sh integrate"
+    log "  Integrate when done:  $SCRIPT_DIR/vault-worktree.sh integrate"
     log "  Override for a single-session machine:  WIKI_WORKTREE=0"
     exit 1
     ;;

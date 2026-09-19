@@ -42,20 +42,24 @@ else
     echo "adopt: NOTE — $HOOK exists but does not run the concurrency guard."
     echo "adopt:   Add before the lint call, so a commit in the canonical checkout is refused:"
     echo "adopt:     CANON=\"\$(cd \"\$(git rev-parse --git-common-dir)/..\" && pwd)\""
-    echo "adopt:     WIKI_PATH=\"\$CANON\" \"\$CANON/engine/bin/vault-worktree.sh\" guard || exit 1"
+    echo "adopt:     WIKI_PATH=\"\$CANON\" \"<engine bin>/vault-worktree.sh\" guard || exit 1"
+    echo "adopt:   with <engine bin> resolved as in $TMPL."
   fi
   if ! grep -q 'git-common-dir' "$HOOK" 2>/dev/null; then
-    # A hook that resolves engine/ from `git rev-parse --show-toplevel` is SILENTLY
-    # INERT in a worktree: a linked worktree never carries the engine/ submodule, so the
-    # "engine not initialized, skipping" branch fires every time. Since `checkpoint`
-    # commits from a worktree by design, such a vault has been running its gate on
-    # exactly the commits that bypass it.
-    echo "adopt: WARNING — $HOOK appears to resolve engine/ from the WORKTREE root."
-    echo "adopt:   A worktree has no engine/ submodule, so the gate silently skips there —"
-    echo "adopt:   and checkpoint commits from a worktree. Resolve the canonical root instead:"
+    # The guard must reason about the CANONICAL checkout, which is not the worktree root
+    # when the hook fires in a worktree — and checkpoint commits from a worktree by design.
+    echo "adopt: WARNING — $HOOK does not derive the canonical root from git-common-dir."
+    echo "adopt:   Inside a worktree its guard then checks the wrong tree. Resolve it as:"
     echo "adopt:     CANON=\"\$(cd \"\$(git rev-parse --git-common-dir)/..\" && pwd)\""
-    echo "adopt:   then use \"\$CANON/engine/bin/...\" for both the guard and lint."
     echo "adopt:   Reference implementation: $TMPL"
+  fi
+  if grep -q 'engine/bin' "$HOOK" 2>/dev/null && ! grep -q 'plugins/data' "$HOOK" 2>/dev/null \
+     && ! grep -q 'WIKI_ENGINE' "$HOOK" 2>/dev/null; then
+    # A 1.x hook finds the engine only in the vault's engine/ submodule. Once the vault drops
+    # it (2.x), that hook takes its "no engine found, skipping" branch on every commit.
+    echo "adopt: WARNING — $HOOK finds the engine only through the vault's engine/ submodule."
+    echo "adopt:   Without the submodule every commit skips the gate. Replace it with $TMPL,"
+    echo "adopt:   which reads the plugin's pointer (keep any local edits you made)."
   fi
 fi
 

@@ -1,6 +1,6 @@
 # {{WIKI_NAME}} — Index
 
-{{BOUNDARY_CAP}} knowledge vault + single durable vault. **Start here**, then follow only relevant `[[links]]`. Maintained in-session by Claude Code (no orchestrator); conventions in `engine/SCHEMA.md` (the wiki-engine submodule).
+{{BOUNDARY_CAP}} knowledge vault + single durable vault. **Start here**, then follow only relevant `[[links]]`. Maintained in-session by Claude Code (no orchestrator); conventions in the engine's `SCHEMA.md` (the wiki-engine plugin).
 
 ## Memory
 
@@ -24,7 +24,7 @@ _none yet_ — add with the `wiki-repo` skill (one repo per run, git-ref provena
 
 ## Projects
 
-`projects/` pages + `log.md` entries; the buckets below are generated from each project page's `status:`/`summary:` frontmatter by `engine/bin/gen-projects-index.sh` (run by `checkpoint`/lint). Do not edit between the sentinels by hand.
+`projects/` pages + `log.md` entries; the buckets below are generated from each project page's `status:`/`summary:` frontmatter by the engine's `bin/gen-projects-index.sh` (run by `checkpoint`/lint). Do not edit between the sentinels by hand.
 
 <!-- projects:start -->
 ### Planned
@@ -42,7 +42,7 @@ _none_
 
 ## Skills
 
-_Provided by the **wiki-engine** submodule; generated from `engine/skills/*/SKILL.md` by `engine/bin/gen-skills-index.sh` (skills symlinked to `~/.claude/skills/`). Do not edit the block below by hand._
+_Provided by the **wiki-engine** plugin (skills load as `wiki-engine:<name>`); generated from the engine's `skills/*/SKILL.md` by `bin/gen-skills-index.sh`. Do not edit the block below by hand._
 
 <!-- skills:start -->
 - **checkpoint** _(active)_ — end-of-session: update project page + `log.md`, distill memory. In-session only.

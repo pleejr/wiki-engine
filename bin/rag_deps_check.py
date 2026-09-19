@@ -12,27 +12,18 @@ import argparse, json, os, re, subprocess, sys
 from importlib.metadata import version, PackageNotFoundError
 
 
-def pinning_superproject(req_path):
-    """The vault that PINS this engine, if the requirements file lives in a submodule.
+def installed_copy(req_path):
+    """True when the requirements file is the plugin's INSTALLED copy, not an engine checkout.
 
     Both callers print the same drift, and only one of them can act on it. In an engine
     checkout `rag-requirements.txt` is an ordinary tracked file and "bump it" is the whole
-    remedy; in a consumer vault the same path is inside the pinned `engine/` submodule,
-    where an edit has no durable home — the vault does not commit it, another machine
-    never sees it, and it can make the next pin advance REFUSE. Detected rather than
-    configured, so the CI cron (an engine checkout, no superproject) keeps the wording
-    that is right for it without either caller passing a flag.
-
-    Returns the superproject path, or None (including when git is absent or unhappy —
-    the remedy then degrades to the generic wording rather than to no remedy).
+    remedy; in the plugin cache (`.../plugins/cache/...`, not a git repo) an edit has no
+    durable home — the next plugin update replaces the whole tree, and no other machine
+    ever sees it. Detected from the path rather than configured, so the CI cron (an engine
+    checkout) keeps the wording that is right for it without either caller passing a flag.
     """
-    d = os.path.dirname(os.path.abspath(req_path)) or "."
-    try:
-        out = subprocess.run(["git", "-C", d, "rev-parse", "--show-superproject-working-tree"],
-                             capture_output=True, text=True, timeout=5)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return out.stdout.strip() or None
+    d = os.path.dirname(os.path.realpath(req_path))
+    return "%splugins%scache%s" % (os.sep, os.sep, os.sep) in d + os.sep
 
 
 def norm(n):
@@ -140,18 +131,13 @@ def main():
         (mine if norm(p["name"]) in pins else other).append(line)
     if mine:
         actionable = True
-        superproject = pinning_superproject(args.requirements)
-        if superproject:
+        if installed_copy(args.requirements):
             print("pinned deps with newer releases (raise upstream — see below):")
             print("\n".join(mine))
-            print("  rag-requirements.txt is inside the ENGINE SUBMODULE pinned by %s, so editing it"
-                  % superproject)
-            print("  here has no durable home: the vault does not commit it and no other machine gets it.")
-            print("  It is also not silently reverted — the next pin advance REFUSES (git will not")
-            print("  overwrite a locally modified file) when the new release touches this file, and")
-            print("  carries the edit forward when it does not, so your pins stop matching the engine's.")
+            print("  rag-requirements.txt here is the wiki-engine plugin's installed copy, so editing it")
+            print("  has no durable home: the next plugin update replaces it and no other machine gets it.")
             print("  Route it upstream instead (the engine-proposal skill), or bump it in an engine")
-            print("  checkout and cut a release; then update.sh brings it here.")
+            print("  checkout and cut a release; the plugin update then brings it here.")
         else:
             print("pinned deps with newer releases (bump rag-requirements.txt):")
             print("\n".join(mine))

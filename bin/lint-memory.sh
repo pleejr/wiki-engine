@@ -76,7 +76,7 @@ INDEX="$WIKI/index.md"
 [ -d "$MEMDIR" ] || { echo "error: no memory dir at $MEMDIR" >&2; exit 1; }
 
 # --- set of resolvable link targets: every page slug in the vault -------------
-# (basename without .md, excluding the engine submodule, git, obsidian, and .rag dirs)
+# (basename without .md, excluding a leftover 1.x engine/ checkout, git, obsidian, and .rag dirs)
 SLUGS="$(vault_pages "$WIKI" | sed -e 's|.*/||' -e 's|\.md$||' | LC_ALL=C sort -u)"
 
 has_slug() { printf '%s\n' "$SLUGS" | grep -qxF "$1"; }

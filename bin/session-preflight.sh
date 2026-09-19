@@ -3,13 +3,14 @@
 # wiki-engine status and, when it is stale, prints an ACTION-REQUIRED block telling the
 # assistant to ASK the user before updating — the hook itself never prompts or changes
 # anything:
-#   - wiki-engine  — pinned submodule vs origin/main, via sibling engine-version.sh.
+#   - wiki-engine  — the running release vs the vault's .engine-version; a leftover 1.x
+#                    submodule or settings.json hook.
 #
 # Deterministic. NEVER runs the `claude` binary (hard rule: no claude in a hook); a hook
-# that spawned claude is the fork-bomb trap. Uses only git. Always exits 0 so it can't
-# block session start. Meant to run from a vault's pinned copy
-# (engine/bin/session-preflight.sh); locates its siblings via SCRIPT_DIR, the vault via
-# WIKI_PATH. The update actions it names are for the assistant to run on confirmation.
+# that spawned claude is the fork-bomb trap. Always exits 0 so it can't
+# block session start. Run by session-boot.sh from the plugin; locates its siblings via
+# SCRIPT_DIR, the vault via WIKI_PATH. The actions it names are for the assistant to run
+# on confirmation.
 #
 # Usage: WIKI_PATH=/path/to/vault session-preflight.sh
 set -uo pipefail
@@ -23,62 +24,52 @@ CACHE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.wiki-engine-status"
 
 echo "=== Session preflight (versions) ==="
 
-# wiki-engine — delegate to the sibling engine-version.sh (deterministic, no claude). -
-ev="$SCRIPT_DIR/engine-version.sh"
-[ -f "$SCRIPT_DIR/plugin-lib.sh" ] && . "$SCRIPT_DIR/plugin-lib.sh"
-if command -v engine_running_as_plugin >/dev/null 2>&1 && engine_running_as_plugin; then
-  # Plugin delivery: the marketplace pins and updates the engine, so there is no submodule
-  # to compare against origin. Report what runs, and the vault's pin when it differs — the
-  # vault's pre-commit gate and CI still run THAT copy until the vault drops the submodule.
-  run_ver="$(engine_release "$(cd "$SCRIPT_DIR/.." && pwd)")"
+# wiki-engine — the running release, and how it relates to the vault's record. ----------
+. "$SCRIPT_DIR/plugin-lib.sh"
+run_ver="$(engine_release "$(cd "$SCRIPT_DIR/.." && pwd)")"
+if engine_running_as_plugin; then
   echo "wiki-engine: plugin $run_ver (updates arrive through the plugin marketplace)"
-  if [ -n "$WIKI" ] && [ -d "$WIKI/engine" ]; then
-    pin_ver="$(git -C "$WIKI/engine" describe --tags --always 2>/dev/null || true)"
-    if [ -n "$pin_ver" ] && [ "$pin_ver" != "$run_ver" ]; then
-      echo "wiki-engine: the vault's engine/ submodule is pinned at $pin_ver — its pre-commit gate and CI run that copy, not the plugin"
-    fi
-  fi
-  # A vault without the submodule records the release it needs; its CI runs that tag.
-  req_ver=""; [ -n "$WIKI" ] && req_ver="$(vault_engine_required "$WIKI")"
-  if [ -n "$req_ver" ] && [ "$req_ver" != "$run_ver" ]; then
-    if [ "$(printf '%s' "${req_ver#v}" | cut -d. -f1)" != "$(printf '%s' "${run_ver#v}" | cut -d. -f1)" ]; then
-      echo "wiki-engine: ⚠ the vault requires $req_ver and the plugin is $run_ver — a different MAJOR; follow the CHANGELOG migration"
-      action="${action}- wiki-engine: the plugin ($run_ver) and the vault's .engine-version ($req_ver) differ in MAJOR version. Tell the user; do not change either without their confirmation.
-"
-      summary="${summary:+$summary · }engine MAJOR ${run_ver}≠${req_ver}"
-    elif engine_version_lt "$run_ver" "$req_ver"; then
-      echo "wiki-engine: ⚠ the vault requires $req_ver but the plugin is $run_ver — update the plugin"
-      action="${action}- wiki-engine: plugin $run_ver is older than the vault's .engine-version $req_ver. Offer to run: claude plugin update wiki-engine@wiki-engine (then restart).
-"
-      summary="${summary:+$summary · }engine ${run_ver}<${req_ver}"
-    else
-      echo "wiki-engine: the vault records $req_ver in .engine-version — its CI runs that tag until update.sh records $run_ver"
-    fi
-  fi
-elif [ ! -x "$ev" ]; then
-  echo "wiki-engine: engine-version.sh not found beside this script — skipping"
 else
-  ev_out="$("$ev" 2>/dev/null)"; ev_rc=$?
-  # show its status line(s); drop its generic hint in favor of our update.sh one-liner
-  printf '%s\n' "$ev_out" | grep -v '^  to update:'
-  if [ "$ev_rc" -eq 1 ]; then
-    # compact "engine <pinned>→<latest>" for the status line; tag MAJOR so it renders red
-    eng_frag="$(printf '%s' "$ev_out" | sed -nE 's/.*pinned ([^,]+), latest ([^ ]+).*/engine \1→\2/p' | head -n1)"
-    [ -n "$eng_frag" ] || eng_frag="engine update available"
-    case "$ev_out" in *MAJOR*) eng_frag="$eng_frag MAJOR";; esac
-    summary="${summary:+$summary · }$eng_frag"
-    if [ -n "$WIKI" ]; then
-      upd="WIKI_PATH=$WIKI $SCRIPT_DIR/update.sh"; commit="git -C $WIKI commit engine -m 'Bump engine'"
-    else
-      upd="$SCRIPT_DIR/update.sh --wiki <vault>"; commit="git -C <vault> commit engine -m 'Bump engine'"
-    fi
-    action="${action}
-ACTION REQUIRED — wiki-engine is out of date (see line above).
-Ask the user whether to update now. On confirmation run:
-  $upd
-It advances the submodule to the latest tag (refuses a MAJOR bump) and STAGES the pin.
-Then remind the user to review the CHANGELOG and commit:
-  $commit"
+  echo "wiki-engine: $run_ver, run from $(cd "$SCRIPT_DIR/.." && pwd) rather than the plugin"
+fi
+
+# A 1.x vault still pins the engine as a submodule. 2.x reads nothing from it, so its
+# CLAUDE.md import, pre-commit gate and CI keep running the old copy until it is dropped.
+if [ -n "$WIKI" ] && vault_has_engine_submodule "$WIKI"; then
+  echo "wiki-engine: ⚠ the vault still carries the 1.x engine/ submodule, which 2.x does not use"
+  action="${action}- wiki-engine: the vault at $WIKI still has an engine/ submodule. 2.x ignores it; its import, gate and CI run the stale copy. Tell the user and offer the migration in the engine CHANGELOG, 2.0.0 section (\"Dropping the vault's submodule\").
+"
+  summary="${summary:+$summary · }engine submodule"
+fi
+
+# settings.json hooks a 1.x adoption wired. The plugin carries boot and capture now, and a
+# legacy command pointing into a dropped engine/ fails on every session.
+legacy="$(settings_legacy_engine_hooks)"
+if [ -n "$legacy" ]; then
+  echo "wiki-engine: ⚠ settings.json still wires engine hooks by path; the plugin carries them now"
+  action="${action}- wiki-engine: delete these settings.json hook entries (the plugin runs them itself); confirm with the user first:
+$(printf '%s\n' "$legacy" | sed 's/^/    /')
+"
+  summary="${summary:+$summary · }legacy engine hooks"
+fi
+
+# The vault records the release its CI checks out.
+req_ver=""; [ -n "$WIKI" ] && req_ver="$(vault_engine_required "$WIKI")"
+if [ -n "$WIKI" ] && [ -z "$req_ver" ] && ! vault_has_engine_submodule "$WIKI"; then
+  echo "wiki-engine: the vault records no .engine-version — run update.sh to record $run_ver"
+elif [ -n "$req_ver" ] && [ "$req_ver" != "$run_ver" ]; then
+  if [ "$(printf '%s' "${req_ver#v}" | cut -d. -f1)" != "$(printf '%s' "${run_ver#v}" | cut -d. -f1)" ]; then
+    echo "wiki-engine: ⚠ the vault requires $req_ver and the plugin is $run_ver — a different MAJOR; follow the CHANGELOG migration"
+    action="${action}- wiki-engine: the plugin ($run_ver) and the vault's .engine-version ($req_ver) differ in MAJOR version. Tell the user; do not change either without their confirmation.
+"
+    summary="${summary:+$summary · }engine MAJOR ${run_ver}≠${req_ver}"
+  elif engine_version_lt "$run_ver" "$req_ver"; then
+    echo "wiki-engine: ⚠ the vault requires $req_ver but the plugin is $run_ver — update the plugin"
+    action="${action}- wiki-engine: plugin $run_ver is older than the vault's .engine-version $req_ver. Offer to run: claude plugin update wiki-engine@wiki-engine (then restart).
+"
+    summary="${summary:+$summary · }engine ${run_ver}<${req_ver}"
+  else
+    echo "wiki-engine: the vault records $req_ver in .engine-version — its CI runs that tag until update.sh records $run_ver"
   fi
 fi
 
@@ -101,28 +92,6 @@ if [ -d "$CHECKS_D" ]; then
     [ -n "$rest" ] && action="${action}
 $rest"
   done
-fi
-
-# declared external skill sources not yet installed — generic (reads ~/.claude/skill-sources;
-# NO network, dir-existence only). On a cold machine that declared a skill repo but hasn't
-# cloned it, this is what offers to pull it. The engine names no repo — the machine declares.
-SRC_FILE="$CFG/skill-sources"
-if [ -f "$SRC_FILE" ]; then
-  miss=""
-  while read -r remote dir _rest; do
-    case "$remote" in ''|'#'*) continue;; esac
-    [ -n "$dir" ] || dir="$HOME/Documents/repos/$(basename "$remote" .git)"
-    # shellcheck disable=SC2088  # a LITERAL leading ~/ is what this expands by hand
-    case "$dir" in "~/"*) dir="$HOME/${dir#\~/}";; esac
-    [ -d "$dir/.git" ] || miss="${miss:+$miss, }$(basename "$dir")"
-  done < "$SRC_FILE"
-  if [ -n "$miss" ]; then
-    summary="${summary:+$summary · }skills not installed: $miss"
-    action="${action}
-ACTION — declared skill source(s) not installed: $miss. Offer to run
-  $SCRIPT_DIR/skill-sources.sh
-which clones and links them (it reads ~/.claude/skill-sources). Confirm before running — it clones over the network."
-  fi
 fi
 
 # status-line cache — always (re)write so a resolved staleness clears a prior warning. ---

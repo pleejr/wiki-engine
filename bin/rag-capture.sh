@@ -55,14 +55,6 @@
 # whose stdin is an open pipe nobody closes gets the no-payload path instead of a hang.
 set -euo pipefail
 
-# Plugin delivery (1.80.0+): a legacy settings.json SessionEnd hook firing beside the
-# enabled plugin's own stays silent, so a session is captured exactly once.
-_rc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$_rc_dir/plugin-lib.sh" ]; then
-  . "$_rc_dir/plugin-lib.sh"
-  if engine_superseded_by_plugin; then exit 0; fi
-fi
-
 WIKI="${WIKI_PATH:-}"
 REPO=""
 NOTE=""

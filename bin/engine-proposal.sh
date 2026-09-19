@@ -30,8 +30,8 @@
 # `git tag --contains` for the release. Nothing is stored on the consumer side, because
 # hand-maintained status drifts and a derived answer cannot.
 #
-# It resolves against `origin/main` when the submodule has it (update.sh fetches), NOT the
-# detached pin — otherwise a proposal that shipped after your pin reads as still open. It
+# It resolves against `origin/main` when the checkout has it, NOT its HEAD — otherwise a
+# proposal that shipped after that checkout's commit reads as still open. It
 # prints the horizon it resolved against, so "no record" is never confused with "your refs
 # are stale". No network: it reads only what the checkout already has.
 #
@@ -201,17 +201,19 @@ DEPRECATED
 
 # ============================================================ status ==========
 do_status() {
-  local engine="$VAULT/engine"
-  [[ -d "$engine" ]] || die "no engine at $engine — status reads the engine checkout"
-  git -C "$engine" rev-parse --git-dir >/dev/null 2>&1 || die "engine at $engine is not a git checkout"
+  local engine; engine="$(engine_repo_path)"
+  engine_is_checkout "$engine" || die "no engine checkout at $engine — status reads the engine's git history, and the plugin cache has none. Clone the engine and set ENGINE_REPO to it: git clone https://github.com/pleejr/wiki-engine"
 
-  # Resolve against fetched history, not the detached pin: a proposal that shipped in a
-  # release NEWER than this vault's pin is invisible from the worktree, and reading it as
+  # Resolve against fetched history, not the checkout's HEAD: a proposal that shipped in a
+  # release NEWER than that commit is invisible from the worktree, and reading it as
   # "open" is the exact failure this subcommand exists to remove.
   local ref horizon pinned
   if git -C "$engine" rev-parse -q --verify origin/main >/dev/null 2>&1; then ref="origin/main"; else ref="HEAD"; fi
   horizon="$(git -C "$engine" describe --tags --always "$ref" 2>/dev/null || echo "$ref")"
-  pinned="$(git -C "$engine" describe --tags --always HEAD 2>/dev/null || echo "?")"
+  # What this machine RUNS is the question for "do I have it" — the plugin, not the checkout
+  # status reads history from.
+  . "$_EP_ENGINE/bin/plugin-lib.sh"
+  pinned="$(engine_release "$_EP_ENGINE")"
 
   # ledger, read at the resolution ref (falls back to the worktree on an old ref)
   local ledger
@@ -277,7 +279,7 @@ do_status() {
     done
   fi
 
-  printf 'engine-proposal: resolving against %s (%s); this vault is pinned at %s\n' "$ref" "$horizon" "$pinned"
+  printf 'engine-proposal: resolving against %s (%s); this machine runs %s\n' "$ref" "$horizon" "$pinned"
   if [[ ${#want[@]} -eq 0 ]]; then
     # an empty result is NOT "nothing outstanding" — these records are git-ignored and
     # per-machine, so say what was actually scanned rather than implying a clean slate.
@@ -322,7 +324,7 @@ do_status() {
       # marker here and reads as unknown. Say so rather than let the silence imply
       # "nothing outstanding" — the same trap the empty-outbox message already warns about.
       [[ -f "$smark" || -f "$pmark" ]] || printf '    (local markers are per-machine; a submission from another machine leaves none here)\n'
-      [[ "$ref" == "HEAD" ]] && printf '    (resolved against the pin only — no origin/main fetched; run update.sh first)\n'
+      [[ "$ref" == "HEAD" ]] && printf '    (resolved against the checkout HEAD only — no origin/main fetched; git fetch in it first)\n'
       continue
     fi
     [[ -n "$note" ]] && printf '%s\n' "$note"
@@ -370,15 +372,15 @@ do_status() {
           printf '    shipped upstream, but no release could be resolved from %s.\n' "$horizon"
           continue
         fi
-        # `pinned` is a `git describe`, so it may read v1.33.0-3-gabc1234 on a vault whose
-        # submodule sits past a tag; sort -V still orders that after the bare tag, which is
-        # the answer we want. A pin we cannot parse gets no have-it/need-it claim at all.
+        # `pinned` may be a `git describe` (v2.0.0-3-gabc1234) when the engine runs from a
+        # checkout past a tag; sort -V still orders that after the bare tag, which is the
+        # answer we want. A release we cannot parse gets no have-it/need-it claim at all.
         if [[ ! "$pinned" =~ ^v[0-9] ]]; then
-          printf '    SHIPPED in %s (could not read this vault'\''s pin to compare).\n' "$rel"
+          printf '    SHIPPED in %s (could not read which release this machine runs to compare).\n' "$rel"
         elif [[ "$(printf '%s\n%s\n' "$rel" "$pinned" | sort -V | tail -1)" == "$pinned" ]]; then
-          printf '    SHIPPED in %s — you already have it (pinned %s). Safe to drop the block.\n' "$rel" "$pinned"
+          printf '    SHIPPED in %s — you already have it (running %s). Safe to drop the block.\n' "$rel" "$pinned"
         else
-          printf '    SHIPPED in %s — NEWER than your pin (%s). Run update.sh to get it.\n' "$rel" "$pinned"
+          printf '    SHIPPED in %s — NEWER than what you run (%s). Run: claude plugin update wiki-engine@wiki-engine\n' "$rel" "$pinned"
         fi ;;
       *)
         printf '    unrecognised outcome "%s" — the ledger is newer than this tool; update the engine.\n' "${l_out[$idx]}" ;;
@@ -408,19 +410,17 @@ do_status() {
 # unrecoverable; an override worth having would require the scan to have run and PASSED on
 # a prior revision, not to be skipped.
 ENGINE_REPO="${ENGINE_REPO:-}"
+_EP_ENGINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 engine_repo_path() {
   [[ -n "$ENGINE_REPO" ]] && { printf '%s' "$ENGINE_REPO"; return; }
-  # the vault's pinned submodule is the engine checkout every consumer already has
-  printf '%s' "$VAULT/engine"
+  # This engine's own tree, when it is a git checkout: a directory marketplace or a clone.
+  # The plugin cache is not one, so a consumer on the published plugin sets ENGINE_REPO.
+  printf '%s' "$_EP_ENGINE"
 }
 
 # The property `submit` actually needs is "a git work tree I can branch in" — NOT "`.git` is
-# a directory". In a submodule `.git` is a FILE holding a `gitdir:` pointer, so the directory
-# test was false for exactly the default path the resolver above chooses: the guard rejected
-# the one checkout every consumer has. Reported as fail-closed, but its printed remedy sent
-# consumers to a separate clone they do not have, and the natural next move — editing the
-# pinned submodule in place — is the time bomb the skill exists to warn against.
+# a directory": a linked worktree's `.git` is a FILE holding a `gitdir:` pointer.
 engine_is_checkout() { git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
 
 submit_marker_dir() { printf '%s' "$VAULT/.engine-proposal"; }
@@ -444,7 +444,7 @@ do_submit() {
   fi
 
   local eng; eng="$(engine_repo_path)"
-  engine_is_checkout "$eng" || die "no engine checkout at $eng (set ENGINE_REPO to a clone you can branch in)"
+  engine_is_checkout "$eng" || die "no engine checkout at $eng — the plugin cache is not one. Clone the engine and set ENGINE_REPO to it: git clone https://github.com/pleejr/wiki-engine"
 
   local br="proposal/$SLUG"
   git -C "$eng" rev-parse --verify "$br" >/dev/null 2>&1 \
@@ -463,12 +463,10 @@ do_submit() {
   local start="$base"
   git -C "$eng" rev-parse --verify -q "origin/$base" >/dev/null 2>&1 && start="origin/$base"
 
-  # Where the checkout sat before we touched it — a branch name in a clone, a detached sha
-  # in a submodule. It is restored below, because in the submodule case the checkout IS the
-  # vault's PINNED engine: leaving it parked on a branch cut from origin/main would silently
-  # swap the version every skill, hook and lint in that vault runs at, and the vault would
-  # read as having an unexpected submodule pointer. The branch survives as a ref either way;
-  # nothing about push needs it checked out.
+  # Where the checkout sat before we touched it — a branch name, or a detached sha. It is
+  # restored below: on a directory marketplace the checkout IS the engine every session on
+  # this machine runs, and leaving it parked on a proposal branch would silently change it.
+  # The branch survives as a ref either way; nothing about push needs it checked out.
   local orig; orig="$(git -C "$eng" symbolic-ref -q --short HEAD 2>/dev/null || git -C "$eng" rev-parse HEAD 2>/dev/null || true)"
 
   git -C "$eng" checkout -q -b "$br" "$start" \
@@ -576,7 +574,7 @@ do_push() {
   echo "engine-proposal: pushed $br"
 
   # Read the body from the BRANCH, not the working tree. submit restores the checkout to
-  # where it found it (the pinned commit, in a submodule), so the queue file is not on disk
+  # where it found it, so the queue file is not on disk
   # at HEAD — only on the ref being pushed.
   local body; body="$(mktemp)"
   git -C "$eng" show "$br:proposals/$SLUG.md" > "$body" 2>/dev/null \

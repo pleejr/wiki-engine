@@ -1,10 +1,10 @@
 # {{WIKI_NAME}}
 
-{{BOUNDARY_CAP}} knowledge base + **single durable vault** (LLM-Wiki / Karpathy pattern). Plain markdown — open as an Obsidian vault. Maintained **in-session by Claude Code**. Reusable machinery is the **wiki-engine** submodule at `engine/`.
+{{BOUNDARY_CAP}} knowledge base + **single durable vault** (LLM-Wiki / Karpathy pattern). Plain markdown — open as an Obsidian vault. Maintained **in-session by Claude Code**. Reusable machinery is the **wiki-engine** Claude Code plugin; `.engine-version` records the release this vault needs.
 
 - Agent entry point: [CLAUDE.md](CLAUDE.md) (thin router; imports the engine)
-- Day-to-day usage: [engine/USAGE.md](engine/USAGE.md) · conventions + node model: [engine/SCHEMA.md](engine/SCHEMA.md)
+- Day-to-day usage and conventions: the engine's `USAGE.md` and `SCHEMA.md` (github.com/pleejr/wiki-engine)
 - Navigation: [index.md](index.md) · history: [log.md](log.md)
 - `boundary: {{BOUNDARY}}`. **No secrets.** Single git identity.
 
-Fresh clone: `git clone --recurse-submodules <url>` (or `git submodule update --init`) or `engine/` is empty.
+New machine: install the plugin (`claude plugin marketplace add pleejr/wiki-engine`, then `claude plugin install wiki-engine@wiki-engine --scope user`), clone this repo, and run the engine's `bin/wire-machine.sh --wiki <clone> --wire-env --wire-claude-md`.
