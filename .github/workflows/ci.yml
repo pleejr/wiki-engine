@@ -43,51 +43,35 @@ jobs:
       - name: The pinned-dep remedy addresses the reader who can act on it
         run: |
           # One report, two audiences. In an engine checkout `rag-requirements.txt` is an
-          # ordinary tracked file and "bump it" is the whole remedy. In a consumer vault
-          # the same path sits inside the PINNED submodule, where the edit has no durable
-          # home — so the tool would be steering the reader into the hazard that
-          # engine-proposal.sh's own comment calls "the time bomb the skill exists to warn
-          # against". Fail-open: every step of following it succeeds.
-          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-remedy"
-          git config --global user.email ci@example.com
-          git config --global user.name CI
-          git config --global init.defaultBranch main
-          git config --global protocol.file.allow always   # local-path submodule add, this repo only
-          T="$RUNNER_TEMP/remedy"; rm -rf "$T"; mkdir -p "$T"; fail=0
-          PY="$GITHUB_WORKSPACE/bin/rag_deps_check.py"
-
-          # an engine checkout, and a vault that PINS it as a submodule
-          git init -q "$T/engine"; cp "$PY" "$T/engine/rag_deps_check.py"
-          printf 'x\n' > "$T/engine/seed"; git -C "$T/engine" add -A
-          git -C "$T/engine" commit -qm seed
-          git init -q "$T/vault"; printf 'v\n' > "$T/vault/seed"
-          git -C "$T/vault" add -A; git -C "$T/vault" commit -qm seed
-          git -C "$T/vault" submodule add -q "$T/engine" engine
-          git -C "$T/vault" commit -qm "pin engine"
-
+          # ordinary tracked file and "bump it" is the whole remedy. In the plugin's installed
+          # copy (the plugin cache) the same edit has no durable home — the next plugin update
+          # replaces the tree — so the tool would be steering the reader into a change that
+          # silently disappears. Fail-open: every step of following it succeeds.
+          T="$RUNNER_TEMP/remedy"; rm -rf "$T"; fail=0
+          mkdir -p "$T/checkout/scaffold" "$T/claude/plugins/cache/wiki-engine/wiki-engine/2.0.0/scaffold"
           probe() { python3 -c "
-          import sys; sys.path.insert(0, '$1')
+          import sys; sys.path.insert(0, '$GITHUB_WORKSPACE/bin')
           import rag_deps_check as r
-          print(r.pinning_superproject('$2') or 'NONE')
+          print('INSTALLED' if r.installed_copy('$1') else 'CHECKOUT')
           "; }
           # `|| echo PROBE-FAILED`: a missing predicate must read as a FAIL line, not as a
           # traceback that kills the step at the assignment under `bash -e`.
-          out_engine="$(probe "$T/engine" "$T/engine/rag_deps_check.py" 2>/dev/null || echo PROBE-FAILED)"
-          out_vault="$(probe "$T/engine" "$T/vault/engine/rag_deps_check.py" 2>/dev/null || echo PROBE-FAILED)"
-          printf 'engine=%s vault=%s\n' "$out_engine" "$out_vault"
-
-          [ "$out_engine" = "NONE" ] \
+          out_checkout="$(probe "$T/checkout/scaffold/rag-requirements.txt" 2>/dev/null || echo PROBE-FAILED)"
+          out_cache="$(probe "$T/claude/plugins/cache/wiki-engine/wiki-engine/2.0.0/scaffold/rag-requirements.txt" 2>/dev/null || echo PROBE-FAILED)"
+          printf 'checkout=%s cache=%s\n' "$out_checkout" "$out_cache"
+          [ "$out_checkout" = "CHECKOUT" ] \
             && echo "  ok   an engine checkout keeps the bump-it-here remedy" \
-            || { echo "  FAIL an engine checkout was mistaken for a consumer vault"; fail=1; }
-          case "$out_vault" in
-            */vault) echo "  ok   a pinned submodule resolves to the vault that pins it" ;;
-            *) echo "  FAIL a consumer vault was told to edit its own pinned submodule"; fail=1 ;;
-          esac
-          # degrades to the generic wording rather than to no wording at all
-          [ "$(probe "$T/engine" "$RUNNER_TEMP/not-a-repo/reqs.txt" 2>/dev/null || echo PROBE-FAILED)" = "NONE" ] \
-            && echo "  ok   outside a repository it degrades to the generic remedy" \
-            || { echo "  FAIL a non-repository path claimed a superproject"; fail=1; }
-
+            || { echo "  FAIL an engine checkout was mistaken for the installed plugin"; fail=1; }
+          [ "$out_cache" = "INSTALLED" ] \
+            && echo "  ok   the plugin's installed copy gets the raise-it-upstream remedy" \
+            || { echo "  FAIL the plugin's installed copy was told to edit itself"; fail=1; }
+          # A directory marketplace runs the plugin from a checkout, reached through the data
+          # pointer; resolving the link must land on the checkout, not on "plugins/".
+          mkdir -p "$T/claude/plugins/data/wiki-engine-wiki-engine"
+          ln -s "$T/checkout" "$T/claude/plugins/data/wiki-engine-wiki-engine/engine"
+          [ "$(probe "$T/claude/plugins/data/wiki-engine-wiki-engine/engine/scaffold/rag-requirements.txt" 2>/dev/null || echo PROBE-FAILED)" = "CHECKOUT" ] \
+            && echo "  ok   a checkout reached through the plugin pointer is still a checkout" \
+            || { echo "  FAIL the plugin pointer was mistaken for the installed copy"; fail=1; }
           exit "$fail"
 
       - name: Workflow steps must not write the real global git config
@@ -684,118 +668,30 @@ jobs:
             || { echo "  FAIL a dangling inferred successor passed: $out"; fail=1; }
           exit "$fail"
 
-      - name: The run that adopts a release applies with THAT release's updater
-        run: |
-          # REGRESSION: update.sh checks out the new tag from the checkout it is executing
-          # from, then runs another ~250 lines — adopt, the RAG re-sync, the repo page,
-          # every printed remedy — as the PRE-UPDATE text. `git checkout` renames a temp
-          # file over the path, so the path gets a new inode while the running shell keeps
-          # its descriptor on the old one. Nothing is garbled (an in-place rewrite WOULD
-          # splice; a rename does not), which is exactly why it went unnoticed: the run
-          # reports the new version and behaves as the old one.
-          #
-          # The class it hides is self-referential and was met in the field — a defect in
-          # update.sh is not exercised by the run that installs its fix, so the operator
-          # meets the bug one more time with the release notes in hand saying it was fixed.
-          #
-          # The fixture puts a marker in ONLY the newer tag's update.sh, which is the one
-          # assertion that cannot be satisfied by the old copy.
-          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-reexec"
-          git config --global user.email ci@example.com
-          git config --global user.name CI
-          git config --global init.defaultBranch main
-          git config --global protocol.file.allow always
-          T="$RUNNER_TEMP/reexec"; rm -rf "$T"; mkdir -p "$T"; fail=0
-
-          git init -q "$T/e"; E="$T/e"
-          cp -R "$GITHUB_WORKSPACE/bin" "$GITHUB_WORKSPACE/adopt.d" "$GITHUB_WORKSPACE/scaffold" "$E/"
-          git -C "$E" add -A; git -C "$E" commit -qm v1; git -C "$E" tag v1.0.0
-          printf 'echo "APPLY-PHASE-MARKER: v1.1.0 copy did the applying"\n' >> "$E/bin/update.sh"
-          git -C "$E" add -A; git -C "$E" commit -qm v2; git -C "$E" tag v1.1.0
-
-          V="$T/v"; git init -q "$V"; mkdir -p "$V/repos"
-          printf -- '---\ntype: repo\nsources:\n  - repo: e\n    ref: v1.0.0\n    sha: 0000000\n    ingested: 2026-01-01\nboundary: personal\n---\n' > "$V/repos/e.md"
-          git -C "$V" add -A; git -C "$V" commit -qm seed
-          git -C "$V" submodule add -q "$E" engine; git -C "$V" commit -qm pin
-          git -C "$V/engine" checkout -q v1.0.0; git -C "$V" add engine
-          git -C "$V" commit -qm "pin v1.0.0" --no-verify
-
-          # 1. the default: the adopted copy applies, once, and says so
-          out="$(WIKI_PATH="$V" "$V/engine/bin/update.sh" 2>&1)"
-          printf '%s\n' "$out" | grep -q 'APPLY-PHASE-MARKER' \
-            && echo "  ok   the newly checked-out copy ran the apply phase" \
-            || { echo "  FAIL the pre-update copy applied"; fail=1; }
-          printf '%s\n' "$out" | grep -q "applying with v1.1.0's own tools" \
-            && echo "  ok   ...and the hand-off is stated, not silent" \
-            || { echo "  FAIL the hand-off is silent"; fail=1; }
-          [ "$(printf '%s\n' "$out" | grep -c 'APPLY-PHASE-MARKER')" = "1" ] \
-            && echo "  ok   ...exactly once — the sentinel stops a second re-exec" \
-            || { echo "  FAIL the apply phase ran more than once"; fail=1; }
-
-          # 2. the escape hatch preserves the old behaviour, and says which copy acted
-          git -C "$V/engine" checkout -q v1.0.0
-          out2="$(WIKI_PATH="$V" UPDATE_REEXEC=0 "$V/engine/bin/update.sh" 2>&1)"
-          printf '%s\n' "$out2" | grep -q 'APPLY-PHASE-MARKER' \
-            && { echo "  FAIL UPDATE_REEXEC=0 still re-exec'd"; fail=1; } \
-            || echo "  ok   UPDATE_REEXEC=0 applies with the pre-update copy"
-          printf '%s\n' "$out2" | grep -q "NOTE — the steps below ran from v1.0.0's copy" \
-            && echo "  ok   ...and a stale applier is never silent again" \
-            || { echo "  FAIL the run does not say which copy acted"; fail=1; }
-
-          # 3. a release whose updater does not parse must not strand a half-updated vault:
-          #    the pin is ALREADY advanced by then, so refusing to apply at all is worse
-          #    than applying with the old text. Fall through, loudly.
-          git -C "$E" checkout -q main
-          printf 'if [ unterminated\n' >> "$E/bin/update.sh"
-          git -C "$E" add -A; git -C "$E" commit -qm broken; git -C "$E" tag v1.2.0
-          git -C "$V/engine" fetch -q origin --tags; git -C "$V/engine" checkout -q v1.0.0
-          out3="$(WIKI_PATH="$V" "$V/engine/bin/update.sh" 2>&1)"
-          printf '%s\n' "$out3" | grep -q 'does not parse' \
-            && echo "  ok   an unparseable release is refused, loudly" \
-            || { echo "  FAIL it was exec'd, or skipped in silence"; fail=1; }
-          printf '%s\n' "$out3" | grep -q 'Staged: engine -> v1.2.0' \
-            && echo "  ok   ...and the apply phase still ran from the old copy" \
-            || { echo "  FAIL the vault was left mid-update"; fail=1; }
-
-          exit "$fail"
-
       - name: The updater obeys the convention the engine mandates
         run: |
-          # update.sh must touch canonical for the SUBMODULE (a gitlink cannot live in a
-          # worktree) and must not touch it for TRACKED PAGES (which is what worktrees
-          # exist to protect). It did both there, and printed a `commit -am` remedy that
-          # the engine's own guard refuses — so the documented route was unfollowable and
-          # its workaround, WIKI_WORKTREE=0, turns isolation off for the whole command.
+          # Everything update.sh writes — .engine-version, the engine's repo page, the skills
+          # catalog — is TRACKED content, which is what worktrees exist to protect. It must
+          # write in the caller's worktree, defer (printing the rerun) when canonical is gated,
+          # and never recommend WIKI_WORKTREE=0, which turns isolation off for the whole command.
           export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-upd"
           git config --global user.email ci@example.com
           git config --global user.name CI
           git config --global init.defaultBranch main
-          git config --global protocol.file.allow always   # local-path submodule add
           T="$RUNNER_TEMP/upd"; rm -rf "$T"; mkdir -p "$T"; fail=0
           VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
 
-          # (1) the guard judges the STAGED SET, not the tree
+          # (1) the guard refuses ANY staged set in canonical — 2.x has no gitlink carve-out
           git init -q "$T/g"; G="$T/g"; export WIKI_PATH="$G"
-          git init -q "$T/sub"; printf 's\n' > "$T/sub/f"; git -C "$T/sub" add -A
-          git -C "$T/sub" commit -qm s
           printf 'page\n' > "$G/page.md"; git -C "$G" add -A; git -C "$G" commit -qm seed
-          git -C "$G" submodule add -q "$T/sub" engine; git -C "$G" commit -qm pin
-          git -C "$T/sub" commit -q --allow-empty -m s2
-          git -C "$G/engine" fetch -q origin; git -C "$G/engine" reset -q --hard origin/main
-
-          git -C "$G" add engine
+          printf 'edit\n' >> "$G/page.md"; git -C "$G" add page.md
           ( cd "$G" && "$VW" guard >/dev/null 2>&1 ) \
-            && echo "  ok   a submodule-pointer-only commit is allowed in canonical" \
-            || { echo "  FAIL the one commit a worktree cannot make was refused"; fail=1; }
-          printf 'peer edit\n' >> "$G/page.md"; git -C "$G" add page.md
-          ( cd "$G" && "$VW" guard >/dev/null 2>&1 ) \
-            && { echo "  FAIL a tracked file rode along with the pointer"; fail=1; } \
-            || echo "  ok   ...and anything else staged beside it still refuses"
+            && { echo "  FAIL a staged page was allowed in canonical"; fail=1; } \
+            || echo "  ok   a staged page in canonical is refused"
           git -C "$G" restore --staged page.md; git -C "$G" checkout -- page.md
 
           # (1b) THE REFUSAL NAMES A NON-LOSSY CARRY FOR THE WORK IT JUST STRANDED.
-          # The guard can only decide once the work is STAGED — it reads the staged set to
-          # permit the gitlink-only commit above — and `ensure` cuts a fresh branch off
+          # The guard can only decide once the work is STAGED, and `ensure` cuts a fresh branch off
           # origin/main carrying no working state. So the refusal leaves the operator holding
           # staged edits with no named way to move them, and the reflex rescue
           # (`git diff > patch`) reports UNSTAGED changes only: a 0-byte file, exit 0, and the
@@ -806,7 +702,6 @@ jobs:
           # bare non-zero command aborts the STEP — including `msg="$(guard)"`, whose whole
           # point is a non-zero exit. An aborted step prints no assertion at all, which reads
           # as a silent pass on every check below it.
-          git -C "$G" restore --staged engine || true   # clean index: only the operator's page
           printf 'PEER\n' > "$G/peer-untracked.txt"  # a concurrent session's work, untracked
           printf 'peer edit\n' >> "$G/page.md"       # ...and the operator's own edit, re-made
           git -C "$G" add page.md
@@ -862,48 +757,61 @@ jobs:
             || echo "  ok   control: no carry advice when nothing is staged"
           git -C "$G" checkout -- page.md || true
 
-          # (2) update.sh does not write a tracked page into a shared checkout
-          git init -q "$T/e"; E="$T/e"
-          cp -R "$GITHUB_WORKSPACE/bin" "$GITHUB_WORKSPACE/adopt.d" "$GITHUB_WORKSPACE/scaffold" "$E/"
-          git -C "$E" add -A; git -C "$E" commit -qm v1; git -C "$E" tag v1.0.0
-          git -C "$E" commit -q --allow-empty -m v2; git -C "$E" tag v1.1.0
+          # (2) update.sh does not write tracked content into a shared checkout.
+          # The fixture engine is a checkout at tag v1.1.0 (so its release and sha are known
+          # offline); the vault records v1.0.0 and documents the engine on a repo page.
+          E="$T/e"; mkdir -p "$E"
+          cp -R "$GITHUB_WORKSPACE/bin" "$GITHUB_WORKSPACE/adopt.d" "$GITHUB_WORKSPACE/scaffold" "$GITHUB_WORKSPACE/skills" "$GITHUB_WORKSPACE/.claude-plugin" "$E/"
+          git -C "$E" init -q; git -C "$E" add -A; git -C "$E" commit -qm v1; git -C "$E" tag v1.1.0
+          esha="$(git -C "$E" rev-parse --short HEAD)"
           V="$T/v"; git init -q "$V"; mkdir -p "$V/repos"
-          printf -- '---\ntype: repo\nsources:\n  - repo: e\n    ref: v1.0.0\n    sha: 0000000\n    ingested: 2026-01-01\nboundary: personal\n---\n' > "$V/repos/e.md"
+          printf -- '---\ntype: repo\nsources:\n  - repo: wiki-engine\n    ref: v1.0.0\n    sha: 0000000\n    ingested: 2026-01-01\nverified:\n  date: 2026-01-01\n  by: ci\n  against: 0000000\nboundary: personal\n---\n' > "$V/repos/wiki-engine.md"
+          printf 'v1.0.0\n' > "$V/.engine-version"
           git -C "$V" add -A; git -C "$V" commit -qm seed
-          git -C "$V" submodule add -q "$E" engine; git -C "$V" commit -qm pin
-          git -C "$V/engine" checkout -q v1.0.0; git -C "$V" add engine
-          git -C "$V" commit -qm "pin v1.0.0" --no-verify
-          before="$(git -C "$V" rev-parse HEAD:repos/e.md)"
+          before="$(git -C "$V" rev-parse HEAD:repos/wiki-engine.md)"
 
-          WIKI_PATH="$V" "$VW" ensure >/dev/null 2>&1        # a live session worktree
-          out="$(WIKI_PATH="$V" "$V/engine/bin/update.sh" 2>&1 || true)"
-          printf '%s\n' "$out" | tail -14
-          [ "$(git -C "$V" hash-object repos/e.md)" = "$before" ] \
-            && echo "  ok   the tracked page is untouched in the shared checkout" \
+          "$E/bin/adopt.sh" --wiki "$V" >/dev/null 2>&1 || true   # arms the gate, as on any machine
+          W="$(WIKI_PATH="$V" "$VW" ensure 2>/dev/null)"        # a live session worktree
+          [ -x "$V/.githooks/pre-commit" ] \
+            && echo "  ok   fixture gate is armed, as adoption leaves it" \
+            || { echo "  FAIL fixture gate is not wired; the case under test cannot arise"; fail=1; }
+          out="$(cd "$V" && "$E/bin/update.sh" --wiki "$V" 2>&1 || true)"
+          [ "$(git -C "$V" hash-object repos/wiki-engine.md)" = "$before" ] && [ "$(cat "$V/.engine-version")" = v1.0.0 ] \
+            && echo "  ok   from canonical, neither the page nor .engine-version is written" \
             || { echo "  FAIL update.sh wrote tracked content into canonical"; fail=1; }
-          git -C "$V" diff --cached --name-only | grep -qx 'repos/e.md' \
-            && { echo "  FAIL update.sh staged a tracked page in canonical"; fail=1; } \
-            || echo "  ok   ...and nothing but the pointer is staged"
-          printf '%s' "$out" | grep -q 'ref: v1.1.0' \
-            && echo "  ok   the deferred edit is printed so it can be applied in the worktree" \
-            || { echo "  FAIL the operator is not told what to apply"; fail=1; }
-          printf '%s' "$out" | grep -q 'commit engine -m' \
-            && echo "  ok   the remedy commits the pointer by path" \
-            || { echo "  FAIL the remedy does not name the path"; fail=1; }
-          # every surface that prints this instruction, not just the one that was reported:
-          # update.sh, engine-version.sh, and the session banner all said `commit -am`.
+          [ -z "$(git -C "$V" diff --cached --name-only)" ] \
+            && echo "  ok   ...and nothing is staged there" \
+            || { echo "  FAIL update.sh staged in canonical: $(git -C "$V" diff --cached --name-only | tr '\n' ' ')"; fail=1; }
+          printf '%s' "$out" | grep -q 'vault-worktree.sh ensure' \
+            && echo "  ok   the deferral prints the rerun from a worktree" \
+            || { echo "  FAIL the operator is not told how to apply it"; fail=1; }
+          printf '%s' "$out" | grep -q 'WIKI_WORKTREE=0' \
+            && { echo "  FAIL the remedy tells the operator to turn the gate off"; fail=1; } \
+            || echo "  ok   ...without recommending that isolation be disabled"
+
+          # (2a) run from inside the worktree: everything is written and staged THERE
+          (cd "$W" && "$E/bin/update.sh" --wiki "$V" >/dev/null 2>&1) || true
+          [ "$(cat "$W/.engine-version")" = v1.1.0 ] \
+            && echo "  ok   the worktree records the running release" \
+            || { echo "  FAIL .engine-version in the worktree: $(cat "$W/.engine-version")"; fail=1; }
+          grep -q '^    ref: v1.1.0$' "$W/repos/wiki-engine.md" && grep -q "^    sha: $esha\$" "$W/repos/wiki-engine.md" \
+            && echo "  ok   ...the engine's repo page provenance advances to the release and its commit" \
+            || { echo "  FAIL the repo page provenance did not advance"; fail=1; }
+          grep -q '^  against: 0000000$' "$W/repos/wiki-engine.md" \
+            && echo "  ok   ...and its verified: stamp is left alone" \
+            || { echo "  FAIL update.sh rewrote the verified: stamp"; fail=1; }
+          git -C "$W" diff --cached --name-only | grep -qx '.engine-version' \
+            && echo "  ok   ...staged for the operator to commit" \
+            || { echo "  FAIL nothing staged in the worktree"; fail=1; }
+          # no tool prints the `-am` remedy that sweeps a peer's work
           grep -rn "commit -am ['\"]*Bump engine" "$GITHUB_WORKSPACE/bin" \
             && { echo "  FAIL a remedy still says -am, which sweeps a peer's work"; fail=1; } \
-            || echo "  ok   no tool prints a -am pin-bump remedy"
+            || echo "  ok   no tool prints a -am remedy"
 
-          # (2b) THE SAME VAULT WITH NOTHING OPEN must behave identically. The deferral was
-          # keyed on linked worktrees EXISTING, but isolation being configured and a
-          # worktree being open are different states — and between sessions the second is
-          # false while the first stays true. In that ordinary state the page was written
-          # and staged in canonical, where the guard then refused the only commit that
-          # would land it, and the printed remedy was WIKI_WORKTREE=0: the workaround
-          # v1.52.0 removed for the pin, reappearing one component over for the page. The
-          # two runs must differ in nothing the caller did not ask about.
+          # (2b) THE SAME VAULT WITH NOTHING OPEN must behave identically. Isolation being
+          # configured and a worktree being open are different states, and between sessions
+          # the second is false while the first stays true.
+          WIKI_PATH="$V" "$VW" gc "$W" >/dev/null 2>&1 || true
           for w in $(git -C "$V" worktree list --porcelain | awk '/^worktree /{print substr($0,10)}' | tail -n +2); do
             git -C "$V" worktree remove --force "$w" >/dev/null 2>&1 || true
           done
@@ -911,24 +819,10 @@ jobs:
           [ "$(git -C "$V" worktree list --porcelain | grep -c '^worktree ')" = "1" ] \
             && echo "  ok   fixture now has no linked worktrees" \
             || { echo "  FAIL could not clear the fixture's worktrees"; fail=1; }
-          [ -x "$V/.githooks/pre-commit" ] \
-            && echo "  ok   ...and its gate is armed, as adoption leaves it" \
-            || { echo "  FAIL fixture gate is not wired; the case under test cannot arise"; fail=1; }
-          git -C "$V/engine" checkout -q v1.0.0
-          before2="$(git -C "$V" hash-object repos/e.md)"
-          out3="$(WIKI_PATH="$V" "$V/engine/bin/update.sh" 2>&1 || true)"
-          [ "$(git -C "$V" hash-object repos/e.md)" = "$before2" ] \
-            && echo "  ok   with isolation on and NO worktree open, the page is still deferred" \
+          (cd "$V" && "$E/bin/update.sh" --wiki "$V" >/dev/null 2>&1) || true
+          [ "$(git -C "$V" hash-object repos/wiki-engine.md)" = "$before" ] && [ "$(cat "$V/.engine-version")" = v1.0.0 ] \
+            && echo "  ok   with isolation on and NO worktree open, the writes are still deferred" \
             || { echo "  FAIL update.sh wrote into canonical because no worktree happened to be open"; fail=1; }
-          git -C "$V" diff --cached --name-only | grep -qx 'repos/e.md' \
-            && { echo "  FAIL ...and staged it in the tree whose gate refuses to commit it"; fail=1; } \
-            || echo "  ok   ...and staged nothing but the pointer"
-          printf '%s' "$out3" | grep -q 'ref: v1.1.0' \
-            && echo "  ok   ...and told the operator what to apply" \
-            || { echo "  FAIL the deferred values are not printed"; fail=1; }
-          printf '%s' "$out3" | grep -q 'WIKI_WORKTREE=0' \
-            && { echo "  FAIL the remedy tells the operator to turn the gate off"; fail=1; } \
-            || echo "  ok   ...without recommending that isolation be disabled"
 
           # (2c) the deferral predicate itself, at both ends. It must follow the GATE, not
           # the worktree count: a vault that never wired one, or whose core.hooksPath
@@ -954,13 +848,17 @@ jobs:
           ) || fail=1
 
           # (3) NO REGRESSION for a vault without worktrees: canonical IS its working tree
-          W="$(WIKI_PATH="$V" "$VW" ensure 2>/dev/null)"
-          WIKI_PATH="$V" "$VW" gc "$W" >/dev/null 2>&1 || true
-          git -C "$V/engine" checkout -q v1.0.0
-          out2="$(WIKI_PATH="$V" WIKI_WORKTREE=0 "$V/engine/bin/update.sh" 2>&1 || true)"
-          [ "$(git -C "$V" hash-object repos/e.md)" != "$before" ] \
-            && echo "  ok   with no worktrees in play the page is written as before" \
-            || { echo "  FAIL isolation-off lost the provenance bump"; fail=1; }
+          (cd "$V" && WIKI_WORKTREE=0 "$E/bin/update.sh" --wiki "$V" >/dev/null 2>&1) || true
+          [ "$(cat "$V/.engine-version")" = v1.1.0 ] && [ "$(git -C "$V" hash-object repos/wiki-engine.md)" != "$before" ] \
+            && echo "  ok   with isolation off, canonical is written as before" \
+            || { echo "  FAIL isolation-off lost the writes"; fail=1; }
+
+          # (4) a release older than the vault's record is refused, and the record kept
+          printf 'v1.2.0\n' > "$V/.engine-version"
+          rc=0; o4="$(cd "$V" && WIKI_WORKTREE=0 "$E/bin/update.sh" --wiki "$V" 2>&1)" || rc=$?
+          [ "$rc" -ne 0 ] && [ "$(cat "$V/.engine-version")" = v1.2.0 ] && printf '%s' "$o4" | grep -q 'older than' \
+            && echo "  ok   an older running release is refused and the record kept" \
+            || { echo "  FAIL update.sh recorded a release older than the vault's (rc=$rc)"; fail=1; }
 
           exit "$fail"
 
@@ -1249,11 +1147,9 @@ jobs:
 
       - name: Vault gate runs from a worktree, not just canonical
         run: |
-          # REGRESSION: a hook that resolves engine/ from `--show-toplevel` is silently
-          # inert inside a worktree, because a linked worktree carries no submodule. Since
-          # checkpoint commits from a worktree by design, that made the gate skip exactly
-          # the commits it was meant to cover. Assert the shipped hook resolves the
-          # CANONICAL root and therefore actually runs there.
+          # REGRESSION: the gate has been silently inert inside a worktree three ways, and
+          # checkpoint commits from a worktree by design, so each made it skip exactly the
+          # commits it was meant to cover. Assert the shipped hook actually runs there.
           # Own identity, isolated. This step used to work only because an earlier step's
           # `git config --global` leaked across the whole runner — precisely the cross-step
           # contamination the redirect removes. Depending on it was invisible until it went.
@@ -1262,31 +1158,25 @@ jobs:
           git config --global user.name CI
           V="$RUNNER_TEMP/wg"; mkdir -p "$V/memory"
           git -C "$V" init -q .
-          mkdir -p "$V/engine/bin" "$V/.githooks"
-          # stand in for the engine submodule: a lint that always fails, so "did the gate
+          mkdir -p "$V/.githooks"
+          # stand in for the plugin's engine: a lint that always fails, so "did the gate
           # run?" is observable as a refused commit rather than inferred from silence
-          printf '#!/usr/bin/env bash\necho "GATE RAN"; exit 1\n' > "$V/engine/bin/lint.sh"
-          printf '#!/usr/bin/env bash\nexit 0\n' > "$V/engine/bin/vault-worktree.sh"
-          chmod +x "$V/engine/bin/lint.sh" "$V/engine/bin/vault-worktree.sh"
+          export WIKI_ENGINE="$RUNNER_TEMP/wg-engine"; mkdir -p "$WIKI_ENGINE/bin"
+          printf '#!/usr/bin/env bash\necho "GATE RAN"; exit 1\n' > "$WIKI_ENGINE/bin/lint.sh"
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$WIKI_ENGINE/bin/vault-worktree.sh"
+          chmod +x "$WIKI_ENGINE/bin/lint.sh" "$WIKI_ENGINE/bin/vault-worktree.sh"
           cp scaffold/pre-commit "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"
           # Absolute, exactly as adopt.d/30 now writes it. Setting the old relative
           # `.githooks` here is what makes this step go red — see the reinstatement
           # check below, which proves that rather than asserting it.
           git -C "$V" config core.hooksPath "$V/.githooks"
-          # engine/ must be ABSENT from the worktree, which is the whole point: a real
-          # vault carries it as a submodule and `git worktree add` never populates it.
-          # Ignoring it here reproduces that. Without this the fixture commits engine/ as
-          # tracked content, the worktree gets a copy, and the test passes even with the
-          # bug reinstated — which is exactly what happened on the first attempt.
-          #
-          # .githooks/ must be UNTRACKED for the same reason, one layer up. Adoption
+          # .githooks/ must be UNTRACKED. Adoption
           # creates it and never commits it (the engine does not commit into a consumer's
           # vault), so on a real vault it exists only in the canonical checkout. This
           # fixture used to leave it tracked, the worktree therefore got a copy, and a
           # relative core.hooksPath resolved there — so this test passed for two releases
-          # while the shipped wiring was inert in every real worktree. Same false-fixture
-          # shape as the engine/ line above, which is the point worth noticing.
-          printf 'engine/\n.githooks/\n' > "$V/.gitignore"
+          # while the shipped wiring was inert in every real worktree.
+          printf '.githooks/\n' > "$V/.gitignore"
           printf 'seed\n' > "$V/memory/seed.md"
           git -C "$V" -c core.hooksPath=/dev/null add -A
           git -C "$V" -c core.hooksPath=/dev/null commit -qm seed
@@ -1299,7 +1189,7 @@ jobs:
             || { echo "the vault gate did NOT run from inside a worktree:"; printf '%s\n' "$out"; exit 1; }
           echo "ok: gate runs from a linked worktree with .githooks/ untracked"
 
-          # LOAD-BEARING, PROVEN — not asserted. Each of the three shipped instances of
+          # LOAD-BEARING, PROVEN — not asserted. Each shipped instance of
           # "the gate is inert and nothing says so" is reinstated in turn; every one must
           # make a worktree commit succeed ungated. A regression test for this class is
           # worth nothing unless it goes red for the bugs that actually happened, and the
@@ -1318,12 +1208,16 @@ jobs:
             || echo "ok: red when core.hooksPath is relative (v1.34.0 bug)"
           git -C "$V" config core.hooksPath "$V/.githooks"
 
-          # (2) v1.28.1 — hook resolves engine/ from the WORKTREE root, which has no submodule
-          sed 's#^CANON=.*#CANON="$ROOT"#' scaffold/pre-commit > "$V/.githooks/pre-commit"
-          chmod +x "$V/.githooks/pre-commit"
-          probe showtop | grep -q "GATE RAN" \
-            && { echo "FAIL: worktree-root engine resolution did not disarm the gate"; exit 1; } \
-            || echo "ok: red when the hook resolves engine/ from the worktree root (v1.28.1 bug)"
+          # (2) 2.0.0 — the hook cannot find the engine (a 1.x hook looking only in engine/,
+          # or a machine whose plugin never booted): the gate must say it skipped, and does
+          # not run. Proves the hook's engine lookup is what arms it.
+          out2="$(WIKI_ENGINE= HOME="$RUNNER_TEMP/wg-nohome" probe noengine)"
+          printf '%s' "$out2" | grep -q "GATE RAN" \
+            && { echo "FAIL: the gate ran with no engine to find — the lookup is not load-bearing"; exit 1; } \
+            || echo "ok: red when no engine can be found (1.x hook after the submodule is gone)"
+          printf '%s' "$out2" | grep -q "no engine found" \
+            && echo "ok: ...and the skip is announced, not silent" \
+            || { echo "FAIL: the gate skipped silently"; exit 1; }
 
           # (3) v1.32.0 — the hook was never installed anywhere
           rm -f "$V/.githooks/pre-commit"
@@ -1441,7 +1335,7 @@ jobs:
           ENGINE="$PWD"
           V="$RUNNER_TEMP/seamvault"; rm -rf "$V"
           ./bin/new-wiki.sh --path "$V" --boundary personal \
-            --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+            --email ci@example.com --git-name CI --no-rag >/dev/null
 
           # Arm the gate the way a real vault does: a TRACKED seam declaring where the
           # patterns live, and a GIT-IGNORED patterns file that names them.
@@ -1583,105 +1477,88 @@ jobs:
             || { echo "a foreign core.hooksPath was stolen"; exit 1; }
           echo "ok: a foreign hooksPath is left alone"
 
-      - name: Ephemeral vaults must not touch the machine's real config
+      - name: Adoption writes only the vault, never the machine's config
         run: |
-          # A throwaway vault (test / CI / scratchpad) must never wire itself into the
-          # machine's real settings.json or repoint its real skills dir — those outlive it: a
-          # permanent SessionStart hook, or skill symlinks aimed at a directory that later
-          # disappears (they keep resolving until it is cleaned, so nothing announces it).
-          #
-          # Drives apply-adopt.sh, NOT the steps directly, because that is where the
-          # decision now lives. Two earlier in-step guards each failed silently: one tested
-          # `[ -n "$CLAUDE_SETTINGS" ]`, which apply-adopt makes permanently true; the other
-          # enumerated macOS-shaped temp prefixes and did not match this runner's own
-          # temp dir — caught only because this test runs on a path neither author had.
-          #
-          # NOTE ON THE FIXTURE: $HOME is overridden here, which is what let the third bug
-          # hide (see the per-surface step below). Every assertion in THIS step is about a
-          # vault with NOTHING redirected, so the override is harmless — but it is exactly
-          # why the next step deliberately does not override it.
+          # 1.x adoption wired a SessionStart hook into settings.json and linked skills into
+          # ~/.claude/skills, and needed per-surface gates so a throwaway vault could not leave
+          # either behind. 2.x delivers both through the plugin, so no adoption step may touch
+          # them at all — for any vault, redirected or not.
           export HOME="$RUNNER_TEMP/fakehome"; mkdir -p "$HOME/.claude/skills"
           echo '{}' > "$HOME/.claude/settings.json"
           ln -sfn /real/engine/skills/checkpoint "$HOME/.claude/skills/checkpoint"
-          V="$RUNNER_TEMP/ephem"; mkdir -p "$V"; ln -sfn "$GITHUB_WORKSPACE" "$V/engine"
+          V="$RUNNER_TEMP/ephem"; mkdir -p "$V"; git -C "$V" init -q
           before_settings="$(cat "$HOME/.claude/settings.json")"
-          before_link="$(readlink "$HOME/.claude/skills/checkpoint")"
-
+          before_skills="$(ls -la "$HOME/.claude/skills")"
           ./bin/apply-adopt.sh --wiki "$V" --force >/dev/null 2>&1 || true
-
+          ./bin/adopt.sh --wiki "$V" >/dev/null 2>&1 || true
           [ "$(cat "$HOME/.claude/settings.json")" = "$before_settings" ] \
-            || { echo "an ephemeral vault wrote the real settings.json"; exit 1; }
-          [ "$(readlink "$HOME/.claude/skills/checkpoint")" = "$before_link" ] \
-            || { echo "an ephemeral vault repointed the machine's skill symlinks"; exit 1; }
+            || { echo "adoption wrote settings.json"; exit 1; }
+          [ "$(ls -la "$HOME/.claude/skills")" = "$before_skills" ] \
+            || { echo "adoption touched the skills directory"; exit 1; }
+          [ -x "$V/.githooks/pre-commit" ] \
+            || { echo "adoption did not install the vault's own gate — the steps did not run"; exit 1; }
+          ! ls adopt.d | grep -qE '^(10|20)-' \
+            || { echo "a retired machine-wiring adoption step is back"; exit 1; }
+          echo "ok: adoption installs the vault's gate and leaves settings.json and the skills dir alone"
 
-          # ...but with BOTH surfaces redirected, wiring must STILL happen. A guard that is
-          # merely broad is the same defect facing the other way.
-          ./bin/apply-adopt.sh --wiki "$V" --force --settings "$RUNNER_TEMP/iso.json" >/dev/null 2>&1 || true
-          [ -f "$RUNNER_TEMP/iso.json" ] \
-            || { echo "isolated wiring was skipped too — the guard is too broad"; exit 1; }
-          grep -q "$V" "$RUNNER_TEMP/iso.json" \
-            || { echo "isolated wiring did not record the vault"; exit 1; }
-          echo "ok: ephemeral vault contained; isolated wiring still works"
-
-      - name: Plugin delivery acts once, and adoption stands down only where the plugin takes over
+      - name: The plugin boots once, and the banner names what a 1.x machine still carries
         run: |
-          # Since 1.80.0 the engine is also the wiki-engine plugin, and a machine mid-switch
-          # carries both deliveries. Each surface must act exactly once: the plugin's hooks
-          # run, a legacy settings hook beside them stays silent, and adoption stops wiring
-          # what the plugin now carries — while a machine WITHOUT the plugin is unchanged.
+          # 2.x has one delivery. The plugin's boot runs adoption, keeps the stable pointer and
+          # names its own release; what 1.x left behind — the engine/ submodule, settings.json
+          # hooks wired by path — is reported, never silently tolerated, because each keeps
+          # running a stale engine (or fails) on every session.
           #
           # The plugin copy is made without .git, because an installed plugin is a cache
           # copy, not a checkout: version must come from the manifest there.
           C="$RUNNER_TEMP/cache"; rsync -a --exclude .git "$GITHUB_WORKSPACE/" "$C/"
-          D="$RUNNER_TEMP/pdata"; K="$RUNNER_TEMP/pskills"; S="$RUNNER_TEMP/psettings.json"
-          V="$RUNNER_TEMP/pvault"; mkdir -p "$V" "$K"; ln -sfn "$GITHUB_WORKSPACE" "$V/engine"
-          ver="$(jq -r .version .claude-plugin/plugin.json)"
-          ln -sfn /v/engine/skills/checkpoint "$K/checkpoint"        # ours: must go
-          ln -sfn /elsewhere/skills/scrutinize "$K/scrutinize"       # not ours: must stay
-          mkdir -p "$K/verify"                                        # real dir: must stay
+          D="$RUNNER_TEMP/pdata"; G="$RUNNER_TEMP/pcfg"; S="$G/settings.json"; K="$G/skills"
+          V="$RUNNER_TEMP/pvault"; mkdir -p "$V" "$K"; git -C "$V" init -q
+          ver="$(jq -r .version .claude-plugin/plugin.json)"; printf 'v%s\n' "$ver" > "$V/.engine-version"
+          ln -sfn /elsewhere/skills/scrutinize "$K/scrutinize"
           printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": true } }\n' > "$S"
-          export CLAUDE_SETTINGS="$S" CLAUDE_SKILLS_DIR="$K"
+          export CLAUDE_CONFIG_DIR="$G"
           # Each check is an `if`, never `cond; ck $?`: steps run under `bash -e`, where a failed
           # test on its own line ends the step before it can report which check failed.
           fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          boot() { echo '{"source":"startup"}' | CLAUDE_PLUGIN_ROOT="$1" CLAUDE_PLUGIN_DATA="$D" WIKI_PATH="$V" "$1/bin/session-boot.sh"; }
 
-          if out="$(echo '{"source":"startup"}' | CLAUDE_PLUGIN_ROOT="$C" CLAUDE_PLUGIN_DATA="$D" WIKI_PATH="$V" "$C/bin/session-boot.sh")"; then ck 0 "plugin boot exits 0"; else ck 1 "plugin boot exits 0"; fi
-          if printf '%s' "$out" | jq -r .systemMessage | grep -qF "v$ver"; then ck 0 "banner names the plugin's release (v$ver), not the submodule's"; else ck 1 "banner names the plugin's release (v$ver), not the submodule's"; fi
+          if out="$(boot "$C")"; then ck 0 "plugin boot exits 0"; else ck 1 "plugin boot exits 0"; fi
+          if printf '%s' "$out" | jq -r .systemMessage | grep -qF "v$ver"; then ck 0 "banner names the plugin's release (v$ver)"; else ck 1 "banner names the plugin's release (v$ver)"; fi
           if [ "$(readlink "$D/engine")" = "$C" ]; then ck 0 "boot keeps \$CLAUDE_PLUGIN_DATA/engine pointing at the running engine"; else ck 1 "boot keeps \$CLAUDE_PLUGIN_DATA/engine pointing at the running engine"; fi
-          if [ "$(cat "$V/.engine-adopted" 2>/dev/null)" = "v$ver+plugin" ]; then ck 0 "adoption marker is the manifest version (and the delivery mode) in a non-git cache"; else ck 1 "adoption marker is the manifest version (and the delivery mode) in a non-git cache"; fi
-          if [ ! -e "$K/checkpoint" ]; then ck 0 "step 20 removed its own engine skill link"; else ck 1 "step 20 removed its own engine skill link"; fi
-          if [ "$(readlink "$K/scrutinize")" = /elsewhere/skills/scrutinize ] && [ -d "$K/verify" ]; then ck 0 "a foreign link and a real directory are untouched"; else ck 1 "a foreign link and a real directory are untouched"; fi
-          if ! grep -q session-boot "$S"; then ck 0 "step 10 wired no SessionStart hook beside the plugin's"; else ck 1 "step 10 wired no SessionStart hook beside the plugin's"; fi
+          if [ "$(cat "$V/.engine-adopted" 2>/dev/null)" = "v$ver" ]; then ck 0 "adoption marker is the manifest version in a non-git cache"; else ck 1 "adoption marker is the manifest version in a non-git cache (got $(cat "$V/.engine-adopted" 2>/dev/null))"; fi
+          if [ "$(cat "$S")" = '{ "enabledPlugins": { "wiki-engine@wiki-engine": true } }' ] && [ "$(readlink "$K/scrutinize")" = /elsewhere/skills/scrutinize ] && [ "$(ls "$K")" = scrutinize ]; then ck 0 "boot writes no settings.json hook and no skill link"; else ck 1 "boot writes no settings.json hook and no skill link"; fi
+          if ! printf '%s' "$out" | jq -r .hookSpecificOutput.additionalContext | grep -q 'submodule\|legacy'; then ck 0 "a clean 2.x vault and settings raise no migration warning"; else ck 1 "a clean 2.x vault and settings raise no migration warning"; fi
 
           # A directory marketplace runs the plugin straight from a git checkout, where
-          # `git describe` also answers. The plugin's version is still the manifest's: reading
-          # describe there flips the marker whenever the same release also runs from a cache.
+          # `git describe` also answers. The plugin's version is still the manifest's.
           rm -f "$V/.engine-adopted"
-          echo '{"source":"startup"}' | CLAUDE_PLUGIN_ROOT="$GITHUB_WORKSPACE" CLAUDE_PLUGIN_DATA="$D" WIKI_PATH="$V" ./bin/session-boot.sh >/dev/null || true
+          boot "$GITHUB_WORKSPACE" >/dev/null || true
           got="$(cat "$V/.engine-adopted" 2>/dev/null || true)"
-          if [ "$got" = "v$ver+plugin" ]; then ck 0 "adoption marker is the manifest version when the plugin runs from a git checkout"; else ck 1 "adoption marker is the manifest version when the plugin runs from a git checkout (got: $got)"; fi
+          if [ "$got" = "v$ver" ]; then ck 0 "adoption marker is the manifest version when the plugin runs from a git checkout"; else ck 1 "adoption marker is the manifest version when the plugin runs from a git checkout (got: $got)"; fi
 
-          legacy="$(echo '{"source":"startup"}' | WIKI_PATH="$V" ./bin/session-boot.sh)"
-          if [ -z "$legacy" ]; then ck 0 "a legacy settings boot beside the enabled plugin is silent"; else ck 1 "a legacy settings boot beside the enabled plugin is silent"; fi
-          rc=0; echo '{}' | WIKI_PATH="$V" ./bin/rag-capture.sh || rc=$?
-          if [ "$rc" -eq 0 ] && [ ! -d "$V/raw/sessions" ]; then ck 0 "a legacy capture beside the enabled plugin writes nothing"; else ck 1 "a legacy capture beside the enabled plugin writes nothing"; fi
+          # A settings.json hook a 1.x adoption wired: named, with the command to delete.
+          printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": true }, "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "WIKI_PATH=/v /v/engine/bin/session-boot.sh" } ] } ], "SessionEnd": [ { "hooks": [ { "type": "command", "command": "/v/engine/bin/rag-capture.sh", "timeout": 30 } ] } ] } }\n' > "$S"
+          ctx="$(boot "$C" | jq -r .hookSpecificOutput.additionalContext)"
+          if printf '%s' "$ctx" | grep -q '/v/engine/bin/session-boot.sh' && printf '%s' "$ctx" | grep -q '/v/engine/bin/rag-capture.sh'; then ck 0 "the preflight names each legacy engine hook in settings.json"; else ck 1 "the preflight names each legacy engine hook in settings.json"; fi
+          if grep -q legacy "$G/.wiki-engine-status"; then ck 0 "...and the status-line cache carries it"; else ck 1 "...and the status-line cache carries it"; fi
+          printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": true } }\n' > "$S"
 
-          # Switching the plugin OFF at the SAME engine version must re-run adoption: steps 10
-          # and 20 now owe the hook and the links back. The cache copy is that same version.
-          printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": false } }\n' > "$S"
-          "$C/bin/apply-adopt.sh" --wiki "$V" --settings "$S" >/dev/null 2>&1 || true
-          if grep -q session-boot "$S" && [ -L "$K/checkpoint" ]; then ck 0 "switching the plugin off at the same version re-wires the hook and the skill links"; else ck 1 "switching the plugin off at the same version re-wires the hook and the skill links"; fi
+          # A vault still carrying the 1.x submodule: flagged by boot, refused by update.sh,
+          # reported by wire-machine.sh. The gitlink alone is enough — a fresh clone has an
+          # empty engine/ until `submodule update`, and still expects 1.x.
+          printf '[submodule "engine"]\n\tpath = engine\n\turl = https://example.invalid/engine\n' > "$V/.gitmodules"
+          ctx="$(boot "$C" | jq -r .hookSpecificOutput.additionalContext)"
+          if printf '%s' "$ctx" | grep -q 'still has an engine/ submodule'; then ck 0 "boot flags a vault that still declares the engine submodule"; else ck 1 "boot flags a vault that still declares the engine submodule"; fi
+          out="$("$C/bin/update.sh" --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'still carries the 1.x engine/ submodule'; then ck 0 "update.sh refuses a submodule vault"; else ck 1 "update.sh refuses a submodule vault (rc=$rc)"; fi
+          out="$("$C/bin/wire-machine.sh" --wiki "$V" --check --no-rag 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q '1.x engine/ submodule'; then ck 0 "wire-machine reports a submodule vault as pending"; else ck 1 "wire-machine reports a submodule vault as pending (rc=$rc)"; fi
+          rm -f "$V/.gitmodules"
 
-          # Control: the same machine WITHOUT the plugin must behave exactly as before. It starts
-          # unadopted: keeping the marker made this pass only while the checkout's `git describe`
-          # differed from the manifest, so it went red on the release tag itself.
-          printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": false } }\n' > "$S"
-          rm -f "$V/.engine-adopted"
-          ln -sfn /v/engine/skills/checkpoint "$K/checkpoint"
-          legacy="$(echo '{"source":"startup"}' | WIKI_PATH="$V" ./bin/session-boot.sh)"
-          if printf '%s' "$legacy" | jq -e .systemMessage >/dev/null; then ck 0 "control: with the plugin disabled the settings boot runs"; else ck 1 "control: with the plugin disabled the settings boot runs"; fi
-          if grep -q session-boot "$S"; then ck 0 "control: step 10 wires the SessionStart hook again"; else ck 1 "control: step 10 wires the SessionStart hook again"; fi
-          if [ -L "$K/checkpoint" ]; then ck 0 "control: step 20 keeps the engine skill link"; else ck 1 "control: step 20 keeps the engine skill link"; fi
+          # Control: a machine without the plugin enabled is told how to install it.
+          printf '{}\n' > "$S"
+          out="$("$C/bin/wire-machine.sh" --wiki "$V" --check --no-rag 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'claude plugin install wiki-engine@wiki-engine'; then ck 0 "wire-machine prints the plugin install when it is not enabled"; else ck 1 "wire-machine prints the plugin install when it is not enabled (rc=$rc)"; fi
           exit "$fail"
 
       - name: A vault without the submodule records its engine, and its gates still run
@@ -1724,7 +1601,7 @@ jobs:
           # vault whose canonical commits are gated it writes only from a worktree.
           printf 'v%s.0.0\n' "$maj" > "$V/.engine-version"; git -C "$V" add .engine-version; git -C "$V" commit -qm base --no-verify
           out="$("$C/bin/update.sh" --wiki "$V" 2>&1)" || true
-          if [ "$(cat "$V/.engine-version")" = "v$maj.0.0" ] && printf '%s' "$out" | grep -q 'Run from a worktree'; then ck 0 "update.sh defers the record in a gated canonical checkout"; else ck 1 "update.sh defers the record in a gated canonical checkout"; fi
+          if [ "$(cat "$V/.engine-version")" = "v$maj.0.0" ] && printf '%s' "$out" | grep -q 'Rerun from a worktree'; then ck 0 "update.sh defers the record in a gated canonical checkout"; else ck 1 "update.sh defers the record in a gated canonical checkout"; fi
           git -C "$V" worktree add -q "$RUNNER_TEMP/v2wt" -b wt
           (cd "$RUNNER_TEMP/v2wt" && "$C/bin/update.sh" --wiki "$V" >/dev/null 2>&1) || true
           if [ "$(cat "$RUNNER_TEMP/v2wt/.engine-version")" = "$ver" ] && [ "$(cat "$V/.engine-version")" = "v$maj.0.0" ]; then ck 0 "update.sh records the running release in the caller's worktree"; else ck 1 "update.sh records the running release in the caller's worktree (got $(cat "$RUNNER_TEMP/v2wt/.engine-version"))"; fi
@@ -1735,58 +1612,29 @@ jobs:
 
       - name: CLAUDE_CONFIG_DIR moves the settings every wiring tool writes
         run: |
-          # With CLAUDE_CONFIG_DIR set, Claude Code reads $CLAUDE_CONFIG_DIR/settings.json, and
-          # apply-adopt's ephemeral-vault guard treated THAT file as the real one — while the
-          # default write target stayed $HOME/.claude/settings.json. The guard then judged
-          # the write "redirected" and let a throwaway vault wire its SessionStart hook into
-          # $HOME/.claude/settings.json: a live machine's file, pointing at a vault about to
-          # be deleted. Found in a real session. Every tool that writes settings must default
-          # to the one Claude Code reads.
-          export HOME="$RUNNER_TEMP/cdhome"; mkdir -p "$HOME/.claude/skills"; echo '{}' > "$HOME/.claude/settings.json"
-          export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/cdcfg"; mkdir -p "$CLAUDE_CONFIG_DIR/skills"
-          V="$RUNNER_TEMP/cdvault"; mkdir -p "$V"; ln -sfn "$GITHUB_WORKSPACE" "$V/engine"
-          fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
-          WIKI_PATH="$V" ./bin/apply-adopt.sh --force >/dev/null 2>&1 || true
-          if ! grep -q session-boot "$HOME/.claude/settings.json"; then ck 0 "an ephemeral vault leaves \$HOME/.claude/settings.json alone"; else ck 1 "an ephemeral vault leaves \$HOME/.claude/settings.json alone"; fi
-          if [ ! -e "$CLAUDE_CONFIG_DIR/settings.json" ] || ! grep -q session-boot "$CLAUDE_CONFIG_DIR/settings.json"; then ck 0 "...and the config dir's settings too (it is the real one)"; else ck 1 "...and the config dir's settings too (it is the real one)"; fi
+          # With CLAUDE_CONFIG_DIR set, Claude Code reads $CLAUDE_CONFIG_DIR/settings.json, while
+          # a tool defaulting to $HOME/.claude/settings.json writes a file nothing reads — or,
+          # worse, a live machine's file. Found in a real session. Every tool that writes
+          # settings must default to the one Claude Code reads.
+          export HOME="$RUNNER_TEMP/cdhome"; mkdir -p "$HOME/.claude"; echo '{}' > "$HOME/.claude/settings.json"
+          export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/cdcfg"; mkdir -p "$CLAUDE_CONFIG_DIR"
           echo '{}' > "$CLAUDE_CONFIG_DIR/settings.json"
-          ./bin/ensure-hook.sh --event SessionStart --command "true # probe" >/dev/null 2>&1 || true
-          if grep -q probe "$CLAUDE_CONFIG_DIR/settings.json" && ! grep -q probe "$HOME/.claude/settings.json"; then ck 0 "ensure-hook defaults to the config dir's settings"; else ck 1 "ensure-hook defaults to the config dir's settings"; fi
+          V="$RUNNER_TEMP/cdvault"; mkdir -p "$V"; git -C "$V" init -q
+          fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
           ./bin/ensure-statusline.sh --command "true # sl-probe" >/dev/null 2>&1 || true
           if grep -q sl-probe "$CLAUDE_CONFIG_DIR/settings.json" && ! grep -q sl-probe "$HOME/.claude/settings.json"; then ck 0 "ensure-statusline defaults to the config dir's settings"; else ck 1 "ensure-statusline defaults to the config dir's settings"; fi
+          ./bin/wire-machine.sh --wiki "$V" --wire-env --no-rag >/dev/null 2>&1 || true
+          if [ "$(jq -r .env.WIKI_PATH "$CLAUDE_CONFIG_DIR/settings.json")" = "$(cd "$V" && pwd)" ] && ! grep -q WIKI_PATH "$HOME/.claude/settings.json"; then ck 0 "wire-machine --wire-env writes the config dir's settings"; else ck 1 "wire-machine --wire-env writes the config dir's settings"; fi
+          if [ "$(jq -r .statusLine.command "$CLAUDE_CONFIG_DIR/settings.json")" = "true # sl-probe" ]; then ck 0 "...and left the statusLine it did not own alone"; else ck 1 "...and left the statusLine it did not own alone"; fi
+          # A different WIKI_PATH already set is a second vault's, never overwritten.
+          W="$RUNNER_TEMP/cdvault2"; mkdir -p "$W"; git -C "$W" init -q
+          ./bin/wire-machine.sh --wiki "$W" --wire-env --no-rag >/dev/null 2>&1 || true
+          if [ "$(jq -r .env.WIKI_PATH "$CLAUDE_CONFIG_DIR/settings.json")" = "$(cd "$V" && pwd)" ]; then ck 0 "wire-machine leaves a different existing WIKI_PATH alone"; else ck 1 "wire-machine leaves a different existing WIKI_PATH alone"; fi
+          # --wire-statusline sets the engine's line through the stable pointer when none is set.
+          jq 'del(.statusLine)' "$CLAUDE_CONFIG_DIR/settings.json" > "$RUNNER_TEMP/cd.json" && mv "$RUNNER_TEMP/cd.json" "$CLAUDE_CONFIG_DIR/settings.json"
+          ./bin/wire-machine.sh --wiki "$V" --wire-statusline --no-rag >/dev/null 2>&1 || true
+          if [ "$(jq -r .statusLine.command "$CLAUDE_CONFIG_DIR/settings.json")" = "WIKI_PATH=$(cd "$V" && pwd) $CLAUDE_CONFIG_DIR/plugins/data/wiki-engine-wiki-engine/engine/bin/statusline.sh" ]; then ck 0 "wire-machine --wire-statusline points at the stable plugin pointer"; else ck 1 "wire-machine --wire-statusline points at the stable plugin pointer (got $(jq -r .statusLine.command "$CLAUDE_CONFIG_DIR/settings.json"))"; fi
           exit "$fail"
-
-      - name: Containing one surface must not license writing the other
-        run: |
-          # REGRESSION: redirecting --settings is the DOCUMENTED way to contain a throwaway
-          # vault, and it used to flip a single shared "may wire this machine" flag — which
-          # licensed the skills step to repoint the machine's REAL skills dir at the
-          # throwaway engine. The settings redirect isolates settings.json; nothing about it
-          # isolates the skills directory. Hit live on a developer machine, not in CI,
-          # because the step above overrides $HOME and so is more isolated than any real
-          # invocation. THIS step deliberately leaves the real skills path in place.
-          #
-          # One flag per surface; each gated on ITS OWN redirect.
-          export HOME="$RUNNER_TEMP/surfhome"; mkdir -p "$HOME/.claude/skills"
-          ln -sfn /real/engine/skills/checkpoint "$HOME/.claude/skills/checkpoint"
-          V="$RUNNER_TEMP/surfvault"; mkdir -p "$V"; ln -sfn "$GITHUB_WORKSPACE" "$V/engine"
-
-          # (a) settings redirected, skills NOT — settings wiring proceeds, skills contained
-          ./bin/apply-adopt.sh --wiki "$V" --force --settings "$RUNNER_TEMP/surf.json" >/dev/null 2>&1 || true
-          [ "$(readlink "$HOME/.claude/skills/checkpoint")" = "/real/engine/skills/checkpoint" ] \
-            || { echo "a settings redirect licensed repointing the machine's REAL skills dir"; exit 1; }
-          [ -f "$RUNNER_TEMP/surf.json" ] \
-            || { echo "settings wiring was skipped — per-surface gating is too broad"; exit 1; }
-
-          # (b) both redirected — skills linking happens, into the REDIRECTED dir only
-          D="$RUNNER_TEMP/surfskills"; mkdir -p "$D"
-          CLAUDE_SKILLS_DIR="$D" ./bin/apply-adopt.sh --wiki "$V" --force \
-            --settings "$RUNNER_TEMP/surf2.json" >/dev/null 2>&1 || true
-          [ -L "$D/checkpoint" ] \
-            || { echo "skills were not linked even with the skills dir redirected"; exit 1; }
-          [ "$(readlink "$HOME/.claude/skills/checkpoint")" = "/real/engine/skills/checkpoint" ] \
-            || { echo "the real skills dir was touched despite a redirect"; exit 1; }
-          echo "ok: each surface gated on its own redirect, both directions"
 
       - name: A finished session must not be reported as a live peer
         run: |
@@ -1932,7 +1780,7 @@ jobs:
           git config --global user.name CI
 
           V="$RUNNER_TEMP/hookvault"; mkdir -p "$V"; git -C "$V" init -q .
-          ./bin/apply-adopt.sh --wiki "$V" --force --settings "$RUNNER_TEMP/hook.json" >/dev/null 2>&1 || true
+          ./bin/apply-adopt.sh --wiki "$V" --force >/dev/null 2>&1 || true
           [ -x "$V/.githooks/pre-commit" ] \
             || { echo "the pre-commit gate was NOT installed"; exit 1; }
           cmp -s scaffold/pre-commit "$V/.githooks/pre-commit" \
@@ -1951,7 +1799,7 @@ jobs:
           printf '#!/usr/bin/env bash\n# mine\nexit 0\n' > "$W/.githooks/pre-commit"
           chmod +x "$W/.githooks/pre-commit"
           git -C "$W" config core.hooksPath .myhooks
-          ./bin/apply-adopt.sh --wiki "$W" --force --settings "$RUNNER_TEMP/hook2.json" >/dev/null 2>&1 || true
+          ./bin/apply-adopt.sh --wiki "$W" --force >/dev/null 2>&1 || true
           grep -q '# mine' "$W/.githooks/pre-commit" \
             || { echo "an existing hook was overwritten"; exit 1; }
           [ "$(git -C "$W" config --local core.hooksPath)" = ".myhooks" ] \
@@ -1964,7 +1812,7 @@ jobs:
           E="$RUNNER_TEMP/engbroken"; cp -R "$GITHUB_WORKSPACE" "$E"
           mv "$E/scaffold/pre-commit" "$E/scaffold/pre-commit.moved"
           B="$RUNNER_TEMP/brokenvault"; mkdir -p "$B"; git -C "$B" init -q .
-          out="$("$E/bin/apply-adopt.sh" --wiki "$B" --force --settings "$RUNNER_TEMP/hook3.json" 2>&1 || true)"
+          out="$("$E/bin/apply-adopt.sh" --wiki "$B" --force 2>&1 || true)"
           printf '%s\n' "$out" | grep -q '! step 30-vault-git-hooks.sh failed' \
             || { echo "a missing bundled asset did NOT fail the step:"; printf '%s\n' "$out"; exit 1; }
           printf '%s\n' "$out" | grep -q "$E/scaffold/pre-commit" \
@@ -1976,7 +1824,7 @@ jobs:
           # output goes to additionalContext (model-only), so without this a broken engine
           # still renders the ordinary green banner and the human hears nothing.
           if command -v jq >/dev/null 2>&1; then
-            sm="$(WIKI_PATH="$B" CLAUDE_SETTINGS="$RUNNER_TEMP/hook3.json" "$E/bin/session-boot.sh" | jq -r '.systemMessage // ""')"
+            sm="$(WIKI_PATH="$B" "$E/bin/session-boot.sh" | jq -r '.systemMessage // ""')"
             printf '%s\n' "$sm" | grep -q 'engine adopt: .* FAILED' \
               || { echo "a failed adoption step never reached the user banner: [$sm]"; exit 1; }
           fi
@@ -1994,18 +1842,18 @@ jobs:
           git config --global user.name CI
           V="$RUNNER_TEMP/markvault"; mkdir -p "$V"; git -C "$V" init -q .
           S="$RUNNER_TEMP/mark.json"
-          ./bin/apply-adopt.sh --wiki "$V" --force --settings "$S" >/dev/null 2>&1 || true
+          ./bin/apply-adopt.sh --wiki "$V" --force >/dev/null 2>&1 || true
           PIN="$(git describe --tags --always)"
 
           # (a) a marker recording a DIFFERENT pin must NOT fast-path
           rm -rf "$V/.githooks"; echo "v0.0.1-stale" > "$V/.engine-adopted"
-          ./bin/apply-adopt.sh --wiki "$V" --settings "$S" >/dev/null 2>&1 || true
+          ./bin/apply-adopt.sh --wiki "$V" >/dev/null 2>&1 || true
           [ -f "$V/.githooks/pre-commit" ] \
             || { echo "a stale marker fast-pathed past the steps — the fix could never reach a vault"; exit 1; }
 
           # (b) ...and the fast path must still work, or the marker is pointless
           rm -rf "$V/.githooks"; printf '%s\n' "$PIN" > "$V/.engine-adopted"
-          ./bin/apply-adopt.sh --wiki "$V" --settings "$S" >/dev/null 2>&1 || true
+          ./bin/apply-adopt.sh --wiki "$V" >/dev/null 2>&1 || true
           [ ! -f "$V/.githooks/pre-commit" ] \
             || { echo "the marker fast path never engages — steps run on every session"; exit 1; }
 
@@ -2022,18 +1870,33 @@ jobs:
           export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-scaffold"
           git config --global user.email ci@example.com
           git config --global user.name CI
-          # NOTE: no `protocol.file.allow=always` here any more. new-wiki.sh now scopes
-          # that exception to its own submodule-add when --engine-url is a local path, so
-          # neither CI nor a developer's machine needs the global loosening.
-          # Isolate settings so the wire/adopt path never mutates the real ~/.claude/settings.json.
-          # ensure-hook keys the boot hook on WIKI_PATH; a throwaway vault would otherwise leave a
-          # permanent, un-dedupable SessionStart hook. Keep this export when copying the recipe locally.
-          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings.json"
+          # Isolate settings and the config dir so the wire path never reads or writes the real
+          # ~/.claude. Keep these exports when copying the recipe locally.
+          export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude-scaffold"
+          export CLAUDE_SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
           VAULT="$RUNNER_TEMP/testvault"
           ./bin/new-wiki.sh --path "$VAULT" --boundary personal \
-            --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills --no-rag
+            --email ci@example.com --git-name CI --no-rag
           ./bin/lint.sh --wiki "$VAULT"
           ./bin/adopt.sh --check --wiki "$VAULT"
+          # 2.x scaffolds without a submodule: the vault records a release tag, CI checks it
+          # out, the router import and the pre-commit reach the engine through the plugin.
+          fail=0
+          [ ! -e "$VAULT/engine" ] && [ ! -e "$VAULT/.gitmodules" ] \
+            || { echo "FAIL: the scaffold created an engine/ submodule"; fail=1; }
+          grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' "$VAULT/.engine-version" \
+            || { echo "FAIL: .engine-version is not a release tag: $(cat "$VAULT/.engine-version" 2>/dev/null)"; fail=1; }
+          grep -q 'steps.engine.outputs.ref' "$VAULT/.github/workflows/gate.yml" \
+            || { echo "FAIL: the scaffold wrote no CI gate that checks out the recorded release"; fail=1; }
+          grep -qF '@~/.claude/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md' "$VAULT/CLAUDE.md" \
+            || { echo "FAIL: the vault CLAUDE.md does not import the router through the plugin pointer"; fail=1; }
+          grep -q 'plugins/data' "$VAULT/.githooks/pre-commit" \
+            || { echo "FAIL: the installed pre-commit does not find the engine through the plugin pointer"; fail=1; }
+          [ -z "$(git -C "$VAULT" status --porcelain)" ] \
+            || { echo "FAIL: a fresh scaffold is not clean:"; git -C "$VAULT" status --porcelain; fail=1; }
+          [ ! -e "$CLAUDE_SETTINGS" ] || ! grep -q 'hooks' "$CLAUDE_SETTINGS" \
+            || { echo "FAIL: scaffolding wrote hooks into settings.json"; fail=1; }
+          exit "$fail"
 
       - name: The soft-wrap gate judges curated prose, never raw/ capture
         run: |
@@ -2052,7 +1915,7 @@ jobs:
           export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-softwrap-raw.json"
           V="$RUNNER_TEMP/softwrap-raw-vault"
           ./bin/new-wiki.sh --path "$V" --boundary personal \
-            --email ci@example.com --git-name CI --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+            --email ci@example.com --git-name CI --no-rag >/dev/null
           fail=0
           # The fixture: a hard-wrapped pruned-marker in the session buffer, the shape a checkpoint
           # session writes. Assert the PRECONDITIONS before the property — the file must be ignored
@@ -2084,116 +1947,6 @@ jobs:
           rm "$V/notes/n.md"
           [ "$fail" -eq 0 ] || exit 1
           echo "  ok: ignored buffer and tracked raw/ do not gate; a curated page still does, by name"
-
-      - name: The order update.sh prints lands both the catalog and the pin
-        run: |
-          # THE BIND: index.md's skills catalog is generated from the PINNED engine, so a release
-          # that ADDS a skill stales it — and the one-line remedy update.sh printed could not work.
-          # Gitlink-only is allowed by the concurrency guard and fails lint on the drift; gitlink +
-          # index.md is refused by the guard as a canonical commit. Neither staged set commits, and
-          # the only remedies left were WIKI_WORKTREE=0 and --no-verify, which is a gate teaching
-          # its user to bypass it.
-          #
-          # The bind is the SINGLE COMMIT, not either gate. Split it and each gate is satisfied on
-          # its own terms, so NOTHING here relaxes a check — what was missing is the order, and this
-          # asserts the printed order actually works, step by step, ending in a clean lint.
-          RUNNER_TEMP="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-          fail=0
-          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-seq"
-          git config --global user.email ci@example.com
-          git config --global user.name CI
-          export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-seq.json"
-          # A SELF-CONTAINED probe engine to clone from. The workspace checkout cannot serve as
-          # origin here: `update.sh` runs `git fetch origin main --tags`, and a PR build checks out a
-          # detached merge ref with no `main` for that fetch to resolve — the fetch failed, update
-          # never advanced, and every step below then failed for a reason that had nothing to do with
-          # the defect. Building the origin also keeps the probe tags out of the real repository.
-          PE="$RUNNER_TEMP/probe-engine"; rm -rf "$PE"
-          git clone -q "$PWD" "$PE"
-          git -C "$PE" checkout -q -B main
-          # TWO releases differing by ONE ADDED SKILL — the only release shape that stales the
-          # catalog. Real tags, because update.sh advances tag-to-tag and RE-EXECS the new tag's own
-          # copy of itself, so a fixture without them would exercise a different program. The base
-          # tag gets its OWN commit: tagging the checked-out HEAD can land v90.0.0 on a commit that
-          # already carries a real release tag, and `git describe` then reports THAT one, so update
-          # compared v1.x to v90.x, called it a MAJOR bump and refused.
-          git -C "$PE" commit -q --allow-empty -m "probe base"
-          git -C "$PE" tag -f v90.0.0 >/dev/null
-          mkdir -p "$PE/skills/zzprobeskill"
-          printf -- '---\nname: zzprobeskill\ndescription: probe\nsummary: probe\n---\n# probe\n' \
-            > "$PE/skills/zzprobeskill/SKILL.md"
-          git -C "$PE" add skills/zzprobeskill/SKILL.md
-          git -C "$PE" commit -q -m "probe release: add a skill"
-          git -C "$PE" tag -f v90.1.0 >/dev/null
-
-          V="$RUNNER_TEMP/seqvault"; rm -rf "$V"
-          ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
-            --engine-url "$PE" --no-link-skills --no-rag >/dev/null 2>&1
-
-          [ -x "$V/.githooks/pre-commit" ] && [ -n "$(git -C "$V" config --get core.hooksPath)" ] \
-            && echo "  ok   fixture: the write-time gate is armed" \
-            || { echo "  FAIL fixture: no armed pre-commit — the bind cannot reproduce"; exit 1; }
-
-          E="$V/engine"
-          git -C "$E" checkout -q v90.0.0
-          "$E/bin/gen-skills-index.sh" --wiki "$V" >/dev/null
-          git -C "$V" add engine index.md
-          git -C "$V" -c core.hooksPath=/dev/null commit -q -m "pin v90.0.0, catalog matching" >/dev/null 2>&1 || true
-          "$E/bin/gen-skills-index.sh" --check --wiki "$V" >/dev/null 2>&1 \
-            && echo "  ok   fixture: baseline pinned at v90.0.0 with a matching catalog" \
-            || { echo "  FAIL fixture: baseline already drifted, so nothing below is a test"; exit 1; }
-
-          out="$("$E/bin/update.sh" --wiki "$V" 2>&1)" || true
-          printf '%s\n' "$out" | grep -q 'v90.0.0 -> v90.1.0' \
-            && echo "  ok   update advanced the pin to the skill-adding release" \
-            || { echo "  FAIL update did not advance: $(printf '%s' "$out" | head -3)"; fail=1; }
-
-          printf '%s' "$out" | grep -qi 'catalog' \
-            && echo "  ok   ...and names the catalog it just invalidated" \
-            || { echo "  FAIL update said nothing about the catalog"; fail=1; }
-
-          git -C "$V" diff --name-only | grep -q '^index.md$' \
-            && { echo "  FAIL index.md was written into gated canonical"; fail=1; } \
-            || echo "  ok   ...without writing it into gated canonical"
-
-          # THE PRECONDITION FOR EVERYTHING BELOW: the pointer commit must still be refused here.
-          # If it were not, the printed sequence would be pointless and the steps would pass for a
-          # reason unrelated to the order they encode.
-          git -C "$V" commit engine -m "premature" >/dev/null 2>&1 \
-            && { echo "  FAIL the pointer commit succeeded BEFORE the catalog landed"; fail=1; } \
-            || echo "  ok   the pointer commit is refused while the catalog is stale"
-
-          echo "  -- running the printed sequence --"
-          WORK="$(WIKI_PATH="$V" "$E/bin/vault-worktree.sh" ensure 2>/dev/null | tail -1)" || WORK=""
-          { [ -n "$WORK" ] && [ -d "$WORK" ]; } \
-            && echo "  ok   step 1: took a worktree" \
-            || { echo "  FAIL step 1: no worktree"; exit "$((fail | 1))"; }
-
-          "$E/bin/gen-skills-index.sh" --wiki "$WORK" >/dev/null 2>&1 \
-            && echo "  ok   step 2: regenerated the catalog in the worktree" \
-            || { echo "  FAIL step 2: could not regenerate in the worktree"; fail=1; }
-
-          git -C "$WORK" commit -q index.md -m "Regenerate skills catalog" >/dev/null 2>&1 \
-            && echo "  ok   step 3: committed it there" \
-            || { echo "  FAIL step 3: the worktree commit was refused"; fail=1; }
-
-          int_out="$( (cd "$WORK" && WIKI_PATH="$V" "$E/bin/vault-worktree.sh" integrate 2>&1) )" && irc=0 || irc=$?
-          [ "$irc" = "0" ] \
-            && echo "  ok   step 4: integrated to main" \
-            || { echo "  FAIL step 4: integrate refused: $(printf '%s' "$int_out" | head -2)"; fail=1; }
-
-          git -C "$V" add engine 2>/dev/null || true
-          git -C "$V" commit engine -m "Bump engine to v90.1.0" >/dev/null 2>&1 \
-            && echo "  ok   step 5: the pointer commit is accepted once the catalog has landed" \
-            || { echo "  FAIL step 5: the pointer commit is still refused after the sequence"; fail=1; }
-
-          # ...and the vault ends clean, which is the whole claim.
-          "$E/bin/lint.sh" --wiki "$V" >/dev/null 2>&1 \
-            && echo "  ok   the vault lints clean at the end of the sequence" \
-            || { echo "  FAIL the vault is still failing lint after the full sequence"; fail=1; }
-
-          exit "$fail"
-
 
       - name: Skill-coverage matches the documented name, not an incidental word
         run: |
@@ -2797,7 +2550,7 @@ jobs:
 
       - name: status reports shipped / rejected / open / unknown correctly
         run: |
-          # Behavioural fixture: a consumer vault pinned THREE releases behind an engine
+          # Behavioural fixture: a machine running a release THREE behind an engine
           # that has since shipped one of its proposals, rejected another, and renamed a
           # third. Every state the skill promises a reporter is asserted here, including
           # the two that do not exist without this feature: a DECLINE reaching the
@@ -2836,31 +2589,37 @@ jobs:
           git -C "$SRC" tag v2.0.0
 
           V="$T/vault"; mkdir -p "$V/.engine-proposal"
-          git clone -q "$SRC" "$V/engine"
-          git -C "$V/engine" checkout -q v1.0.0    # detached at the pin, as a submodule is
+          # History comes from a clone of the engine (ENGINE_REPO, as a consumer on the plugin
+          # sets it); "do you have it" from the release that RUNS — a stand-in at 1.0.0,
+          # made the way the plugin cache is: no .git, versioned by its manifest.
+          git clone -q "$SRC" "$T/engine-clone"
+          git -C "$T/engine-clone" checkout -q v1.0.0
+          export ENGINE_REPO="$T/engine-clone"
+          R="$T/running"; mkdir -p "$R/.claude-plugin"; cp -R "$GITHUB_WORKSPACE/bin" "$R/"
+          printf '{\n  "name": "wiki-engine",\n  "version": "1.0.0"\n}\n' > "$R/.claude-plugin/plugin.json"
           for s in shipped-old shipped-new back-filled declined-thing half-thing open-thing renamed-in; do
             printf 'HANDOFF — engine improvement proposal\nslug: %s\n' "$s" > "$V/.engine-proposal/$s.outbox"
           done
 
-          OUT="$(./bin/engine-proposal.sh status --vault "$V" 2>&1)"; echo "$OUT"
-          chk "resolves past the pin"       "$OUT" "resolving against origin/main"
-          chk "shipped at/below pin"        "$OUT" "SHIPPED in v1.0.0 — you already have it"
-          chk "shipped ABOVE pin"           "$OUT" "SHIPPED in v2.0.0 — NEWER than your pin"
+          OUT="$("$R/bin/engine-proposal.sh" status --vault "$V" 2>&1)"; echo "$OUT"
+          chk "resolves past the checkout"  "$OUT" "resolving against origin/main"
+          chk "shipped at/below what runs"  "$OUT" "SHIPPED in v1.0.0 — you already have it"
+          chk "shipped ABOVE what runs"      "$OUT" "SHIPPED in v2.0.0 — NEWER than what you run"
           chk "REJECTED is not open"        "$OUT" "REJECTED — the axis was wrong"
           chk "partially accepted"          "$OUT" "partially accepted — shape taken"
           chk "open says do not re-send"    "$OUT" "open — received and recorded upstream"
           chk "alias resolves to canonical" "$OUT" "recorded upstream under 'shipped-old'"
 
-          OUT2="$(./bin/engine-proposal.sh status --vault "$V" --slug never-arrived 2>&1)"
+          OUT2="$("$R/bin/engine-proposal.sh" status --vault "$V" --slug never-arrived 2>&1)"
           chk "unknown != open"             "$OUT2" "unknown — no row in the engine ledger"
           chk "unknown says re-send"        "$OUT2" "Re-sending is the right move"
 
           rm -f "$V/.engine-proposal/shipped-new.outbox"
-          OUT3="$(./bin/engine-proposal.sh status --vault "$V" --slug shipped-new 2>&1)"
+          OUT3="$("$R/bin/engine-proposal.sh" status --vault "$V" --slug shipped-new 2>&1)"
           chk "--slug without a local block" "$OUT3" "SHIPPED in v2.0.0"
 
           rm -f "$V"/.engine-proposal/*.outbox
-          OUT4="$(./bin/engine-proposal.sh status --vault "$V" 2>&1)"
+          OUT4="$("$R/bin/engine-proposal.sh" status --vault "$V" 2>&1)"
           chk "empty outbox is not a clean slate" "$OUT4" "not evidence that nothing is"
 
           if printf 'slug: real-slug\n' | ./bin/engine-proposal.sh stash --vault "$V" --slug other-slug >/dev/null 2>&1; then
@@ -2900,7 +2659,7 @@ jobs:
             && echo "  ok   a slug displaced by GitHub's squash footer is still read" \
             || { echo "  FAIL lint rejects the shape its own workflow produces"; ./bin/lint-proposals.sh --repo "$SRC"; fail=1; }
           # ...and `status` must agree with lint, or a shipped proposal reads as unknown
-          SO="$(./bin/engine-proposal.sh status --vault "$V" --slug shipped-old 2>&1)"
+          SO="$("$R/bin/engine-proposal.sh" status --vault "$V" --slug shipped-old 2>&1)"
           printf '%s' "$SO" | grep -q "SHIPPED" \
             && echo "  ok   status resolves a displaced slug too" \
             || { echo "  FAIL status could not see the displaced slug:"; printf '%s\n' "$SO"; fail=1; }
@@ -2962,7 +2721,7 @@ jobs:
           # A vault on a boundary the templates never named — the case that would break.
           V="$RUNNER_TEMP/bndvault"
           ./bin/new-wiki.sh --path "$V" --boundary work --email ci@example.com \
-            --git-name CI --engine-url "$PWD" --no-link-skills --no-rag >/dev/null 2>&1
+            --git-name CI --no-rag >/dev/null 2>&1
           [ "$(./bin/vault-boundary.sh --wiki "$V")" = "work" ] \
             || { echo "FAIL: vault-boundary did not read the declaration"; fail=1; }
 
@@ -3083,7 +2842,7 @@ jobs:
           # .githooks/ showed as untracked on every brand-new vault.
           F="$RUNNER_TEMP/gifresh"
           ./bin/new-wiki.sh --path "$F" --boundary personal --email ci@example.com \
-            --git-name CI --engine-url "$PWD" --no-link-skills --no-rag >/dev/null 2>&1
+            --git-name CI --no-rag >/dev/null 2>&1
           ./bin/adopt.sh --wiki "$F" >/dev/null 2>&1
           st="$(git -C "$F" status --porcelain)"
           [ -z "$st" ] \
@@ -3256,10 +3015,12 @@ jobs:
             && { echo "  FAIL fixture gained a remote; the no-publish assertion is void"; fail=1; } \
             || echo "  ok   nothing was published (fixture has no remote at all)"
 
-          # (5) the three local states are distinguishable WITHOUT network
-          cp -R "$ENG" "$V/engine"; git -C "$V/engine" checkout -q main
-          cp PROPOSALS.md "$V/engine/PROPOSALS.md"
-          git -C "$V/engine" add -A; git -C "$V/engine" commit -qm ledger
+          # (5) the three local states are distinguishable WITHOUT network. status reads the
+          # engine checkout ENGINE_REPO names — the one a consumer on the plugin clones.
+          ST="$T/status-engine"; cp -R "$ENG" "$ST"; git -C "$ST" checkout -q main
+          cp PROPOSALS.md "$ST/PROPOSALS.md"
+          git -C "$ST" add -A; git -C "$ST" commit -qm ledger
+          export ENGINE_REPO="$ST"
           "$EP" status --vault "$V" --slug cleanq 2>&1 | grep -q 'WRITTEN LOCALLY' \
             && echo "  ok   written-locally is distinct" \
             || { echo "  FAIL written-locally not reported"; fail=1; }
@@ -3317,77 +3078,6 @@ jobs:
           printf '%s' "$out_d" | grep -q 'To process one' \
             && { echo "  FAIL drain instructions printed with nothing to drain"; fail=1; } \
             || echo "  ok   no drain instructions when there is nothing to drain"
-
-          exit "$fail"
-
-      - name: submit works in the submodule checkout it defaults to
-        run: |
-          # The checkout `submit` picks by default IS the vault's pinned submodule, where
-          # `.git` is a FILE holding a gitdir pointer — so a `-d .git` guard rejected every
-          # consumer using the documented default and told them to go find a clone they do
-          # not have. Fail-closed, but what it closed was the only sanctioned upstream
-          # channel, and the workaround it invited (edit the pinned submodule in place) is
-          # the time bomb the skill exists to warn against.
-          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-submod"
-          git config --global user.email ci@example.com
-          git config --global user.name CI
-          git config --global init.defaultBranch main
-          git config --global protocol.file.allow always
-          EP="$GITHUB_WORKSPACE/bin/engine-proposal.sh"
-          T="$RUNNER_TEMP/submod"; rm -rf "$T"; mkdir -p "$T"; fail=0
-
-          git init -q --bare "$T/origin-engine.git"
-          git clone -q "$T/origin-engine.git" "$T/eng-src" 2>/dev/null
-          mkdir -p "$T/eng-src/bin" "$T/eng-src/proposals"
-          cp "$GITHUB_WORKSPACE/bin/engine-proposal.sh" "$GITHUB_WORKSPACE/bin/gen-proposals-ledger.sh" "$T/eng-src/bin/"
-          echo seed > "$T/eng-src/README.md"
-          printf '<!-- proposals:start -->\n<!-- proposals:end -->\n' > "$T/eng-src/PROPOSALS.md"
-          git -C "$T/eng-src" add -A; git -C "$T/eng-src" commit -qm seed; git -C "$T/eng-src" push -q origin main
-
-          V="$T/vault"; git init -q "$V"
-          printf -- '---\nboundary: personal\n---\n' > "$V/CLAUDE.md"; : > "$V/.gitignore"
-          git -C "$V" add -A; git -C "$V" commit -qm seed
-          git -C "$V" submodule add -q "$T/origin-engine.git" engine
-          git -C "$V" commit -qm "pin engine"
-          pin="$(git -C "$V/engine" rev-parse HEAD)"
-
-          [ -f "$V/engine/.git" ] \
-            && echo "  ok   fixture reproduces the shape that broke it (.git is a file)" \
-            || { echo "  FAIL fixture is not a submodule; the test is void"; fail=1; }
-
-          printf 'slug: submodq\nboundary: generic\n\nA generic problem statement.\n' > "$T/block.md"
-          out="$("$EP" submit --vault "$V" --slug submodq --file "$T/block.md" 2>&1)" \
-            && echo "  ok   submit accepts the pinned submodule as the engine checkout" \
-            || { echo "  FAIL submit rejected the checkout it defaults to"; fail=1; }
-
-          # the preview is the only review of MEANING in the chain; an empty box is a
-          # safety surface failing silently
-          printf '%s' "$out" | grep -q 'A generic problem statement' \
-            && echo "  ok   the pre-push preview shows the block that becomes public" \
-            || { echo "  FAIL preview box was empty"; fail=1; }
-
-          # the pin must be restored: parking a consumer's submodule on a branch cut from
-          # origin/main silently changes the version their whole vault runs at
-          [ "$(git -C "$V/engine" rev-parse HEAD)" = "$pin" ] \
-            && echo "  ok   the submodule is left on its pinned commit" \
-            || { echo "  FAIL submit left the pinned engine on another commit"; fail=1; }
-          git -C "$V/engine" rev-parse --verify -q proposal/submodq >/dev/null \
-            && echo "  ok   the prepared branch survives as a ref" \
-            || { echo "  FAIL prepared branch is gone"; fail=1; }
-
-          # the derived ledger travels WITH the proposal, or the drift gate fails the
-          # reporter's own pull request for a step nobody told them to run
-          git -C "$V/engine" show proposal/submodq --stat --oneline | grep -q 'PROPOSALS.md' \
-            && echo "  ok   the ledger is regenerated in the proposal commit" \
-            || { echo "  FAIL proposal commit leaves the committed ledger stale"; fail=1; }
-          git -C "$V/engine" show "proposal/submodq:PROPOSALS.md" | grep -q 'submodq' \
-            && echo "  ok   the regenerated ledger carries the new open row" \
-            || { echo "  FAIL no row for the arriving proposal"; fail=1; }
-
-          # push must not depend on the environment being re-created
-          [ "$(sed -n '2p' "$V/.engine-proposal/submodq.prepared")" = "$V/engine" ] \
-            && echo "  ok   the marker records which checkout holds the branch" \
-            || { echo "  FAIL marker does not record the engine checkout"; fail=1; }
 
           exit "$fail"
 
@@ -3522,7 +3212,7 @@ jobs:
           export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-hooks.json"
           V="$RUNNER_TEMP/hooks-vault"
           ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
-            --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+            --no-rag >/dev/null
           fail=0
           ./bin/lint-index-hooks.sh --wiki "$V" --strict >/dev/null 2>&1 \
             && echo "  ok   a scaffolded index passes under --strict" \
@@ -3569,7 +3259,7 @@ jobs:
           export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-alwayson.json"
           V="$RUNNER_TEMP/alwayson-vault"
           ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
-            --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+            --no-rag >/dev/null
           fail=0
           printf '\n## Working preferences\n\n%s\n' "$(printf 'word %.0s' $(seq 1 60))" >> "$V/CLAUDE.md"
           out="$(./bin/lint-always-on.sh --wiki "$V" 2>&1)" && rc=0 || rc=$?
@@ -3691,7 +3381,7 @@ jobs:
           export CLAUDE_SETTINGS="$RUNNER_TEMP/settings-sumcap.json"
           V="$RUNNER_TEMP/sumcap-vault"
           ./bin/new-wiki.sh --path "$V" --boundary personal --email ci@example.com --git-name CI \
-            --engine-url "$PWD" --no-link-skills --no-rag >/dev/null
+            --no-rag >/dev/null
           fail=0
           long="$(printf 'word %.0s' $(seq 1 40))"
           printf -- '---\ntitle: Long\ntype: project\nstatus: done\nsummary: "%s"\nboundary: personal\n---\n# Long\n' "$long" > "$V/projects/long.md"
@@ -4537,8 +4227,8 @@ jobs:
           V="$T/vault"; git -C "$V" init -q .
           printf -- '---\nboundary: personal\n---\n' > "$V/CLAUDE.md"
           git -C "$V" add -A; git -C "$V" commit -qm seed
-          # status reads an engine checkout; this repo is one
-          ln -s "$GITHUB_WORKSPACE" "$V/engine"
+          # status reads an engine checkout; this repo is one, and the script's own tree
+          export ENGINE_REPO="$GITHUB_WORKSPACE"
 
           printf 'proposal/alpha\n' > "$V/.engine-proposal/alpha.submitted"
           printf 'proposal/beta\n'  > "$V/.engine-proposal/beta.prepared"
@@ -4571,152 +4261,6 @@ jobs:
 
           exit "$fail"
 
-      - name: A hook wired into an event with two same-matcher entries lands once
-        run: |
-          # The writer used `map`, which visits EVERY entry, so an event already holding two
-          # entries that share the requested matcher received the command TWICE — the hook
-          # then ran twice per event, doubling every side effect it has. Fail-open in the
-          # worst way: the write printed one success line, a `--check` afterwards printed
-          # nothing, and re-running — the natural way to confirm wiring — was a silent no-op
-          # that read as confirmation. Nothing the tool printed ever said "two".
-          T="$RUNNER_TEMP/ensure-hook-dupes"; rm -rf "$T"; mkdir -p "$T"; fail=0
-          cmds()  { jq -c '[.hooks.TestEvent[].hooks[].command]' "$1"; }
-          n_new() { jq '[.hooks.TestEvent[].hooks[] | select(.command == "echo NEW")] | length' "$1"; }
-
-          # two matcher-LESS entries: the ordinary shape for an event that takes no matcher
-          printf '%s' '{"hooks":{"TestEvent":[{"hooks":[{"type":"command","command":"echo group-one"}]},{"hooks":[{"type":"command","command":"echo group-two"}]}]}}' > "$T/a.json"
-          ./bin/ensure-hook.sh --event TestEvent --command 'echo NEW' --settings "$T/a.json"
-          cmds "$T/a.json"
-          [ "$(n_new "$T/a.json")" = "1" ] \
-            && echo "  ok   matcher-less: the command landed in exactly one entry" \
-            || { echo "  FAIL wired $(n_new "$T/a.json") times across matcher-less entries"; fail=1; }
-
-          # ...and it is still ADD-ONLY: neither pre-existing command may be disturbed
-          [ "$(cmds "$T/a.json")" = '["echo group-one","echo NEW","echo group-two"]' ] \
-            && echo "  ok   ...appended to the FIRST matching entry, nothing else touched" \
-            || { echo "  FAIL add-only violated: $(cmds "$T/a.json")"; fail=1; }
-
-          # not specific to matcher-less events — two entries carrying the same matcher token
-          printf '%s' '{"hooks":{"TestEvent":[{"matcher":"startup","hooks":[{"type":"command","command":"echo g1"}]},{"matcher":"startup","hooks":[{"type":"command","command":"echo g2"}]}]}}' > "$T/b.json"
-          ./bin/ensure-hook.sh --event TestEvent --matcher startup --command 'echo NEW' --settings "$T/b.json"
-          [ "$(n_new "$T/b.json")" = "1" ] \
-            && echo "  ok   same-matcher entries: wired once" \
-            || { echo "  FAIL wired $(n_new "$T/b.json") times across same-matcher entries"; fail=1; }
-
-          # re-running stays the documented no-op, and does not drift the file
-          before="$(cat "$T/a.json")"
-          out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo NEW' --settings "$T/a.json" 2>&1)"
-          { [ -z "$out" ] && [ "$before" = "$(cat "$T/a.json")" ]; } \
-            && echo "  ok   re-running is still a silent no-op" \
-            || { echo "  FAIL re-run was not a no-op: $out"; fail=1; }
-
-          # --check must now SAY something about a doubled hook, whatever created it: this
-          # defect, a hand edit, or two tools wiring the same command. Silence here is what
-          # let the duplicate above pass for correct wiring.
-          printf '%s' '{"hooks":{"TestEvent":[{"hooks":[{"type":"command","command":"echo NEW"}]},{"hooks":[{"type":"command","command":"echo NEW"}]}]}}' > "$T/dupe.json"
-          keep="$(cat "$T/dupe.json")"
-          chk="$(./bin/ensure-hook.sh --event TestEvent --command 'echo NEW' --settings "$T/dupe.json" --check 2>&1)"; rc=$?
-          printf '%s\n' "$chk"
-          printf '%s' "$chk" | grep -q 'duplicate' \
-            && echo "  ok   --check reports the count greater than one" \
-            || { echo "  FAIL --check is silent about a doubled hook"; fail=1; }
-          [ "$rc" = "0" ] \
-            && echo "  ok   ...and still exits 0, so it can never block a session start" \
-            || { echo "  FAIL --check exited $rc"; fail=1; }
-          [ "$keep" = "$(cat "$T/dupe.json")" ] \
-            && echo "  ok   ...and reports without writing: add-only never removes a hook" \
-            || { echo "  FAIL --check mutated the settings file"; fail=1; }
-
-          # a command under two DISJOINT matchers is legitimate and never double-fires —
-          # flagging it would make the new report noise the day it shipped
-          printf '%s' '{"hooks":{"TestEvent":[{"matcher":"startup","hooks":[{"type":"command","command":"echo NEW"}]},{"matcher":"resume","hooks":[{"type":"command","command":"echo NEW"}]}]}}' > "$T/disjoint.json"
-          d="$(./bin/ensure-hook.sh --event TestEvent --matcher startup --command 'echo NEW' --settings "$T/disjoint.json" --check 2>&1)"
-          [ -z "$d" ] \
-            && echo "  ok   disjoint matchers are not reported as duplicates" \
-            || { echo "  FAIL false duplicate on disjoint matchers: $d"; fail=1; }
-
-          # ...but OVERLAPPING ones are, and that is not a false positive: this is the
-          # partial-overlap append the tool documents (add-only cannot collapse an existing
-          # NARROWER matcher), and on a startup event both entries really do fire. Pinned so
-          # a later reader does not "fix" the report by silencing this case.
-          printf '%s' '{"hooks":{"TestEvent":[{"matcher":"startup","hooks":[{"type":"command","command":"echo NEW"}]},{"matcher":"startup|resume","hooks":[{"type":"command","command":"echo NEW"}]}]}}' > "$T/overlap.json"
-          v="$(./bin/ensure-hook.sh --event TestEvent --matcher startup --command 'echo NEW' --settings "$T/overlap.json" --check 2>&1)"
-          printf '%s' "$v" | grep -q '2 times per event' \
-            && echo "  ok   overlapping matchers that really do double-fire are reported" \
-            || { echo "  FAIL overlap went unreported: $v"; fail=1; }
-
-          exit "$fail"
-
-      - name: A hook can state its own timeout, and one wired without a big enough timeout is reported
-        run: |
-          # A hook that names no `timeout` inherits the HOST's window. That window is short
-          # at SessionEnd — a hook was observed cancelled at about one second — and
-          # `rag-capture.sh` at a workspace root takes seconds, because `touched()` runs git
-          # in every sibling repo. The engine documented that wiring with no timeout, so the
-          # capture was cancelled on exactly the machines with the most to capture, and the
-          # failure is invisible: the hook is still wired, the script never reaches its own
-          # output line, and an empty buffer reads as a quiet month. The tool could not even
-          # express the field. It can now — and, because add-only must not edit a hook the
-          # user already has, the pre-timeout wiring is REPORTED rather than repaired.
-          T="$RUNNER_TEMP/ensure-hook-timeout"; rm -rf "$T"; mkdir -p "$T"; fail=0
-          to() { jq -c '[.hooks.TestEvent[].hooks[] | select(.command == "echo SLOW") | .timeout]' "$1"; }
-
-          printf '%s' '{}' > "$T/new.json"
-          ./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout 30 --settings "$T/new.json" >/dev/null
-          [ "$(to "$T/new.json")" = "[30]" ] \
-            && echo "  ok   --timeout is written into the hook object" \
-            || { echo "  FAIL timeout absent from a newly wired hook: $(to "$T/new.json")"; fail=1; }
-
-          # ...and omitting it still writes NO timeout key, so every existing caller and
-          # every already-wired settings.json is byte-for-byte unaffected.
-          printf '%s' '{}' > "$T/bare.json"
-          ./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --settings "$T/bare.json" >/dev/null
-          [ "$(to "$T/bare.json")" = "[null]" ] \
-            && echo "  ok   no --timeout still writes no timeout key" \
-            || { echo "  FAIL a timeout appeared with no --timeout: $(to "$T/bare.json")"; fail=1; }
-
-          # A malformed value is refused BEFORE any write. `"timeout": "30"` or `0` is worse
-          # than none: the field is present, so it reads as handled while the host falls back
-          # to its default or cancels at once. The message must name the VALUE — asserting
-          # only "exit 2" would pass on a build where --timeout was never implemented.
-          for bad in 0 -5 abc 1.5 ''; do
-            printf '%s' '{}' > "$T/bad.json"; keep="$(cat "$T/bad.json")"
-            # `&& rc=0 || rc=$?` and not `; rc=$?`: this step runs under `bash -e`, where a
-            # bare assignment from a command that exits non-zero kills the step before the
-            # assertion is ever read. The first version did exactly that.
-            out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout "$bad" --settings "$T/bad.json" 2>&1)" && rc=0 || rc=$?
-            { [ "$rc" = "2" ] && [ "$keep" = "$(cat "$T/bad.json")" ] \
-                && printf '%s' "$out" | grep -q 'timeout must be'; } \
-              && echo "  ok   --timeout '$bad' refused (exit 2), file untouched" \
-              || { echo "  FAIL --timeout '$bad' exited $rc: $out"; fail=1; }
-          done
-
-          # THE REPORTED CASE: already wired, timeout-less — the state of every vault that
-          # copied the old snippet. No write, exit 0, and it must SAY so.
-          printf '%s' '{"hooks":{"TestEvent":[{"hooks":[{"type":"command","command":"echo SLOW"}]}]}}' > "$T/stale.json"
-          keep="$(cat "$T/stale.json")"
-          out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout 30 --settings "$T/stale.json" 2>&1)" && rc=0 || rc=$?
-          printf '%s\n' "$out"
-          printf '%s' "$out" | grep -q 'wired without a timeout' \
-            && echo "  ok   an already-wired timeout-less hook is reported" \
-            || { echo "  FAIL wired-without-timeout went unreported: $out"; fail=1; }
-          [ "$keep" = "$(cat "$T/stale.json")" ] \
-            && echo "  ok   ...without editing the user's hook (still add-only)" \
-            || { echo "  FAIL the report came with a write"; fail=1; }
-          [ "$rc" = "0" ] \
-            && echo "  ok   ...and exits 0, so it can never block a session" \
-            || { echo "  FAIL exited $rc"; fail=1; }
-
-          # A user who already chose a LARGER timeout has solved it. Reporting that would
-          # make the new message noise on exactly the vaults that got it right.
-          printf '%s' '{"hooks":{"TestEvent":[{"hooks":[{"type":"command","command":"echo SLOW","timeout":60}]}]}}' > "$T/big.json"
-          out="$(./bin/ensure-hook.sh --event TestEvent --command 'echo SLOW' --timeout 30 --settings "$T/big.json" 2>&1)"
-          [ -z "$out" ] \
-            && echo "  ok   a larger existing timeout is left alone, silently" \
-            || { echo "  FAIL false report against a sufficient timeout: $out"; fail=1; }
-
-          exit "$fail"
-
       - name: lint-docs catches a documented hook snippet that states no timeout
         run: |
           # The gate is only worth having if it can go red. Its first version could not: it
@@ -4729,7 +4273,7 @@ jobs:
             || { echo "  FAIL lint-docs is red before the fixture is applied"; fail=1; }
 
           cp USAGE.md "$RUNNER_TEMP/USAGE.keep"
-          perl -0pi -e 's/",\n      "timeout": 30\n/"\n/' USAGE.md
+          perl -0pi -e 's/",\n    "timeout": 30 \}/" }/' USAGE.md
           grep -q '"timeout": 30' USAGE.md \
             && { echo "  FAIL the fixture did not remove the timeout — the red below proves nothing"; fail=1; } \
             || echo "  ok   fixture applied: the snippet now states no timeout"

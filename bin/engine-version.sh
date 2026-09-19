@@ -1,79 +1,70 @@
 #!/usr/bin/env bash
-# engine-version.sh — report the vault's pinned engine vs the latest RELEASE TAG reachable
-# on origin/main. Staleness is measured tag-to-tag because that is what `update.sh` adopts
-# (it advances tag→tag and refuses untagged commits); comparing against origin/main's HEAD
-# instead would flag untagged docs/CI commits sitting past the latest tag as a phantom
-# "update available" with nothing to adopt. Deterministic (plain git, no LLM, no claude) —
-# safe at session start. Meant to run from a vault's pinned submodule copy.
+# engine-version.sh — report the running engine release vs the latest RELEASE TAG on the
+# engine's remote. Staleness is measured tag-to-tag because the plugin marketplace pins
+# release tags; untagged commits on main are not something a consumer can install.
+# Deterministic (plain git, no LLM, no claude), bounded network — safe to run anytime.
 #
-# Exit: 0 up to date (or pinned ahead) · 1 update available · 2 error (no remote / offline).
-# A MAJOR-version bump is flagged as breaking — review migration before adopting.
+# The plugin cache is not a git repo, so the remote comes from the plugin manifest's
+# `repository` and is read with `git ls-remote`; a checkout (directory marketplace, dev
+# clone) uses its own origin instead.
+#
+# Exit: 0 up to date (or ahead) · 1 update available · 2 error (no remote / offline).
+# A MAJOR-version bump is flagged as breaking — review the migration before adopting.
 #
 # Usage: engine-version.sh
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE="$(cd "$SCRIPT_DIR/.." && pwd)"
+. "$SCRIPT_DIR/plugin-lib.sh"
 
-git -C "$ENGINE" rev-parse --git-dir >/dev/null 2>&1 || { echo "engine-version: $ENGINE is not a git repo" >&2; exit 2; }
+running="$(engine_release "$ENGINE")"
+# the release tag at or behind what runs (no -N-g suffix)
+running_tag="$(printf '%s' "$running" | sed -E 's/-[0-9]+-g[0-9a-f]+$//')"
 
-pinned_sha="$(git -C "$ENGINE" rev-parse --short HEAD)"
-pinned_ver="$(git -C "$ENGINE" describe --tags --always 2>/dev/null || echo "$pinned_sha")"
-# the nearest tag AT or behind the pin (bare, no -N-g suffix); empty if pin has no tag
-pinned_tag="$(git -C "$ENGINE" describe --tags --abbrev=0 2>/dev/null || echo '')"
-
-if ! git -C "$ENGINE" fetch -q origin main --tags 2>/dev/null; then
-  echo "engine: pinned $pinned_ver — could not reach origin (offline?); skipping update check"
-  exit 2
+remote=""
+if git -C "$ENGINE" rev-parse --git-dir >/dev/null 2>&1; then
+  remote="$(git -C "$ENGINE" remote get-url origin 2>/dev/null || true)"
 fi
+[ -n "$remote" ] || remote="$(sed -nE 's/^[[:space:]]*"repository"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$ENGINE/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
+[ -n "$remote" ] || { echo "engine: running $running — no remote to compare against"; exit 2; }
 
-# Latest release tag reachable from the fetched main tip (ignores untagged commits and
-# any tags on unmerged branches).
-latest_tag="$(git -C "$ENGINE" tag -l 'v*' --merged FETCH_HEAD 2>/dev/null | sort -V | tail -1)"
+tags="$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 \
+  ls-remote --tags --refs "$remote" 'v*' 2>/dev/null)" \
+  || { echo "engine: running $running — could not reach $remote (offline?); skipping update check"; exit 2; }
+latest_tag="$(printf '%s\n' "$tags" | sed -nE 's#.*refs/tags/(v[0-9]+\.[0-9]+\.[0-9]+)$#\1#p' | sort -V | tail -1)"
 
 if [ -z "$latest_tag" ]; then
-  echo "engine: pinned $pinned_ver — no release tags on origin/main; skipping update check"
+  echo "engine: running $running — no release tags on $remote; skipping update check"
   exit 0
 fi
-if [ -z "$pinned_tag" ]; then
-  echo "engine: pinned $pinned_ver (untagged) — latest tag $latest_tag; review before adopting"
-  exit 1
-fi
+case "$running_tag" in
+  v[0-9]*.[0-9]*.[0-9]*) ;;
+  *) echo "engine: running $running (not a release) — latest tag $latest_tag"; exit 1;;
+esac
 
-# up to date: pin is at (or past, via untagged commits) the latest tag.
-if [ "$pinned_tag" = "$latest_tag" ]; then
-  echo "engine: up to date ($pinned_ver)"
+if [ "$running_tag" = "$latest_tag" ]; then
+  echo "engine: up to date ($running)"
   exit 0
 fi
-
-# order the two tags; if the pinned tag is the higher one, the pin is ahead — no action.
-higher="$(printf '%s\n%s\n' "$pinned_tag" "$latest_tag" | sort -V | tail -1)"
-if [ "$higher" = "$pinned_tag" ]; then
-  echo "engine: pinned $pinned_ver is ahead of the latest tag ($latest_tag) — no action"
+higher="$(printf '%s\n%s\n' "$running_tag" "$latest_tag" | sort -V | tail -1)"
+if [ "$higher" = "$running_tag" ]; then
+  echo "engine: running $running is ahead of the latest tag ($latest_tag) — no action"
   exit 0
 fi
 
-# latest_tag is strictly newer than pinned_tag — classify the bump.
 core() { printf '%s' "$1" | sed -E 's/^v//; s/-.*$//'; }
-pc="$(core "$pinned_tag")"; lc="$(core "$latest_tag")"
-pmaj="${pc%%.*}"; lmaj="${lc%%.*}"
-prest="${pc#*.}"; lrest="${lc#*.}"; pmin="${prest%%.*}"; lmin="${lrest%%.*}"
-if [ "$pmaj" != "$lmaj" ]; then level="MAJOR"
-elif [ "$pmin" != "$lmin" ]; then level="minor"
+rc="$(core "$running_tag")"; lc="$(core "$latest_tag")"
+rmaj="${rc%%.*}"; lmaj="${lc%%.*}"
+rrest="${rc#*.}"; lrest="${lc#*.}"; rmin="${rrest%%.*}"; lmin="${lrest%%.*}"
+if [ "$rmaj" != "$lmaj" ]; then level="MAJOR"
+elif [ "$rmin" != "$lmin" ]; then level="minor"
 else level="patch"; fi
 
-# commits from the pin to the latest tag's commit (informational)
-behind="$(git -C "$ENGINE" rev-list --count "HEAD..${latest_tag}" 2>/dev/null || echo '?')"
-
 if [ "$level" = "MAJOR" ]; then
-  echo "engine: pinned $pinned_ver, latest $latest_tag — ⚠ MAJOR bump ($behind commit(s) behind): review CHANGELOG + migration BEFORE adopting"
+  echo "engine: running $running, latest $latest_tag — ⚠ MAJOR bump: review the CHANGELOG migration BEFORE adopting"
 else
-  echo "engine: pinned $pinned_ver, latest $latest_tag — $level update ($behind commit(s) behind); safe to adopt"
+  echo "engine: running $running, latest $latest_tag — $level update; safe to adopt"
 fi
-# `commit engine`, never `commit -am`: in a shared canonical checkout `-am` stages every
-# modified tracked file, including a concurrent session's, which is the clobber
-# vault-worktree.sh's guard refuses — so the printed instruction was one the engine's own
-# gate rejects. A gitlink-only commit is the one commit no worktree can make, and the
-# guard allows exactly that.
-echo "  to update: git -C <vault> submodule update --remote engine && <vault>/engine/bin/adopt.sh && git -C <vault> commit engine -m 'Bump engine'"
+echo "  to update: claude plugin update wiki-engine@wiki-engine (restart), then update.sh --wiki <vault>"
 exit 1

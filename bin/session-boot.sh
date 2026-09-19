@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# session-boot.sh — the engine's single SessionStart entrypoint. Wire THIS one hook and
+# session-boot.sh — the engine's single SessionStart entrypoint, run by the plugin's hook;
 # the engine owns the rest. In ONE deterministic pass it:
-#   1. apply-adopt.sh       — auto-wire features the pinned engine introduced.
+#   1. apply-adopt.sh       — auto-adopt features this engine release introduced.
 #   2. session-preflight.sh — check wiki-engine staleness; writes the cache.
 #   3. renders the version banner from the JUST-written cache (session-banner.sh) and
 #      emits it to the USER via the hook `systemMessage` field, while the adopt/preflight
@@ -16,24 +16,18 @@
 # Deterministic. NEVER runs `claude` (hard rule: no claude in a hook — the fork-bomb
 # trap). Always exits 0 so it can't block session start.
 #
-# Usage (from a SessionStart hook): WIKI_PATH=/path/to/vault session-boot.sh
+# Usage: the plugin's SessionStart hook (hooks/hooks.json); reads the vault from WIKI_PATH.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKI="${WIKI_PATH:-}"
 
-# Plugin delivery (1.80.0+). With the wiki-engine plugin enabled, its own SessionStart hook
-# runs this script; a legacy settings.json hook firing beside it stays silent, so a session
-# boots exactly once. See bin/plugin-lib.sh.
-if [ -f "$SCRIPT_DIR/plugin-lib.sh" ]; then
-  . "$SCRIPT_DIR/plugin-lib.sh"
-  engine_superseded_by_plugin && exit 0
-  if engine_running_as_plugin && [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
-    # A stable path to the running engine. CLAUDE_PLUGIN_ROOT moves on every plugin update;
-    # anything outside Claude Code that needs the engine (a statusLine, a vault pre-commit)
-    # reads this link instead.
-    mkdir -p "$CLAUDE_PLUGIN_DATA" 2>/dev/null && ln -sfn "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_DATA/engine" 2>/dev/null || true
-  fi
+# The plugin's hooks/hooks.json runs this script. Keep a stable path to the running engine:
+# CLAUDE_PLUGIN_ROOT moves on every plugin update, so anything outside Claude Code that needs
+# the engine (a statusLine, a vault pre-commit, the vault CLAUDE.md import) reads this link.
+. "$SCRIPT_DIR/plugin-lib.sh"
+if engine_running_as_plugin && [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
+  mkdir -p "$CLAUDE_PLUGIN_DATA" 2>/dev/null && ln -sfn "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_DATA/engine" 2>/dev/null || true
 fi
 
 ctx=""   # accumulates human-readable text destined for the model (additionalContext)
@@ -73,7 +67,7 @@ fi
 
 # Prepend the adoption failure, so a broken step is never masked by a green version line.
 if [ "${adopt_fail:-0}" -gt 0 ] 2>/dev/null; then
-  banner="⚠ engine adopt: ${adopt_fail} step(s) FAILED — run engine/bin/apply-adopt.sh --check${banner:+
+  banner="⚠ engine adopt: ${adopt_fail} step(s) FAILED — run $SCRIPT_DIR/apply-adopt.sh --check${banner:+
 }${banner}"
 fi
 

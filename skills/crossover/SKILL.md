@@ -10,7 +10,7 @@ updated: 2026-09-03
 
 Transfer pages between two vaults that deliberately never sit on the same computer (the boundary rule: "crossover between vaults is a manual export, never automatic"). Git can't help — the two vaults are different repos on different machines — so the channel is copy-paste text, and the danger is that a lossy paste plus a human "yeah it worked" deletes the only good copy. This skill removes that danger: **nothing is deleted until a returned receipt's hash matches what was sent.**
 
-**Vault**: `$WIKI_PATH` — the vault root on *this* machine; must be set. All transport is deterministic in `engine/bin/crossover.sh`; this skill decides *what* moves and drives the human handoff.
+**Vault**: `$WIKI_PATH` — the vault root on *this* machine; must be set. All transport is deterministic in the engine's `bin/crossover.sh`; this skill decides *what* moves and drives the human handoff.
 
 ## The handshake (three sessions, two machines)
 

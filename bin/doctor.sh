@@ -43,7 +43,7 @@ sec "rag deps"
 VENV="$WIKI/.rag/venv"
 REQ="${RAG_REQUIREMENTS:-$ENGINE_ROOT/scaffold/rag-requirements.txt}"
 if [ ! -x "$VENV/bin/python" ]; then
-  echo "not provisioned (no .rag/venv) — run engine/bin/rag-setup.sh to enable recall"
+  echo "not provisioned (no .rag/venv) — run $SCRIPT_DIR/rag-setup.sh --wiki \"$WIKI\" to enable recall"
 else
   # shared checker: actionable = pinned drift/outdated or a security vuln;
   # transitive "newer" is informational only. Exit 0 healthy · 1 actionable · 2 offline.
@@ -67,9 +67,9 @@ cache = c.get("model_cache")
 if not cache:
     print("  cache: not recorded (provisioned by an older engine — rerun rag-setup.sh)")
 elif not os.path.isdir(cache):
-    print("  cache: %s — MISSING (rerun engine/bin/rag-setup.sh)" % cache)
+    print("  cache: %s — MISSING (rerun the engine's bin/rag-setup.sh)" % cache)
 elif not os.listdir(cache):
-    print("  cache: %s — EMPTY (rerun engine/bin/rag-setup.sh)" % cache)
+    print("  cache: %s — EMPTY (rerun the engine's bin/rag-setup.sh)" % cache)
 else:
     print("  cache: %s%s" % (cache, " (pinned)" if c.get("model_cache_pin") else ""))
 PY
@@ -81,6 +81,6 @@ echo
 case "$rc" in
   0) echo "doctor: all consumed components current";;
   2) echo "doctor: could not fully check (offline)";;
-  *) echo "doctor: updates available — see engine/bin/update.sh";;
+  *) echo "doctor: updates available — see $SCRIPT_DIR/update.sh";;
 esac
 exit "$rc"

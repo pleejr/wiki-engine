@@ -1,47 +1,33 @@
 #!/usr/bin/env bash
-# plugin-lib.sh — how the engine tells plugin delivery from submodule delivery.
+# plugin-lib.sh — what the engine knows about its own delivery.
 #
-# SOURCED, never executed. Since 1.80.0 the engine ships two ways at once: as the
-# `wiki-engine` Claude Code plugin (hooks in hooks/hooks.json, skills namespaced
-# `wiki-engine:<name>`) and as the vault's pinned `engine/` submodule wired by adopt.d.
-# During the move a machine can carry both, and every question below exists so the two
-# never both act:
+# SOURCED, never executed. Since 2.0.0 the engine ships only as the `wiki-engine` Claude
+# Code plugin: hooks in hooks/hooks.json, skills namespaced `wiki-engine:<name>`. A vault
+# records the release it needs in `.engine-version`; the `engine/` submodule and the
+# settings.json hooks that 1.x wired are gone.
 #
-#   engine_plugin_enabled   is the plugin switched on for this machine (user settings)?
-#   engine_running_as_plugin  was THIS script started by the plugin (vs. a settings hook
-#                           or a hand run from the submodule)?
-#   engine_superseded_by_plugin  plugin on, but this copy was not started by it — the
-#                           legacy settings hook firing beside the plugin's own. Callers
-#                           exit quietly so a session boots and captures exactly once.
-#   engine_release          the version this engine tree is: the manifest's version for the
-#                           tree the plugin runs from (cache or checkout), else `git describe`.
-#   vault_engine_required   the engine release a vault WITHOUT a submodule records in its
-#                           `.engine-version` (empty for a submodule vault, or none recorded).
-#   engine_version_lt       whether release A sorts before release B (`v`-prefixed or not).
-#
-# "Enabled" is read from user settings, never inferred from where a file sits: the same
-# tree is reached as a submodule and as a plugin source, so position proves nothing.
-
-_engine_settings() { printf '%s\n' "${CLAUDE_SETTINGS:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}"; }
-
-engine_plugin_enabled() {
-  grep -qE '"wiki-engine@[^"]*"[[:space:]]*:[[:space:]]*true' "$(_engine_settings)" 2>/dev/null
-}
+#   engine_running_as_plugin  was THIS script started by the plugin (vs. a hand run or CI
+#                             from a checkout)?
+#   engine_release            the version this engine tree is: the manifest's version for
+#                             the tree the plugin runs from (cache or checkout), else
+#                             `git describe`, else the manifest.
+#   vault_engine_required     the release a vault records in `.engine-version` (empty when
+#                             none is recorded).
+#   vault_has_engine_submodule  does the vault still carry the 1.x `engine/` submodule?
+#   settings_legacy_engine_hooks  settings.json hook commands a 1.x adoption wired, which
+#                             point into a vault's `engine/` and fail once it is gone.
+#   engine_version_lt         whether release A sorts before release B (`v`-prefixed or not).
 
 engine_running_as_plugin() {
   [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ] || return 1
   grep -qE '"name"[[:space:]]*:[[:space:]]*"wiki-engine"' "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json"
 }
 
-engine_superseded_by_plugin() {
-  engine_plugin_enabled && ! engine_running_as_plugin
-}
-
 engine_release() { # <engine-dir>
   local e="${1:?engine dir}" v plugin=0
   # The tree the plugin runs from is versioned by its manifest even when it is a git checkout
   # (a directory marketplace): `git describe` there would name the same release differently
-  # from its cache copy, and the adoption marker would flip between the two.
+  # from its cache copy.
   if engine_running_as_plugin && [ "$(cd "$e" 2>/dev/null && pwd -P)" = "$(cd "$CLAUDE_PLUGIN_ROOT" && pwd -P)" ]; then
     plugin=1
   fi
@@ -52,15 +38,27 @@ engine_release() { # <engine-dir>
   [ -n "$v" ] && printf 'v%s\n' "$v" || echo unknown
 }
 
-# A vault on plugin delivery drops its `engine/` submodule and records the release it needs
-# in `.engine-version`, one tag per file (e.g. `v1.81.0`). Vault CI checks out that tag; the
-# preflight compares it with the running plugin. A vault that still has the submodule is
-# versioned by the submodule, so the file is ignored there.
+# One tag per file (e.g. `v2.0.0`). Vault CI checks out that tag; the preflight compares it
+# with the running plugin.
 vault_engine_required() { # <wiki>
   local w="${1:?wiki}"
-  [ -e "$w/engine/.git" ] && return 0
   [ -f "$w/.engine-version" ] || return 0
   tr -d '[:space:]' < "$w/.engine-version"
+}
+
+# A gitlink or a checked-out submodule both count: either way the vault still expects 1.x.
+vault_has_engine_submodule() { # <wiki>
+  local w="${1:?wiki}"
+  [ -e "$w/engine/.git" ] && return 0
+  grep -qE '^[[:space:]]*path[[:space:]]*=[[:space:]]*engine[[:space:]]*$' "$w/.gitmodules" 2>/dev/null
+}
+
+settings_legacy_engine_hooks() { # [settings.json]
+  local s="${1:-${CLAUDE_SETTINGS:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}}"
+  [ -f "$s" ] || return 0
+  grep -oE '"command"[[:space:]]*:[[:space:]]*"[^"]*engine/bin/(session-boot|rag-capture|session-preflight|session-banner)\.sh[^"]*"' "$s" 2>/dev/null \
+    | sed -E 's/^"command"[[:space:]]*:[[:space:]]*"//; s/"$//' \
+    | grep -v 'plugins/' || true
 }
 
 engine_version_lt() { # <a> <b>

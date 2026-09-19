@@ -1,29 +1,30 @@
 #!/usr/bin/env bash
-# update.sh — advance a vault's consumed components in one step, instead of one-by-one:
-#   1. bump the engine submodule to the latest tag (within the same MAJOR)
-#   2. run adopt.sh (new node folders)
+# update.sh — bring a vault up to the engine release that is running, in one step:
+#   1. record that release in the vault's .engine-version (the tag its CI checks out)
+#   2. run adopt.sh (node folders + adopt.d steps)
 #   3. re-sync the RAG venv to the engine's pinned deps (rag-setup.sh, if provisioned)
+#   4. advance the engine's own repo page provenance, and regenerate the skills catalog
 #
-# Refuses a MAJOR bump — those need a reviewed migration (see CHANGELOG). Leaves the
-# submodule bump STAGED for you to review + commit; never auto-commits (adoption is a
-# human gate). Deterministic; no `claude`. doctor.sh reports; this applies.
+# The plugin marketplace already moved the engine; this moves the vault's record of it.
+# Refuses a MAJOR difference — those need a reviewed migration (see CHANGELOG) — and refuses
+# to record a release OLDER than the one the vault already needs. Stages what it writes;
+# never commits (adoption is a human gate). Deterministic; no `claude`. doctor.sh reports;
+# this applies.
 #
-# It runs in TWO PHASES because step 1 replaces this very file: ADVANCE checks out the new
-# tag, then hands the rest to the copy it just checked out (one bounded re-exec, guarded by
-# UPDATE_CONTINUE_FROM, which the child refuses to re-enter). So a fix to update.sh applies
-# to the run that adopts it, instead of one run later.
+# WHICH TREE. Everything written here is ordinary tracked vault content, and writing it into
+# a shared canonical checkout is the clobber worktrees exist to prevent. So it is written in
+# the caller's own worktree when they stand in one; when a commit in canonical would be
+# refused (canonical_commit_gated), nothing is written and the command to rerun from a
+# worktree is printed. A vault that can commit in canonical is unaffected.
 #
 # Usage: update.sh [--wiki DIR]
-#   UPDATE_REEXEC=0          apply with the pre-update copy, the pre-v1.54.2 behaviour
-#   UPDATE_CONTINUE_FROM=X   internal: marks the apply phase; do not set by hand
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_WIKI="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd || true)"   # engine is $WIKI/engine
-# The submodule work below is canonical-only by necessity; this resolves the separate
-# question of which tree a TRACKED page edit belongs in (see the provenance block).
+ENGINE="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
-WIKI="${WIKI_PATH:-$DEFAULT_WIKI}"
+. "$SCRIPT_DIR/plugin-lib.sh"
+WIKI="${WIKI_PATH:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --wiki) WIKI="$2"; shift 2;;
@@ -32,164 +33,85 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
-ENGINE="$WIKI/engine"
+[ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
+WIKI="$(cd "$WIKI" && pwd)"
 core_major() { printf '%s' "$1" | sed -E 's/^v//; s/[.-].*$//'; }
 
-# --- a vault WITHOUT the submodule (plugin delivery) ------------------------------------
-# The plugin marketplace already advanced the engine; what the vault owns is the record of
-# the release it needs, `.engine-version`, which its CI checks out. So "update" here means:
-# record the running release there and run adoption from it. The file is ordinary tracked
-# content, so it is written in the caller's worktree, or deferred when canonical is gated —
-# the same rule as the repo page below. Same MAJOR refusal as the submodule path.
-if [ ! -e "$ENGINE/.git" ] && [ -f "$WIKI/.engine-version" ]; then
-  . "$SCRIPT_DIR/plugin-lib.sh"
-  running="$(engine_release "$(cd "$SCRIPT_DIR/.." && pwd)")"
-  required="$(vault_engine_required "$WIKI")"
-  if [ "$running" = "$required" ]; then
-    echo "update: .engine-version already records $running"
-  elif [ "$(core_major "$running")" != "$(core_major "$required")" ]; then
-    echo "update: ⚠ the running engine $running and the vault's $required differ in MAJOR — review the CHANGELOG migration; not applied." >&2
-    exit 1
-  elif engine_version_lt "$running" "$required"; then
-    echo "update: the running engine $running is older than the vault's $required — run: claude plugin update wiki-engine@wiki-engine" >&2
-    exit 1
-  else
-    tree="$(WIKI_PATH="$WIKI" resolve_wiki_root "" 2>/dev/null)" || tree="$WIKI"
-    if [ "$tree" = "$WIKI" ] && [ -n "$(canonical_commit_gated "$WIKI")" ]; then
-      echo "update: .engine-version is tracked content and this vault gates canonical commits. Run from a worktree:"
-      echo "  WORK=\"\$($SCRIPT_DIR/vault-worktree.sh ensure)\" && (cd \"\$WORK\" && $SCRIPT_DIR/update.sh --wiki \"$WIKI\")"
-      exit 0
-    fi
-    printf '%s\n' "$running" > "$tree/.engine-version"
-    git -C "$tree" add .engine-version 2>/dev/null || true
-    echo "update: .engine-version $required -> $running (staged in $tree)"
-  fi
-  "$SCRIPT_DIR/adopt.sh" --wiki "$WIKI"
-  if [ -x "$WIKI/.rag/venv/bin/python" ]; then
-    "$SCRIPT_DIR/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
-  fi
-  exit 0
+# A 1.x vault pins the engine as a submodule. Recording .engine-version beside it would give
+# two answers to "which engine does this vault need", while its import, gate and CI kept
+# running the submodule copy. The migration drops the submodule first.
+if vault_has_engine_submodule "$WIKI"; then
+  echo "update: $WIKI still carries the 1.x engine/ submodule, which 2.x does not use." >&2
+  echo "update:   Drop it first: engine CHANGELOG, 2.0.0, \"Dropping the vault's submodule\"." >&2
+  exit 1
 fi
 
-[ -d "$ENGINE/.git" ] || [ -f "$ENGINE/.git" ] || { echo "error: no engine submodule at $ENGINE, and no .engine-version (plugin delivery)" >&2; exit 1; }
+latest="$(engine_release "$ENGINE")"
+case "$latest" in unknown|"") echo "update: cannot tell which release is running from $ENGINE" >&2; exit 1;; esac
+required="$(vault_engine_required "$WIKI")"
 
-# --- TWO PHASES, because this script replaces itself halfway through --------------------
-# ADVANCE (fetch, compare, check out the new tag) and APPLY (adopt, RAG re-sync, the repo
-# page, every printed remedy). They are split because the checkout in between rewrites THIS
-# FILE: `git checkout` renames a temporary file over the path, so the path gets a new inode
-# while this shell keeps its descriptor on the old one, and the apply half therefore ran the
-# PRE-UPDATE text to the end. Nothing was garbled — an in-place rewrite would splice, a
-# rename does not — but the run reported adopting a version whose behaviour it did not use.
-#
-# The class that hides is self-referential and was met in the field: a defect IN THIS FILE
-# is not exercised by the run that installs its fix, so an operator adopting the fix meets
-# the bug one more time, release notes in hand. The fix is to hand the apply phase to the
-# copy that was just checked out.
-#
-# ONE re-exec, never a loop: the child sees UPDATE_CONTINUE_FROM set and does no fetch, no
-# comparison, no checkout, and no further re-exec. That sentinel is the whole recursion
-# guard, and it is why this is a bounded hand-off rather than the shape the engine's hard
-# safety rule forbids — there is no event a child can re-trigger, and the depth is 1.
-#
-# `bash -n` FIRST, and fall through rather than exec on failure. The pin is already
-# advanced at that point, so a release whose update.sh does not parse would otherwise strand
-# the vault mid-update with no apply phase at all. The old text is a worse applier than the
-# new one and a far better one than none.
-CONTINUING="${UPDATE_CONTINUE_FROM:-}"
-if [ -z "$CONTINUING" ]; then
-  git -C "$ENGINE" fetch -q origin main --tags 2>/dev/null || { echo "update: could not reach origin (offline?)" >&2; exit 2; }
-
-  pinned="$(git -C "$ENGINE" describe --tags --always 2>/dev/null)"
-  latest="$(git -C "$ENGINE" tag -l 'v*' | sort -V | tail -1)"
-  [ -n "$latest" ] || { echo "update: engine has no version tags; nothing to advance to" >&2; exit 1; }
-
-  if [ "$pinned" = "$latest" ]; then
-    echo "update: already at $latest"
-    # still re-sync RAG deps in case the pin didn't move but requirements did
-    [ -x "$WIKI/.rag/venv/bin/python" ] && "$ENGINE/bin/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
-    exit 0
-  fi
-
-  pmaj="$(core_major "$pinned")"; lmaj="$(core_major "$latest")"
-  if [ -n "$pmaj" ] && [ -n "$lmaj" ] && [ "$lmaj" -gt "$pmaj" ] 2>/dev/null; then
-    echo "update: ⚠ $latest is a MAJOR bump over $pinned — breaking; review CHANGELOG + migration and adopt manually. Not applied." >&2
-    exit 1
-  fi
-
-  echo "update: $pinned -> $latest"
-  git -C "$ENGINE" checkout -q "$latest"
-
-  # Hand the apply phase to the version that was just checked out. UPDATE_REEXEC=0 keeps the
-  # old behaviour for anyone who needs it; it is an escape hatch, not a default, because the
-  # default has to be the honest one.
-  if [ "${UPDATE_REEXEC:-1}" != "0" ]; then
-    if bash -n "$ENGINE/bin/update.sh" 2>/dev/null; then
-      echo "update: applying with $latest's own tools (this script was replaced by the checkout)"
-      UPDATE_CONTINUE_FROM="$pinned" exec bash "$ENGINE/bin/update.sh" --wiki "$WIKI"
-    fi
-    echo "update: ⚠ $latest's update.sh does not parse — applying with $pinned's copy instead." >&2
-    echo "update:   The pin is already advanced; report this, it is an engine packaging bug." >&2
-  fi
-  applier="$pinned"
-else
-  # APPLY PHASE, re-exec'd by the copy that ran before the checkout. Everything below is the
-  # new version's text acting on the new pin — which is the point of the split.
-  pinned="$CONTINUING"
-  latest="$(git -C "$ENGINE" describe --tags --always 2>/dev/null)"
-  applier="$latest"
+if [ -n "$required" ] && [ "$(core_major "$latest")" != "$(core_major "$required")" ]; then
+  echo "update: ⚠ the running engine $latest and the vault's $required differ in MAJOR — review the CHANGELOG migration; not applied." >&2
+  exit 1
+fi
+if [ -n "$required" ] && engine_version_lt "$latest" "$required"; then
+  echo "update: the running engine $latest is older than the vault's $required — run: claude plugin update wiki-engine@wiki-engine" >&2
+  exit 1
 fi
 
-[ "$applier" = "$latest" ] || echo "update: NOTE — the steps below ran from $applier's copy of update.sh, not $latest's."
-"$ENGINE/bin/adopt.sh" --wiki "$WIKI"
+# --- adoption and the recall runtime, FIRST: adoption may install the vault's gate, and
+# whether canonical is gated decides where everything below is written.
+"$SCRIPT_DIR/adopt.sh" --wiki "$WIKI"
 if [ -x "$WIKI/.rag/venv/bin/python" ]; then
-  echo "update: re-syncing RAG deps to the pinned set"
-  "$ENGINE/bin/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
+  "$SCRIPT_DIR/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
 fi
-git -C "$WIKI" add engine 2>/dev/null || true
 
-# --- advance the engine's own repo page provenance (NOT its verified stamp) -----------
-# A vault that documents the engine it consumes re-stales that page on EVERY release, so
-# the refresh item reappears immediately and reliably. Bumping `sources.ref`/`sha` here
-# removes that churn WITHOUT losing the signal, because the two staleness axes are
-# independent: `refresh` compares provenance to the clone, `verify` compares
-# `verified.against` to `sources.sha`. Advancing provenance alone silences the first and
-# TRIPS THE SECOND — the page's pointer is current, its content is unconfirmed, which is
-# exactly what verified-stale means and a more precise description than "refresh".
-#
-# `verified:` is deliberately NOT touched. That field asserts a human or agent read the
-# repo and confirmed the page; writing it mechanically would fabricate the one signal the
-# vault refuses to fabricate, and would convert an honest "unconfirmed" into a false
-# "confirmed". The content pass stays manual, and stays queued until someone does it.
-#
-# WHICH TREE THE PAGE IS WRITTEN IN is a separate question from where the submodule lives.
-# The pin is a gitlink and exists only in canonical; a repo page is ordinary TRACKED vault
-# content, and writing it into the shared checkout is the exact thing worktrees exist to
-# prevent — last-writer-wins on disk against a concurrent session, before git sees it, and
-# a staged change appearing in a tree whose session did not author it.
-#
-# So: write it in the caller's own worktree when it is in one; otherwise, if a commit in
-# canonical would be REFUSED, do not write at all — print the intended values so the
-# operator applies them in the branch that should carry them. A vault that can commit in
-# canonical (no gate wired, or WIKI_WORKTREE=0) is unaffected: canonical IS its working
-# tree, and today's behaviour is correct there.
-#
-# The test was once "does the vault have live linked worktrees?", and that was the wrong
-# question. Isolation being CONFIGURED and a worktree being OPEN are different states, and
-# between sessions the second is false while the first stays true — so an ordinary vault
-# with nothing open got the page written and staged in canonical, where the guard then
-# refused the commit that would land it. Ask instead whether the caller can commit what is
-# written; canonical_commit_gated answers exactly that, and the two runs (worktree open,
-# none open) stop differing on something the caller never asked about.
-PAGE_TREE="$(resolve_wiki_root "$WIKI")" || PAGE_TREE="$WIKI"
-defer_page=0
+# The tree the caller stands in: an explicit argument would be returned as-is.
+PAGE_TREE="$(WIKI_PATH="$WIKI" resolve_wiki_root "" 2>/dev/null)" || PAGE_TREE="$WIKI"
+defer=0
 if [ "$PAGE_TREE" = "$WIKI" ] && [ -n "$(canonical_commit_gated "$WIKI")" ]; then
-  defer_page=1
+  defer=1
 fi
-engine_repo="$(basename -s .git "$(git -C "$ENGINE" config --get remote.origin.url 2>/dev/null || echo)" 2>/dev/null || true)"
-[ -n "$engine_repo" ] || engine_repo="$(basename "$(cd "$ENGINE" && pwd)")"
-new_sha="$(git -C "$ENGINE" rev-parse --short HEAD 2>/dev/null || true)"
-bumped=""
-if [ -n "$engine_repo" ] && [ -n "$new_sha" ] && [ -d "$WIKI/repos" ]; then
+
+# --- .engine-version --------------------------------------------------------------------
+recorded=""
+if [ "$required" = "$latest" ]; then
+  echo "update: .engine-version already records $latest"
+elif [ "$defer" = "1" ]; then
+  recorded="deferred"
+else
+  printf '%s\n' "$latest" > "$PAGE_TREE/.engine-version"
+  git -C "$PAGE_TREE" add .engine-version 2>/dev/null || true
+  recorded="staged"
+  echo "update: .engine-version ${required:-<none>} -> $latest (staged in $PAGE_TREE)"
+fi
+
+# --- the engine's own repo page: provenance, NOT its verified stamp -----------------
+# A vault that documents the engine re-stales that page on every release. Advancing
+# `sources.ref`/`sha` removes that churn without losing the signal: `refresh` compares
+# provenance to the repo, `verify` compares `verified.against` to `sources.sha`, so the page
+# now reads VERIFIED-STALE — the pointer is current, the content unconfirmed. `verified:` is
+# never written here; that would fabricate the one signal the vault refuses to fabricate.
+#
+# The commit the release names. A plugin cache is not a git repo, so ask the checkout when
+# there is one, else the engine's public remote (bounded); without either the page is left
+# as it was, and the run says so.
+engine_url="$(sed -nE 's/^[[:space:]]*"repository"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$ENGINE/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
+engine_repo="$(basename "${engine_url:-wiki-engine}" .git)"
+new_sha=""
+if git -C "$ENGINE" rev-parse --git-dir >/dev/null 2>&1; then
+  new_sha="$(git -C "$ENGINE" rev-parse --short HEAD 2>/dev/null || true)"
+elif [ -n "$engine_url" ]; then
+  # Peeled first: an annotated tag's own object is not the commit.
+  new_sha="$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 \
+    ls-remote "$engine_url" "refs/tags/$latest^{}" "refs/tags/$latest" 2>/dev/null \
+    | awk '{print substr($1,1,7)}' | head -1 || true)"
+fi
+
+bumped="" deferred_page=""
+if [ -z "$new_sha" ]; then
+  echo "update: could not resolve $latest to a commit (offline?) — any $engine_repo repo page is left as it was"
+elif [ -d "$WIKI/repos" ]; then
   for page in "$WIKI/repos"/*.md; do
     [ -f "$page" ] || continue
     # only a page that actually documents THIS repo (sources.repo), never by filename
@@ -201,9 +123,7 @@ if [ -n "$engine_repo" ] && [ -n "$new_sha" ] && [ -d "$WIKI/repos" ]; then
       infm && blk && /^[ \t]+(- )?repo:/ { sub(/^[^:]*:[ \t]*/,""); gsub(/[" \t]/,""); print; exit }
     ' "$page")"
     [ "$page_repo" = "$engine_repo" ] || continue
-    if [ "$defer_page" = "1" ]; then deferred="${page#$WIKI/}"; continue; fi
-    # The page is written in PAGE_TREE, which is canonical unless the caller is standing
-    # in a worktree of this same vault — the tree they will actually commit from.
+    if [ "$defer" = "1" ]; then deferred_page="${page#$WIKI/}"; continue; fi
     page="$PAGE_TREE/${page#$WIKI/}"
     [ -f "$page" ] || continue
     tmp="$(mktemp)"
@@ -224,94 +144,44 @@ if [ -n "$engine_repo" ] && [ -n "$new_sha" ] && [ -d "$WIKI/repos" ]; then
   done
 fi
 
-# --- the skills catalog, which THIS run just invalidated -------------------------------
-# `adopt.sh` above links the release's skills, and index.md's catalog is generated from
-# them — so a release that ADDS a skill leaves the catalog stale, and nothing in the
-# adoption route reconciled it. The vault was then handed a one-line remedy that could not
-# work: gitlink-only is allowed by the guard and fails lint on the drift, and gitlink +
-# index.md is refused by the guard as a canonical commit. Neither staged set commits.
-#
-# THE BIND IS THE SINGLE COMMIT, NOT EITHER GATE. Split the change and each gate is
-# satisfied on its own terms: the tracked content goes in on a branch, and once it has
-# landed the catalog check passes, which leaves a genuinely pointer-only staged set — the
-# exact case v1.52.0's carve-out was built for. So neither gate is touched here; what was
-# missing is the ORDER, and the order is now written down instead of having to be derived
-# from the two-tree rule by an operator who is mid-adoption.
-#
-# Same treatment as the repo page above, and for the same reason — index.md is ordinary
-# TRACKED content. Write it in the caller's own worktree when they are in one; when a
-# canonical commit would be refused, do not write it, and print the sequence.
+# --- the skills catalog -------------------------------------------------------------
+# index.md's catalog is generated from the engine's skills, so a release that adds or
+# removes one leaves it stale. Same tree rule as everything above.
 catalog=""
-if [ -x "$ENGINE/bin/gen-skills-index.sh" ] && [ -f "$PAGE_TREE/index.md" ] \
-   && ! "$ENGINE/bin/gen-skills-index.sh" --check --wiki "$PAGE_TREE" >/dev/null 2>&1; then
-  if [ "$defer_page" = "1" ]; then
+if [ -x "$SCRIPT_DIR/gen-skills-index.sh" ] && [ -f "$PAGE_TREE/index.md" ] \
+   && ! "$SCRIPT_DIR/gen-skills-index.sh" --check --wiki "$PAGE_TREE" >/dev/null 2>&1; then
+  if [ "$defer" = "1" ]; then
     catalog="deferred"
-  elif "$ENGINE/bin/gen-skills-index.sh" --wiki "$PAGE_TREE" >/dev/null 2>&1; then
+  elif "$SCRIPT_DIR/gen-skills-index.sh" --wiki "$PAGE_TREE" >/dev/null 2>&1; then
     git -C "$PAGE_TREE" add index.md 2>/dev/null || true
     catalog="staged"
   fi
 fi
 
-# The remedy names the PATH, never `-am`. In a shared checkout `-am` stages every modified
-# tracked file, including a concurrent session's — the precise clobber the guard exists to
-# refuse, printed as an instruction. `commit engine` cannot do that, and the guard permits
-# it because a gitlink-only commit is the one commit no worktree can make.
-if [ "$catalog" = "deferred" ]; then
-  # The pointer commit is printed LAST here, not first: it is the step that fails until the
-  # catalog has landed, and printing it first is what sent an operator into a refusal.
-  cat <<EOF
+# --- what to do next --------------------------------------------------------------------
+if [ "$recorded" = "deferred" ] || [ "$catalog" = "deferred" ] || [ -n "$deferred_page" ]; then
+  cat <<MSG
 
-Staged: engine -> $latest, and this release CHANGED THE ENGINE'S SKILLS — so index.md's
-generated catalog is now stale. It is tracked content, which this vault will not let you
-commit in canonical, and the pointer commit fails lint while the drift is there. Land them
-in this order and every gate passes on its own terms:
+NOT written: this vault gates commits in its canonical checkout, and what this release
+changes (.engine-version${deferred_page:+, $deferred_page}${catalog:+, the index.md skills catalog}) is
+tracked content. Rerun from a worktree, where it is written and staged for you:
 
-  1. WORK="\$($WIKI/engine/bin/vault-worktree.sh ensure)"
-  2. $WIKI/engine/bin/gen-skills-index.sh --wiki "\$WORK"
-  3. git -C "\$WORK" commit index.md -m "Regenerate skills catalog for $latest"
-  4. (cd "\$WORK" && $WIKI/engine/bin/vault-worktree.sh integrate)
-  5. git -C "$WIKI" commit engine -m "Bump engine to $latest"
+  WORK="\$($SCRIPT_DIR/vault-worktree.sh ensure)" && (cd "\$WORK" && $SCRIPT_DIR/update.sh --wiki "$WIKI")
 
-Review the CHANGELOG before step 5. Running update.sh from INSIDE a worktree does steps
-1-2 for you, and leaves only the commit.
-EOF
-else
-  cat <<EOF
-
-Staged: engine -> $latest. Review the CHANGELOG, then commit the POINTER ONLY:
-  git -C "$WIKI" commit engine -m "Bump engine to $latest"
-EOF
+Then review the CHANGELOG, commit in the worktree, and integrate.
+MSG
+  exit 0
 fi
 
-if [ "$catalog" = "staged" ]; then
-  cat <<EOF
-Also staged: index.md skills catalog, regenerated for $latest, in $PAGE_TREE.
-  This release changed the engine's skills, so the generated catalog moved with them.
-  Commit it on this branch; the pointer commit above is a separate, canonical-only step.
-EOF
+if [ -n "$recorded$catalog$bumped" ]; then
+  echo
+  echo "Staged in $PAGE_TREE — review the CHANGELOG, then commit together:"
+  [ "$recorded" = "staged" ] && echo "  .engine-version -> $latest"
+  [ "$catalog" = "staged" ]  && echo "  index.md skills catalog, regenerated for $latest"
+  if [ -n "$bumped" ]; then
+    echo "  $bumped provenance -> $latest ($new_sha)"
+    echo "    Its verified: stamp was left alone, so the page reads VERIFIED-STALE until someone"
+    echo "    re-reads the repo; \`upkeep scan\` queues that verify pass."
+  fi
 fi
-
-if [ -n "$bumped" ]; then
-  cat <<EOF
-Also staged: $bumped provenance -> $latest ($new_sha), in $PAGE_TREE.
-  Its verified: stamp was left alone on purpose, so the page now reads VERIFIED-STALE and
-  \`upkeep scan\` will queue a verify pass. That is the honest state: the pointer is current,
-  the CONTENT has not been re-read against this release. Run the verify pass before
-  checkpoint — do not stamp it without actually reading the repo.
-EOF
-fi
-
-if [ -n "${deferred:-}" ]; then
-  cat <<EOF
-NOT written: $deferred provenance. This vault gates commits in the canonical checkout, and
-  that page is tracked content — writing it here would put an edit in the shared checkout
-  that the session committing it did not make, and the gate would refuse the commit that
-  lands it. Apply it in a worktree instead (\`vault-worktree.sh ensure\`):
-      ref: $latest
-      sha: $new_sha
-      ingested: $(date +%Y-%m-%d)
-  Leave \`verified:\` alone; the page then reads VERIFIED-STALE, which is the honest state
-  until someone re-reads the repo. Running update.sh from inside your worktree writes it
-  there for you.
-EOF
-fi
+exit 0

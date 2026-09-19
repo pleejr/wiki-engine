@@ -16,14 +16,10 @@ set -uo pipefail
 WIKI="${WIKI_PATH:-}"
 CACHE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.wiki-engine-status"
 
-# engine pinned version (local, instant)
-eng="?"; [ -n "$WIKI" ] && eng="$(git -C "$WIKI/engine" describe --tags --always 2>/dev/null || echo '?')"
-# Under the plugin the running engine is this script's own tree, not the vault's submodule.
+# the running engine release (local, instant): this script's own tree
 _bn_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$_bn_dir/plugin-lib.sh" ]; then
-  . "$_bn_dir/plugin-lib.sh"
-  engine_running_as_plugin && eng="$(engine_release "$(cd "$_bn_dir/.." && pwd)")"
-fi
+. "$_bn_dir/plugin-lib.sh"
+eng="$(engine_release "$(cd "$_bn_dir/.." && pwd)")"
 
 # staleness summary written by session-preflight.sh (empty = all current)
 frag=""; [ -f "$CACHE" ] && frag="$(head -n1 "$CACHE" 2>/dev/null)"

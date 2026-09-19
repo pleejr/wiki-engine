@@ -53,7 +53,7 @@ WIKI  = os.environ["RAG_WIKI"]
 FORCE = os.environ["RAG_FORCE"] == "1"
 RAGDIR = os.path.join(WIKI, ".rag")
 INDEX  = os.path.join(RAGDIR, "index.jsonl")
-# SKIP THE CLASS, NOT A LIST. `engine` is the submodule; everything else worth skipping is
+# SKIP THE CLASS, NOT A LIST. `engine` is a leftover 1.x engine checkout; everything else worth skipping is
 # a dot-directory the vault keeps untracked — `.git`, `.obsidian`, `.rag`, and the one that
 # proved the point, `.worktrees/`, which holds a full checkout of every page. An enumerated
 # list missed that (fixed in v1.54.3 by adding the name); the class rule cannot miss the

@@ -10,7 +10,7 @@ updated: 2026-09-03
 
 Run **once**, right after `new-wiki.sh` (or after adopting the engine in an existing setup), to fill the empty node folders from the environment instead of starting cold. `checkpoint` keeps a vault current session-to-session; **this is the initial bulk seed**. Curation, not a dump — prefer a few high-signal pages over importing everything.
 
-**Vault**: `$WIKI_PATH` — the vault root; must be set (scaffolded, with `engine/` pinned).
+**Vault**: `$WIKI_PATH` — the vault root; must be set (scaffolded, with its `.engine-version` recorded).
 
 ## Boundary first (non-negotiable)
 - Read the vault's `boundary` (`personal` | `work`) from its `CLAUDE.md`. **Import only matching material.** Never pull work data into a personal vault or vice versa — crossover is a deliberate manual export.
@@ -27,7 +27,7 @@ Run **once**, right after `new-wiki.sh` (or after adopting the engine in an exis
 
 4. **Projects → `projects/`.** For in-flight work, stub `projects/<slug>.md` (`type: project`, `status: active|paused`, `repos: [[...]]`) with Goal · Linked repos · Key decisions · Current state · Next steps. Link each to its repo pages.
 
-5. **Skills.** The engine's `skills/` are already linked by the scaffolder. Inventory any other `~/.claude/skills/*`; note user-authored ones worth promoting into the engine (a manual add — don't copy them into the vault). Then regenerate the catalog: `${CLAUDE_SKILL_DIR}/../../bin/gen-skills-index.sh`.
+5. **Skills.** The engine's skills arrive with the plugin (`wiki-engine:<name>`). Inventory any other `~/.claude/skills/*` and installed plugins; note user-authored ones worth promoting into the engine (a manual add — don't copy them into the vault). Then regenerate the catalog: `${CLAUDE_SKILL_DIR}/../../bin/gen-skills-index.sh`.
 
 6. **Finalize.** Refresh `$WIKI_PATH/index.md` sections for the new pages, run `${CLAUDE_SKILL_DIR}/../../bin/lint.sh` (umbrella) and fix any failures, and append a dated `log.md` line summarizing the seed.
 

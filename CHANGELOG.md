@@ -2,9 +2,52 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = a backwards-compatible fix to a consumed component. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
-**What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
+**What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
 ## [Unreleased]
+
+**Breaking — the next release is 2.0.0.** The plugin is the only delivery. The `engine/` submodule path, the settings.json hooks 1.x adoption wired, and the skill symlinks are gone. Migrate each 1.x vault with "Dropping the vault's submodule" below, **after** every machine that uses it runs the plugin.
+
+### Removed
+- **Submodule delivery.** `update.sh` no longer advances a pin or re-execs a checked-out copy of itself; the vault-worktree guard no longer lets a gitlink-only commit through canonical; `engine-proposal.sh` no longer defaults to `$VAULT/engine`; the pre-commit template no longer looks in `engine/`; `rag_deps_check.py` no longer names a superproject.
+- **`bin/link-skills.sh` and `adopt.d/20-link-skills-submodule.sh`.** The plugin loads the skills as `wiki-engine:<name>`.
+- **`adopt.d/10-session-boot-hook.sh` and `bin/ensure-hook.sh`.** The plugin's `hooks/hooks.json` carries SessionStart boot and SessionEnd capture. No adoption step writes `settings.json` or `~/.claude/skills` any more, so apply-adopt's per-surface ephemeral-vault gates and its `--settings` flag are gone with them.
+- **The legacy-hook stand-down** (`engine_plugin_enabled`, `engine_superseded_by_plugin`, the `+plugin` adoption marker suffix). There is one delivery, so there is nothing to stand down beside.
+- **`bin/skill-sources.sh` and its banner offer.** It cloned skill repos and ran their `bin/link.sh`; skills now arrive as plugins from their own marketplaces.
+- **`new-wiki.sh --engine-url` and `--no-link-skills`.**
+
+### Changed
+- **`update.sh` records the running release.** It writes `.engine-version`, runs adoption, re-syncs the RAG venv, advances the engine's repo page provenance and regenerates the skills catalog, in the caller's worktree; a gated canonical checkout gets the rerun command instead. It refuses a vault that still has the submodule, a MAJOR difference, and a release older than the vault's record. The repo page's sha comes from the checkout, else `git ls-remote` of the manifest's `repository`.
+- **`engine-version.sh` compares the running release with the latest tag on the remote** (`git ls-remote`), since the plugin cache is not a git repo.
+- **`wire-machine.sh` wires what the plugin cannot.** It reports a missing plugin (with the two install commands) and a 1.x vault, and gains `--wire-env` (sets `env.WIKI_PATH` in `settings.json`, which reaches hooks, the Bash tool and the status line; a different existing value is left alone) and `--wire-statusline` (the engine status line through the stable pointer, never over a foreign one). `new-wiki.sh` passes both through.
+- **`new-wiki.sh` scaffolds without a submodule.** It records the engine's release in `.engine-version` (the base tag, when run from a checkout past one), writes `.github/workflows/gate.yml` from the new `scaffold/vault-gate.yml`, and imports the router through the plugin pointer.
+- **`engine-proposal.sh submit` and `status` use `ENGINE_REPO`, else the engine's own tree when it is a git checkout.** `status` now reports the release this machine runs, not a checkout's HEAD.
+- **Adoption step 30 warns about a 1.x pre-commit hook** that finds the engine only in `engine/`, which skips the gate on every commit once the submodule is gone.
+- **`scaffold/gitignore.tmpl` ignores `/engine/`**, where vault CI checks out the recorded release. Step 40 carries it to existing vaults.
+- **Skills:** `update` offers the plugin update, then `update.sh`; `wiki-adopt` starts from the installed plugin and wires with `--wire-env --wire-claude-md --wire-statusline`; `checkpoint`, `wiki-onboard`, `engine-proposal`, `crossover` and `wiki-context` drop the pin wording.
+
+### Added
+- **The preflight flags what still needs migrating:** a vault that carries the `engine/` submodule, a `settings.json` hook that still runs `engine/bin/session-boot.sh` or `rag-capture.sh` by path, and a vault with no `.engine-version`.
+
+### Fixed
+- **The worktree guard's refusal named `$WIKI/engine/bin/vault-worktree.sh`**, which does not exist in a vault without the submodule; it now names its own path.
+
+### Dropping the vault's submodule
+
+Once per 1.x vault, from one machine, after every machine that uses the vault runs the plugin. Work in a worktree of the vault; the gitlink removal is an ordinary commit there.
+
+1. **Every machine that uses the vault:** install the plugin and restart (`claude plugin marketplace add pleejr/wiki-engine`, `claude plugin install wiki-engine@wiki-engine --scope user`). Delete `settings.json` hook entries that run `engine/bin/session-boot.sh` or `engine/bin/rag-capture.sh` (the banner lists them), and remove `~/.claude/skills/<name>` links into the vault's `engine/skills/`.
+2. **Remove the submodule and record the release:**
+   ```sh
+   git rm engine && rm -f .gitmodules && git rm --cached --ignore-unmatch .gitmodules
+   echo v2.0.0 > .engine-version && echo /engine/ >> .gitignore
+   ```
+3. **Router import:** in the vault's `CLAUDE.md`, replace `@engine/CLAUDE.md` with `@~/.claude/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md`.
+4. **Pre-commit:** copy the engine's `scaffold/pre-commit` over `.githooks/pre-commit` (adoption never overwrites a hook), keeping any local edits.
+5. **CI:** check the recorded tag out into `engine/` — the engine's `scaffold/vault-gate.yml` is a complete workflow.
+6. **Status line:** if it named `engine/bin/statusline.sh`, point it at `~/.claude/plugins/data/wiki-engine-wiki-engine/engine/bin/statusline.sh` (`wire-machine.sh --wire-statusline` sets it when none is set).
+7. **Commit, integrate, and on each other machine** pull, then run `git submodule deinit -f engine` (or delete the leftover `engine/` checkout) and `rm -rf .git/modules/engine`.
+8. **Check:** a new session shows the banner with no `engine submodule` or `legacy engine hooks` warning, each `wiki-engine:` skill is listed once, and a commit in a worktree runs the lint gate.
 
 ### Docs
 - **README: "Moving a machine to plugin delivery".** The ordered switch-over for an existing machine, the same on either boundary. The README described submodule adoption only, so the plugin path was written down only in USAGE and in one vault's own notes.

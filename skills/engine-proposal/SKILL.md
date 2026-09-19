@@ -24,9 +24,9 @@ Collect the improvement, the motivating use case, and why it surfaced now. The r
 
 ## 1b. Found a DEFECT rather than an improvement? Same channel, different block
 
-A consumer vault is where engine bugs get hit and the one place that **cannot fix them** — a local edit inside `engine/` is discarded by the next `update.sh`. Five things a defect report needs that an improvement does not:
+A consumer vault is where engine bugs get hit and the one place that **cannot fix them** — a local edit inside the plugin's installed copy is discarded by the next plugin update. Five things a defect report needs that an improvement does not:
 
-- **Confirm it is still live at the pin you are running — do not assume.** A bug can be fixed incidentally by unrelated work and stay open on paper. State the engine version you reproduced against.
+- **Confirm it is still live at the release you are running — do not assume.** A bug can be fixed incidentally by unrelated work and stay open on paper. State the engine version you reproduced against.
 - **Separate what you OBSERVED from what you PROPOSE.** The observation is evidence; the fix is a hypothesis, and a reporter's hypothesis can be wrong while the bug is entirely real. Report the first with confidence, offer the second loosely.
 - **Then read your own Expected against your own suggested fix, before you send it.** They are separate fields, so nothing makes you compare them. Ask: *if engine-dev did exactly what I suggested, would I get exactly what I wrote under Expected?* If not, say which of the two you would keep. When a precedent supplies your Expected, cite the behaviour that earns the output, not the output itself.
 - **Say which failure shape it is** — this, not severity adjectives, is what sets urgency:
@@ -48,8 +48,8 @@ boundary: generic (engine-domain; contains no consumer-private context)
 
 Title: <one line naming the DEFECT, not the fix>
 
-Engine version: <the tag this vault is pinned to>
-Still live at that pin: <how you confirmed — a bug can be fixed incidentally and stay open>
+Engine version: <the release this machine runs>
+Still live at that release: <how you confirmed — a bug can be fixed incidentally and stay open>
 
 Observed: <what happened, with scrubbed evidence>
 Expected: <what should have happened, and why you believe that>
@@ -123,7 +123,7 @@ It flags the consumer's own identifiers (vault slug, directory name, git user/em
 
 ## 5. Hand off — submit to the queue
 
-**Proposals are files in the engine's `proposals/` queue, submitted by pull request.**
+**Proposals are files in the engine's `proposals/` queue, submitted by pull request.** Both `submit` and `status` need a git checkout of the engine: the plugin's installed copy is not one. On a machine that runs the plugin from a clone (a directory marketplace) that clone is used; otherwise clone the engine once and point `ENGINE_REPO` at it (`git clone https://github.com/pleejr/wiki-engine <dir>`).
 
 ```bash
 ${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh submit --vault "$WIKI_PATH" --slug <slug> --file <draft.md>
@@ -139,7 +139,7 @@ ${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh push   --vault "$WIKI_PATH" --s
 ${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh status --vault "$WIKI_PATH" [--slug <slug>]
 ```
 
-Reports **shipped** (with the release), **merged**, **rejected** (with the reason), **partially accepted**, **open** (do not re-send) or **unknown** (never arrived — re-send). A bare `status` sees only this machine's records; `--slug` asks about any proposal. It resolves against `origin/main` and prints the horizon — if it says `HEAD` only, run `update` first. Never hand-maintain a `status:` line or answer "did it ship?" with a grep of the commit log.
+Reports **shipped** (with the release), **merged**, **rejected** (with the reason), **partially accepted**, **open** (do not re-send) or **unknown** (never arrived — re-send). A bare `status` sees only this machine's records; `--slug` asks about any proposal. It resolves against `origin/main` and prints the horizon — if it says `HEAD` only, `git fetch` in that checkout first. Never hand-maintain a `status:` line or answer "did it ship?" with a grep of the commit log.
 
 ## 6. Intake — receiving a proposal (engine-dev session)
 

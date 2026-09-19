@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ensure-statusline.sh — idempotently ensure a `statusLine` command is set in a
-# settings.json. The status-line sibling of ensure-hook.sh, and the primitive for opt-in
+# settings.json. The primitive behind `wire-machine.sh --wire-statusline`, and for opt-in
 # statusline wiring — the status line is NOT auto-adopted (the banner via session-banner.sh
 # is the default surface); run this yourself, or from your own adopt.d step, to enable it.
 # Claude Code allows exactly ONE statusLine, so this cannot be additive the way hooks are;
@@ -19,7 +19,7 @@
 # On a no-op (already ours, or a foreign one left alone) it prints nothing.
 #
 # Usage:
-#   ensure-statusline.sh --command '/v/engine/bin/statusline.sh' \
+#   ensure-statusline.sh --command ~/.claude/plugins/data/wiki-engine-wiki-engine/engine/bin/statusline.sh \
 #                        --marker 'engine/bin/statusline.sh' \
 #                        [--padding 2] [--settings ~/.claude/settings.json] [--check]
 set -uo pipefail

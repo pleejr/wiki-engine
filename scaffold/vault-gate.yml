@@ -1,0 +1,35 @@
+name: vault-gate
+
+# Enforce the vault's write-time invariants in CI: the engine's deterministic umbrella lint
+# against the whole vault. No LLM, no `claude`, no network beyond the two checkouts.
+#
+# The checks run through the engine release recorded in .engine-version, checked out into
+# the ignored engine/ path, so CI enforces exactly the engine this vault declares. New gates
+# go live here when update.sh records a newer release.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the recorded engine release
+        id: engine
+        run: echo "ref=$(tr -d '[:space:]' < .engine-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: pleejr/wiki-engine
+          ref: ${{ steps.engine.outputs.ref }}
+          path: engine
+
+      - name: Umbrella lint (vault invariants at zero)
+        run: ./engine/bin/lint.sh --wiki .

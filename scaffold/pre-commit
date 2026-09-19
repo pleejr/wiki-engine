@@ -20,24 +20,21 @@ ROOT="$(git rev-parse --show-toplevel)"
 # hook must reason about the repo being committed to, not whatever vault the surrounding
 # shell happens to point at, or it reports the wrong vault while refusing the right one.
 CANON="$(cd "$(git rev-parse --git-common-dir)/.." 2>/dev/null && pwd)" || CANON="$ROOT"
-# Which engine runs the gates: the vault's engine/ submodule when it has one; otherwise
-# (plugin delivery, the vault records `.engine-version` instead) $WIKI_ENGINE, else the
-# pointer the plugin's boot hook keeps at ${CLAUDE_PLUGIN_DATA}/engine. A hook runs outside
-# Claude Code, so it cannot read the plugin's own variables and reads that pointer instead.
-ENGINE="$CANON/engine/bin"
-if [ ! -x "$ENGINE/lint.sh" ]; then
-  if [ -n "${WIKI_ENGINE:-}" ]; then ENGINE="$WIKI_ENGINE/bin"
-  else
-    for p in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/data/wiki-engine-*/engine/bin; do
-      [ -x "$p/lint.sh" ] && { ENGINE="$p"; break; }
-    done
-  fi
+# Which engine runs the gates: $WIKI_ENGINE when set, else the pointer the plugin's boot
+# hook keeps at ${CLAUDE_PLUGIN_DATA}/engine. A hook runs outside Claude Code, so it cannot
+# read the plugin's own variables and reads that pointer instead.
+ENGINE=""
+if [ -n "${WIKI_ENGINE:-}" ]; then ENGINE="$WIKI_ENGINE/bin"
+else
+  for p in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/data/wiki-engine-*/engine/bin; do
+    [ -x "$p/lint.sh" ] && { ENGINE="$p"; break; }
+  done
 fi
 
-# No engine found (a fresh clone before `submodule update`, or a machine without the
-# plugin): skip rather than block the commit. CI still enforces.
-if [ ! -x "$ENGINE/lint.sh" ]; then
-  echo "pre-commit: no engine found (submodule not initialized, and no wiki-engine plugin) — skipping gates" >&2
+# No engine found (a machine without the plugin, or before its first session wrote the
+# pointer): skip rather than block the commit. CI still enforces.
+if [ -z "$ENGINE" ] || [ ! -x "$ENGINE/lint.sh" ]; then
+  echo "pre-commit: no engine found (no wiki-engine plugin pointer, and WIKI_ENGINE unset) — skipping gates" >&2
   exit 0
 fi
 

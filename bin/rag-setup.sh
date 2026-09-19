@@ -143,4 +143,4 @@ print("rag-setup: ready — %s via %s (%d-dim). Wrote .rag/config.json" % (e.mod
 print("rag-setup: model cache %s" % e.cache)
 PY
 
-echo "rag-setup: next — engine/bin/rag-build.sh to index the vault"
+echo "rag-setup: next — $SCRIPT_DIR/rag-build.sh --wiki \"$WIKI\" to index the vault"

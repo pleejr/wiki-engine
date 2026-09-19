@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # adopt.sh — bring an existing vault up to the engine's current framework.
-# Ensures every node folder in scaffold/node-dirs.txt exists (idempotent). Run after
-# bumping the engine submodule pin, so new node types added to the engine actually
-# appear in the vault (a pin bump alone updates skills/SCHEMA/bin, not vault folders).
+# Ensures every node folder in scaffold/node-dirs.txt exists (idempotent). Run after a
+# new engine release (update.sh does), so new node types added to the engine actually
+# appear in the vault (a plugin update alone brings skills/SCHEMA/bin, not vault folders).
 #
 # Usage:
 #   adopt.sh                lint/create against $WIKI_PATH

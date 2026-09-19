@@ -58,9 +58,11 @@
 #   - the RAG family (rag-setup/rag-build/rag-capture/recall) — .rag/ is untracked
 #     and exists only in the canonical checkout by design; a linked worktree has no
 #     venv, no index, no config.json.
-#   - the machine/engine-wiring family (doctor, update, adopt, apply-adopt, upkeep,
-#     session-*, wire-machine) — engine/ is a SUBMODULE, and `git worktree add`
-#     never populates one. Inside a worktree, engine/ is an empty directory.
+#   - the machine-wiring family (doctor, adopt, apply-adopt, upkeep, session-*,
+#     wire-machine) — they act on per-machine, untracked state that lives only in the
+#     canonical checkout: the .engine-adopted marker, .githooks/, local git config.
+#     update.sh straddles both: adoption runs against $WIKI_PATH, while the tracked
+#     files it writes (.engine-version, the repo page, the catalog) resolve this way.
 #
 # Retargeting either family would not fix a bug; it would invent one.
 #

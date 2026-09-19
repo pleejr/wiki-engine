@@ -1,6 +1,6 @@
 # wiki-engine
 
-Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-session by Claude Code** (first-party, plan-covered — no orchestrator). The engine is extracted from the vault it serves so it can be managed once and pinned per wiki — engine updates never silently drift across vaults. Together a vault + this engine form **the wiki-engine loop** (capture → recall → review-and-promote): a curated-memory engine for coding agents.
+Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-session by Claude Code** (first-party, plan-covered — no orchestrator). The engine is extracted from the vault it serves so it can be managed once and shipped as the Claude Code plugin `wiki-engine@wiki-engine`; each vault records the release it needs in `.engine-version`, so engine updates never silently drift across vaults. Together a vault + this engine form **the wiki-engine loop** (capture → recall → review-and-promote): a curated-memory engine for coding agents.
 
 **Day-to-day usage: `USAGE.md`.** Full spec: `SCHEMA.md`. Releases: `CHANGELOG.md`.
 
@@ -8,27 +8,26 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 
 - **Curated knowledge graph** — a typed node model (repo · project · skill · memory, plus concepts/entities/comparisons/queries/notes) linked by `[[wikilinks]]`, with the right freshness signal per node type. Full model in `SCHEMA.md`.
 - **Proposal round-trip** — a consumer's `HANDOFF` slug comes back: `PROPOSALS.md` records every proposal on arrival (including the ones **declined**, which produce no other artifact anywhere), the implementing commit carries a `Proposal:` trailer, and `engine-proposal.sh status` tells a consumer what shipped, what was rejected and why, and what never arrived.
-- **In-session maintenance skills** — `wiki-context` (index-first context router), `wiki-repo` (ingest/refresh a repo page with git-ref provenance), `checkpoint` (end-of-session curate + log), `wiki-onboard`/`wiki-adopt` (bootstrap), `crossover` (integrity-checked page migration between vaults), `engine-proposal` (boundary-scrub a consumer's engine-improvement idea **or bug report** into a handoff block for the engine-dev vault — the route for a defect you hit while running the engine, since a consumer vault cannot fix its own pinned engine). No orchestrator — driven by Claude Code.
-- **One-command adoption & wiring** — scaffold a new vault (`new-wiki.sh`) or wire an existing one onto a new machine (`wire-machine.sh`), idempotently. The engine reaches a vault as a pinned submodule or, since 1.80.0, as the Claude Code plugin `wiki-engine@wiki-engine`, with the vault recording the release it needs in `.engine-version`; either way updates never silently drift.
+- **In-session maintenance skills** — `wiki-context` (index-first context router), `wiki-repo` (ingest/refresh a repo page with git-ref provenance), `checkpoint` (end-of-session curate + log), `wiki-onboard`/`wiki-adopt` (bootstrap), `crossover` (integrity-checked page migration between vaults), `engine-proposal` (boundary-scrub a consumer's engine-improvement idea **or bug report** into a handoff block for the engine-dev vault — the route for a defect you hit while running the engine, since a consumer vault cannot fix the engine it runs). No orchestrator — driven by Claude Code.
+- **One-command adoption & wiring** — scaffold a new vault (`new-wiki.sh`) or wire an existing one onto a new machine (`wire-machine.sh`), idempotently. The plugin carries the hooks and skills; the vault records the release it needs in `.engine-version`, which its CI checks out.
 - **Write-time invariant gates (held at zero)** — `lint.sh` enforces vault invariants — memory schema, frontmatter, soft-wrap, catalog drift, **boundary present on every node**, **boundary matching the vault's own declaration**, **provenance present on every repo page**, **a clean release tag rather than a `git describe` string**, link integrity, and the opt-in foreign-boundary denylist — as a hard gate wired into CI + a pre-commit hook, not an honor-system lint.
 - **Freshness *and* correctness signals** — provenance freshness (`sources.sha` vs `HEAD`) tells you nothing *changed*; the `verified:` signal (`verify-status.sh`) records that someone *confirmed the content correct*, and is invalidated by provenance (a refresh auto-demotes a stale stamp), not a clock.
 - **Drainable upkeep queue** — `upkeep.sh` turns "what needs maintaining" (stale repo pages + un-verified pages) into a live work-list you drain one item at a time; spawn-free and bounded by the no-`claude`-in-hooks guards.
 - **Optional local semantic recall** — a self-contained CPU embedder (`.rag/`, fastembed + bge, no server/GPU/cloud) plus deterministic session auto-capture; the vault works fully without it.
-- **Versioned & CI-gated** — SemVer tags + `CHANGELOG.md`, engine CI on every push, a weekly RAG-dep freshness cron, and tag-aware update tooling (`doctor.sh`/`update.sh`) that refuses breaking bumps.
+- **Versioned & CI-gated** — SemVer tags + `CHANGELOG.md`, engine CI on every push, a weekly RAG-dep freshness cron, and tag-aware update tooling (`doctor.sh`/`update.sh`) that refuses a MAJOR difference.
 
 ## What's here
 
-- `skills/` — the Claude Code skills: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`, `update`, `verify`, `crossover`, `engine-proposal`.
+- `skills/` — the Claude Code skills, loaded as `wiki-engine:<name>`: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`, `update`, `verify`, `crossover`, `engine-proposal`, and more (the vault's generated catalog lists them).
+- `.claude-plugin/` + `hooks/hooks.json` — the plugin manifest, its marketplace (pinned to the latest release tag), and the SessionStart boot + SessionEnd capture hooks.
 - `SCHEMA.md` — node model, three layers, page conventions, memory lifecycle.
 - `CLAUDE.md` — generic context router a wiki imports from its own thin `CLAUDE.md`.
 - `bin/` — deterministic maintenance tools (no LLM):
   - `new-wiki.sh` + `scaffold/` — scaffold a new consuming wiki in one command (node folders from `scaffold/node-dirs.txt`).
-  - `adopt.sh` — ensure an existing vault has the engine's current node folders + run feature-adoption (run after bumping the pin).
-  - `wire-machine.sh` — idempotently make a machine ready for an existing vault (submodule init, skill links, `WIKI_PATH`, CLAUDE.md import, `.rag`, feature-adopt); `--check` previews. The "wire an existing clone" converge verb behind `wiki-adopt`, and the shared wiring path `new-wiki.sh` calls after scaffolding.
-  - `link-skills.sh` — symlink the engine's skills into `~/.claude/skills` so Claude Code discovers them (the bootstrap that makes `/wiki-adopt` available on a fresh machine; idempotent, `--check`-able, warn+skips a foreign slot).
-  - `skill-sources.sh` — clone + link a machine's declared **external** skill repos (`~/.claude/skill-sources`); `--check` reports missing. The cold-machine "install my skills" path — seeded by `wiki-adopt`, offered by the session banner. Generic: the machine declares the repos, the engine names none.
-  - `engine-version.sh` · `doctor.sh` · `update.sh` — freshness of consumed components: pinned vs latest engine; full health report (engine + RAG deps + security + model); one-step update (same-MAJOR).
-  - `session-preflight.sh` — SessionStart-hook version check: Claude Code (installed vs latest stable) + the pinned engine; on staleness prints an ACTION-REQUIRED block telling the assistant to ask before updating. Deterministic, never runs `claude`.
+  - `adopt.sh` — ensure an existing vault has the engine's current node folders + run the `adopt.d/` steps (the boot hook runs them after each release).
+  - `wire-machine.sh` — idempotently make a machine ready for an existing vault (plugin present, `WIKI_PATH` in settings `env`, CLAUDE.md import, status line, `.rag`, vault adoption); `--check` previews. The "wire an existing clone" converge verb behind `wiki-adopt`, and the shared wiring path `new-wiki.sh` calls after scaffolding.
+  - `engine-version.sh` · `doctor.sh` · `update.sh` — freshness: the running release vs the latest tag; full health report (engine + RAG deps + security + model); record the running release in the vault (same-MAJOR).
+  - `session-boot.sh` · `session-preflight.sh` — the plugin's SessionStart hook: vault adoption, then the running release vs the vault's `.engine-version` (and a leftover 1.x submodule or settings hook); on a mismatch it prints an ACTION-REQUIRED block telling the assistant to ask before changing anything. Deterministic, never runs `claude`.
   - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
   - `lint.sh` — umbrella lint **and write-time gate** (memory + frontmatter-property + soft-wrap + catalog + boundary-present + boundary-matches-vault + provenance-present + repo-ref-is-a-clean-tag + link-integrity + foreign-boundary); `checkpoint`, a pre-commit hook, and vault CI run it.
   - `verify-status.sh` · `upkeep.sh` — the `verified:` correctness reporter (verified/stale/unverified, `--todo`, `--check`), and the drainable upkeep queue (`scan`/`next`/`done`) it feeds.
@@ -40,8 +39,8 @@ Have these in place on the machine *before* adopting:
 
 **Required**
 - **Claude Code** — installed and signed in (the skills run inside it; `claude --version` should work). The vault is driven from Claude Code sessions.
-- **git** — the vault is a git repo and pins this engine as a submodule. Any recent 2.x. macOS ships an old but workable `bash` 3.2; the scripts are 3.2-compatible.
-- **A POSIX shell environment** — macOS or Linux. The `bin/` tools are bash; skills are wired via symlinks into `~/.claude/skills/`, so a filesystem that supports symlinks.
+- **git** — the vault is a git repo. Any recent 2.x. macOS ships an old but workable `bash` 3.2; the scripts are 3.2-compatible.
+- **A POSIX shell environment** — macOS or Linux. The `bin/` tools are bash, and `jq` is used to edit `settings.json`.
 
 **For pushing the vault to a remote (recommended)**
 - **A git host account** (GitHub, GitLab, …) where the vault repo will live, and network access to it.
@@ -49,68 +48,55 @@ Have these in place on the machine *before* adopting:
 - Cloning *this* engine needs no auth (the repo is public); auth is only for your own vault's remote.
 
 **Optional — semantic recall + auto-capture (the RAG layer)**
-- **Python 3.12–3.14 with `venv`/`pip`** and one-time network access — `rag-setup.sh` provisions a self-contained `.rag/venv` CPU embedder (no server, GPU, or cloud). The pinned default stack (fastembed + bge, verified on 3.13) needs Python **3.12–3.14**; Python 3.11 and below are unsupported (numpy 2.5.x requires >=3.12). If your default `python3` is outside that range, `rag-setup.sh` **auto-selects an in-range interpreter** from PATH or pyenv — so you don't need to juggle it by hand. If none is available, use the lightweight, onnxruntime-free embedder instead: `RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M engine/bin/rag-setup.sh` (the choice persists in `.rag/config.json`). Skip RAG entirely with `--no-rag`; the vault and its link-graph still work fully — you just lose *semantic* recall (lexical + link-graph recall remains) until you run `rag-setup.sh` later.
+- **Python 3.12–3.14 with `venv`/`pip`** and one-time network access — `rag-setup.sh` provisions a self-contained `.rag/venv` CPU embedder (no server, GPU, or cloud). The pinned default stack (fastembed + bge, verified on 3.13) needs Python **3.12–3.14**; Python 3.11 and below are unsupported (numpy 2.5.x requires >=3.12). If your default `python3` is outside that range, `rag-setup.sh` **auto-selects an in-range interpreter** from PATH or pyenv — so you don't need to juggle it by hand. If none is available, use the lightweight, onnxruntime-free embedder instead: `RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M <engine>/bin/rag-setup.sh` (the choice persists in `.rag/config.json`). Skip RAG entirely with `--no-rag`; the vault and its link-graph still work fully — you just lose *semantic* recall (lexical + link-graph recall remains) until you run `rag-setup.sh` later.
 
 **Boundary reminder:** decide the vault's boundary (`personal` | `work`) and the git identity (name/email) it should commit under up front — `wiki-adopt` will ask, and they get stamped into the vault. Keep work and personal on separate vaults (ideally separate machines); the engine holds no identity, so it's safe to share, but **content never crosses**.
 
 ## New machine — idempotent adoption (recommended)
 
-On any new machine, clone this engine, link its skills so Claude Code can discover them, then let the `wiki-adopt` skill drive the flow — it **detects state and converges**: no vault yet → scaffold → wire → seed; a vault already cloned (a second/Nth machine) → just wire this machine, no re-scaffold. Safe to re-run.
+Install the plugin, restart Claude Code, then let the `wiki-adopt` skill drive the flow — it **detects state and converges**: no vault yet → scaffold → wire → seed; a vault already cloned (a second/Nth machine) → just wire this machine, no re-scaffold. Safe to re-run.
 
 ```
-git clone <this-repo-url> ~/Documents/repos/wiki-engine
-~/Documents/repos/wiki-engine/bin/link-skills.sh   # bootstrap: ~/.claude/skills/* -> engine skills
-claude                                              # from ANY folder
-> /wiki-adopt
+claude plugin marketplace add pleejr/wiki-engine
+claude plugin install wiki-engine@wiki-engine --scope user
+claude                                              # from ANY folder, after the install
+> /wiki-engine:wiki-adopt
 ```
 
-The `link-skills.sh` step is required and easy to miss: Claude Code discovers skills only from `~/.claude/skills/` and `<project>/.claude/skills/`, **never** a cloned repo's bare `skills/` dir — so cloning the engine alone does not make `/wiki-adopt` available. After the one-time link the skill is global (folder-independent); thereafter `new-wiki.sh` keeps the links current on every scaffold.
+`/wiki-adopt` prompts for the vault's boundary/identity/remote, runs the scaffolder, wires the machine, and runs `wiki-onboard` to seed the vault — usable in the very next session. Because *you* start the session there is no recursive `claude` spawn (the hard safety rule holds). This assumes a **single-vault machine** (one boundary); on a machine that hosts both a `personal` and a `work` vault, scaffold without the wiring flags and scope activation per-directory instead.
 
-`/wiki-adopt` then prompts for the vault's boundary/identity/remote, runs the scaffolder, wires the machine, and runs `wiki-onboard` to seed the vault — usable in the very next session. Because *you* start the session there is no recursive `claude` spawn (the hard safety rule holds). This assumes a **single-vault machine** (one boundary); on a machine that hosts both a `personal` and a `work` vault, scaffold without the wiring flags and scope activation per-directory instead.
-
-**Second machine (the vault already exists):** clone the vault, then converge the machine idempotently — either run `/wiki-adopt` (it detects the clone and only wires) or directly:
+**Second machine (the vault already exists):** install the plugin, clone the vault, then converge the machine — `/wiki-adopt` detects the clone and only wires, or directly:
 
 ```
 git clone <vault-remote> ~/Documents/repos/<vault>
-~/Documents/repos/<vault>/engine/bin/wire-machine.sh --wiki ~/Documents/repos/<vault> --wire-shell --wire-claude-md
+~/.claude/plugins/data/wiki-engine-wiki-engine/engine/bin/wire-machine.sh \
+  --wiki ~/Documents/repos/<vault> --wire-env --wire-claude-md --wire-statusline
 ```
 
-`wire-machine.sh` initializes the `engine/` submodule, links skills, sets `WIKI_PATH` + the always-on import, provisions `.rag`, and runs feature-adoption — all add-only. Preview with `--check`; re-running is a safe no-op.
+That path exists after the plugin's first session start (the boot hook keeps it pointing at the running engine). `wire-machine.sh` checks the plugin and the vault's `.engine-version`, sets `WIKI_PATH` in `settings.json` `env` (which reaches hooks, the Bash tool and the status line), adds the always-on import and the status line, provisions `.rag`, and runs vault adoption — all add-only. Preview with `--check`; re-running is a safe no-op.
 
-### Moving a machine to plugin delivery (1.80.0+)
+### Moving a 1.x vault to 2.x
 
-The same steps on a personal or a work machine; the engine carries no boundary. Mechanics and rationale: `USAGE.md` "Plugin delivery" and "Dropping the vault's submodule".
-
-1. **Install the plugin** (user scope, so every folder gets it):
-   ```
-   claude plugin marketplace add pleejr/wiki-engine
-   claude plugin install wiki-engine@wiki-engine --scope user
-   ```
-2. **Keep `WIKI_PATH` reaching Claude Code** — your shell profile, or `env.WIKI_PATH` in `~/.claude/settings.json`. The plugin reads the vault from it exactly as before.
-3. **Restart.** The first boot removes the engine skill symlinks adoption made, and the skills load as `wiki-engine:<name>`. Delete any `settings.json` SessionStart/SessionEnd entry naming `engine/bin/session-boot.sh` or `rag-capture.sh` — they stand down while the plugin is enabled, but only you can remove them.
-4. **Optionally drop the vault's submodule** (1.81.0+): `.engine-version` replaces the gitlink; repoint the vault `CLAUDE.md` import to `@~/.claude/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md`, the statusLine to `…/engine/bin/statusline.sh` under the same directory, copy the new `scaffold/pre-commit`, and have CI check out the recorded tag. Every machine that uses the vault must be on the plugin first, because a submodule-less vault has no `engine/` to import.
-5. **Check it:** in a new session each `wiki-engine:` skill is listed once, the boot banner appears, and `git commit` in the vault still runs the lint gate.
-
-Skills from other repos are separate: each ships its own plugins and its own switch-over steps.
+2.0.0 removed the `engine/` submodule path; the plugin is the only delivery. A 1.x vault migrates once, from any machine that uses it, after every machine that uses it runs the plugin. The session banner flags a vault or a `settings.json` that still needs it. Steps, in order: the CHANGELOG, 2.0.0, "Dropping the vault's submodule".
 
 ### Or run the scaffolder directly
 
 ```
-~/Documents/repos/wiki-engine/bin/new-wiki.sh \
+~/.claude/plugins/data/wiki-engine-wiki-engine/engine/bin/new-wiki.sh \
   --path ~/Documents/repos/work-wiki --boundary work --email you@company.com --git-name "Your Name"
 ```
 
-It creates the vault repo, pins this engine as the `engine/` submodule, renders the `scaffold/` templates (thin `CLAUDE.md`, `index.md`, `log.md`, node folders), symlinks the skills into `~/.claude/skills`, and provisions `.rag`. Run interactively (no flags) and it prompts for the required args. By default it prints the manual next steps — `$WIKI_PATH`, the `~/.claude/CLAUDE.md` import, the git remote — but the opt-in `--wire-shell`, `--wire-claude-md`, and `--remote`/`--create-remote` flags automate each (idempotent; single-vault machines only). Run `new-wiki.sh --help` for all options.
+It creates the vault repo, records this engine's release in `.engine-version`, renders the `scaffold/` templates (thin `CLAUDE.md`, `index.md`, `log.md`, node folders), and hands machine wiring to `wire-machine.sh`. Run interactively (no flags) and it prompts for the required args. The opt-in `--wire-env`, `--wire-claude-md`, `--wire-statusline`, `--wire-shell` and `--remote`/`--create-remote` flags automate each wiring step (idempotent; single-vault machines only). Run `new-wiki.sh --help` for all options.
 
 Then **seed the empty vault** — run the `wiki-onboard` skill in a Claude Code session (with `$WIKI_PATH` set) to distill existing native memories, ingest the repos you work in, and stub project pages. It's a one-time bootstrap; `checkpoint` keeps the vault current thereafter.
 
 ## Doing it by hand
 
-1. `git submodule add <this-repo-url> engine` in the wiki repo; commit the pinned SHA.
-2. Run `bin/link-skills.sh` to symlink `~/.claude/skills/*` at this engine's `skills/*` (or do it by hand).
-3. Set `$WIKI_PATH` to the wiki root (the skills resolve every path from it).
-4. Give the wiki a thin `CLAUDE.md`: its boundary/identity, then import `engine/CLAUDE.md`.
-5. Bump the submodule pointer to adopt a newer engine — opt-in, per wiki.
+1. Install the plugin (above).
+2. Record the release in the wiki repo: `echo v<X.Y.Z> > .engine-version`; its CI checks out that tag of this repo.
+3. Set `WIKI_PATH` to the wiki root — `env.WIKI_PATH` in `~/.claude/settings.json` reaches every part of Claude Code.
+4. Give the wiki a thin `CLAUDE.md`: its boundary/identity, then import `@~/.claude/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md`.
+5. After a plugin update, run `update.sh` to record the new release — opt-in, per wiki.
 
 ## Boundary note
 
