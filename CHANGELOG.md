@@ -4,6 +4,11 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *pinning a tag* (a vault's `engine/` submodule; `update.sh` advances tag→tag), so tag + release **only** when a change touches what a pinned consumer runs — `skills/`, `bin/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** — consumers read those from `HEAD`/their clone, never through the pin — and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Docs
+- **README: "Moving a machine to plugin delivery".** The ordered switch-over for an existing machine, the same on either boundary. The README described submodule adoption only, so the plugin path was written down only in USAGE and in one vault's own notes.
+
 ## [1.81.0] — 2026-09-18
 
 Minor — a vault on plugin delivery can drop its `engine/` submodule and record the engine release it needs in `.engine-version`. A vault that keeps the submodule is unaffected. See USAGE "Dropping the vault's submodule".
