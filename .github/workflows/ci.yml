@@ -1667,6 +1667,19 @@ jobs:
           printf 'v%s.0.0\n' "$((maj + 1))" > "$V/.engine-version"
           out="$("$C/bin/update.sh" --wiki "$V" 2>&1)" && rc=0 || rc=$?
           if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'differ in MAJOR' && [ "$(cat "$V/.engine-version")" = "v$((maj + 1)).0.0" ]; then ck 0 "update.sh refuses a MAJOR difference and leaves the record alone"; else ck 1 "update.sh refuses a MAJOR difference and leaves the record alone"; fi
+
+          # A MAJOR refusal must be CLEARABLE, and it is cleared by hand in a worktree, because
+          # .engine-version is tracked content a gated canonical checkout will not commit. The
+          # guard therefore has to read the record from the tree the caller stands in: reading
+          # canonical instead refused again on every rerun, whatever the operator recorded, and
+          # the message named no way forward at all.
+          printf 'v%s.0.0\n' "$((maj + 1))" > "$V/.engine-version"
+          printf 'v%s.0.0\n' "$((maj + 1))" > "$RUNNER_TEMP/v2wt/.engine-version"   # both trees behind
+          out="$(cd "$RUNNER_TEMP/v2wt" && "$C/bin/update.sh" --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -qF "$RUNNER_TEMP/v2wt/.engine-version"; then ck 0 "the MAJOR refusal names the worktree file to record the release in"; else ck 1 "the MAJOR refusal names the worktree file to record the release in"; fi
+          printf '%s\n' "$ver" > "$RUNNER_TEMP/v2wt/.engine-version"   # the operator records it, migration done
+          out="$(cd "$RUNNER_TEMP/v2wt" && "$C/bin/update.sh" --wiki "$V" 2>&1)" && rc=0 || rc=$?
+          if [ "$rc" -eq 0 ]; then ck 0 "recording the release in the worktree clears the refusal, even with canonical behind"; else ck 1 "recording the release in the worktree clears the refusal (rc=$rc): $out"; fi
           exit "$fail"
 
       - name: CLAUDE_CONFIG_DIR moves the settings every wiring tool writes
