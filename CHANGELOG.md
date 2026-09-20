@@ -4,10 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [2.0.1] — 2026-09-20
+
+Patch — a MAJOR refusal could not be cleared.
 
 ### Fixed
-- **A release section opening in bold took its title from somewhere else.** `release-title.sh` skipped any line starting with `*` as a bullet, so `**Breaking.** The plugin is the only delivery…` was passed over and v2.0.0's GitHub Release was titled from a sentence four subsections down (corrected by hand). A bullet is now `-` or `*` followed by whitespace. Third defect in this deriver, so CI carries the bold-opener case and a control that a bold BULLET is still skipped.
+- **`update.sh`'s MAJOR guard read the record from canonical while writing to the caller's worktree.** `.engine-version` is tracked content, so a vault that gates canonical commits records a MAJOR migration by hand in a worktree — and the next run read canonical, still saw the old release, and refused again. The refusal also named no way forward. Hit on the first real 1.x → 2.0.0 migration. The guard now reads the record from the tree the caller stands in (falling back to canonical), and the refusal prints the file to record the release in. CI proves both, red against 2.0.0.
+- **A release section opening in bold took its title from somewhere else** (was under Unreleased): `release-title.sh` skipped any line starting with `*` as a bullet, so `**Breaking.** …` was passed over and v2.0.0's GitHub Release was titled from a sentence four subsections down. A bullet is now `-` or `*` followed by whitespace.
 
 ## [2.0.0] — 2026-09-20
 

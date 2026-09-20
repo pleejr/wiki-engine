@@ -48,10 +48,21 @@ fi
 
 latest="$(engine_release "$ENGINE")"
 case "$latest" in unknown|"") echo "update: cannot tell which release is running from $ENGINE" >&2; exit 1;; esac
-required="$(vault_engine_required "$WIKI")"
+
+# The tree the caller stands in: an explicit argument would be returned as-is. Resolved
+# BEFORE the guards, because the record they judge must be the one in the tree the caller
+# can commit from. Reading it from canonical instead made the MAJOR refusal unclearable: a
+# migration is recorded by hand in a worktree, canonical still said the old release, and the
+# next run refused again — with no way forward that the message named.
+PAGE_TREE="$(WIKI_PATH="$WIKI" resolve_wiki_root "" 2>/dev/null)" || PAGE_TREE="$WIKI"
+required="$(vault_engine_required "$PAGE_TREE")"
+[ -n "$required" ] || required="$(vault_engine_required "$WIKI")"
 
 if [ -n "$required" ] && [ "$(core_major "$latest")" != "$(core_major "$required")" ]; then
   echo "update: ⚠ the running engine $latest and the vault's $required differ in MAJOR — review the CHANGELOG migration; not applied." >&2
+  echo "update:   Once the migration is done, record the release in the tree you commit from:" >&2
+  echo "update:     printf '%s\\n' \"$latest\" > \"$PAGE_TREE/.engine-version\"" >&2
+  echo "update:   then rerun this to adopt the rest." >&2
   exit 1
 fi
 if [ -n "$required" ] && engine_version_lt "$latest" "$required"; then
@@ -66,8 +77,6 @@ if [ -x "$WIKI/.rag/venv/bin/python" ]; then
   "$SCRIPT_DIR/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
 fi
 
-# The tree the caller stands in: an explicit argument would be returned as-is.
-PAGE_TREE="$(WIKI_PATH="$WIKI" resolve_wiki_root "" 2>/dev/null)" || PAGE_TREE="$WIKI"
 defer=0
 if [ "$PAGE_TREE" = "$WIKI" ] && [ -n "$(canonical_commit_gated "$WIKI")" ]; then
   defer=1
