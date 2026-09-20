@@ -1618,11 +1618,20 @@ jobs:
           # compares that record with the running plugin, the vault's pre-commit finds the
           # plugin's engine through the boot hook's pointer, and update.sh advances the record.
           C="$RUNNER_TEMP/v2cache"; rsync -a --exclude .git "$GITHUB_WORKSPACE/" "$C/"
+          # The stand-in plugin gets a SYNTHETIC release, so the cases below (an older record, a
+          # newer one, a different MAJOR) exist whatever the real version is. Derived from the
+          # manifest, "one minor older" had no meaning the day the engine cut X.0.0, and this
+          # step went red on the release commit itself rather than on anything it tests.
+          python3 - "$C/.claude-plugin/plugin.json" <<'PYV'
+          import json, sys
+          p = sys.argv[1]; d = json.load(open(p)); d["version"] = "9.9.0"
+          json.dump(d, open(p, "w"), indent=2)
+          PYV
           V="$RUNNER_TEMP/v2vault"; G="$RUNNER_TEMP/v2cfg"; S="$G/settings.json"
           mkdir -p "$V" "$G"; git -C "$V" init -q; git -C "$V" config user.email ci@example.invalid; git -C "$V" config user.name ci
           printf '{ "enabledPlugins": { "wiki-engine@wiki-engine": true } }\n' > "$S"
           export CLAUDE_CONFIG_DIR="$G" CLAUDE_SETTINGS="$S" CLAUDE_SKILLS_DIR="$RUNNER_TEMP/v2skills"
-          ver="v$(jq -r .version .claude-plugin/plugin.json)"
+          ver="v$(jq -r .version "$C/.claude-plugin/plugin.json")"
           maj="${ver#v}"; maj="${maj%%.*}"; min="${ver#v}"; min="${min#*.}"; min="${min%%.*}"
           fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
           pf() { printf '%s\n' "$1" > "$V/.engine-version"; CLAUDE_PLUGIN_ROOT="$C" WIKI_PATH="$V" "$C/bin/session-preflight.sh"; }
