@@ -191,7 +191,7 @@ done < <(grep -rn -- 'grep -r[a-z]* --include=.\*\.md.\+"\$\(VAULT\|WIKI\)"' "$R
 py_walk="$(grep -n 'SKIP_NAMES' "$ROOT/bin/rag-build.sh" 2>/dev/null || true)"
 [ -n "$py_walk" ] \
   || { echo "lint-docs: rag-build.sh has no SKIP_NAMES — the indexer's skip rule is gone" >&2; fail=1; }
-printf '%s' "$py_walk" | grep -q 'startswith(".")' \
+grep -q 'startswith(".")' <<<"$py_walk" \
   || { echo "lint-docs: rag-build.sh does not skip dot-directories by class" >&2; \
        echo "lint-docs:   an enumerated list is how .worktrees/ went unskipped — a full" >&2; \
        echo "lint-docs:   checkout of every page, indexed a second time under paths that" >&2; \
@@ -273,7 +273,7 @@ for f in "$ROOT"/skills/*/SKILL.md; do
   # the next field at column 0 — must relate itself to the fix. The field is what a reporter
   # fills in; a bare placeholder there is the version that shipped the defect.
   exp_field="$(printf '%s' "$tmpl" | awk '/^Expected:/ { inx = 1; print; next } inx && /^[^ \t]/ { exit } inx { print }')"
-  if ! printf '%s' "$exp_field" | grep -qi 'fix'; then
+  if ! grep -qi -- 'fix' <<<"$exp_field"; then
     echo "lint-docs: $rel's defect-report template asks for 'Expected:' without relating it to the suggested fix" >&2
     echo "lint-docs:   the two are separate fields, so nothing makes the reporter compare them —" >&2
     echo "lint-docs:   and an Expected the fix cannot produce is the most common way one goes wrong." >&2
@@ -345,7 +345,7 @@ for d in "$ROOT"/skills/*/references; do
   for r in "$d"/*.md; do
     [ -f "$r" ] || continue
     name="$(basename "$r")"
-    if ! awk '/^[[:space:]]*```/ { inb = !inb; next } !inb' "$body" | grep -qF "references/$name"; then
+    if ! grep -qF -- "references/$name" < <(awk '/^[[:space:]]*```/ { inb = !inb; next } !inb' "$body"); then
       echo "lint-docs: skills/$skill/references/$name is linked from nowhere in skills/$skill/SKILL.md" >&2
       echo "lint-docs:   a reference file the body never points at is never loaded — the content has left the skill" >&2
       fail=1
@@ -366,9 +366,13 @@ for body in "$ROOT"/skills/*/SKILL.md; do
     echo "lint-docs:   reach engine scripts as \${CLAUDE_SKILL_DIR}/../../bin/<name> — \$WIKI_PATH/engine does not exist under plugin delivery" >&2
     fail=1
   fi
-  grep -oE 'CLAUDE_SKILL_DIR\}"?/\.\./\.\./bin/[A-Za-z0-9._-]+' "$body" | sed -E 's#.*/bin/##' | sort -u | while read -r f; do
+  # Collected, not piped into `grep -q`: under pipefail that shape fails OPEN — grep exits at
+  # the first `x`, the loop takes EPIPE, the pipeline reports failure and `&& fail=1` never
+  # runs, so two or more missing scripts could report as none.
+  missing="$(grep -oE 'CLAUDE_SKILL_DIR\}"?/\.\./\.\./bin/[A-Za-z0-9._-]+' "$body" | sed -E 's#.*/bin/##' | sort -u | while read -r f; do
     [ -e "$ROOT/bin/$f" ] || { echo "lint-docs: skills/$skill/SKILL.md runs bin/$f, which does not exist" >&2; echo x; }
-  done | grep -q x && fail=1
+  done)"
+  [ -n "$missing" ] && fail=1
 done
 
 # 11. the plugin manifest, its marketplace pin, its hooks and the CHANGELOG agree ---------
@@ -390,10 +394,11 @@ if [ -f "$pj" ]; then
     fail=1
   fi
   if [ -f "$hj" ]; then
-    jq -r '.. | objects | select(has("command")) | .command' "$hj" \
+    hook_missing="$(jq -r '.. | objects | select(has("command")) | .command' "$hj" \
       | grep -oE 'CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9._/-]+' | sed 's#CLAUDE_PLUGIN_ROOT}/##' | sort -u | while read -r f; do
         [ -x "$ROOT/$f" ] || { echo "lint-docs: hooks/hooks.json runs $f, which is missing or not executable" >&2; echo x; }
-      done | grep -q x && fail=1
+      done)"
+    [ -n "$hook_missing" ] && fail=1
     if jq -e '[.. | objects | select(has("command")) | has("timeout")] | all | not' "$hj" >/dev/null; then
       echo "lint-docs: every hooks/hooks.json command states a timeout" >&2; fail=1
     fi

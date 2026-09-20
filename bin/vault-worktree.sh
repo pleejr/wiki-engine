@@ -316,7 +316,7 @@ case "$CMD" in
     slug="${WIKI_WT_SESSION:-${CLAUDE_CODE_SESSION_ID:-$(date +%Y%m%d-%H%M%S)-$$}}"
     slug="$(printf '%s' "$slug" | tr -c 'A-Za-z0-9._-' '-')"
     wt="$WT_ROOT/$slug"; branch="wt/$slug"; bc=""; behind=""; why=""
-    if git -C "$WIKI" worktree list --porcelain 2>/dev/null | grep -qxF "worktree $wt"; then
+    if grep -qxF -- "worktree $wt" < <(git -C "$WIKI" worktree list --porcelain 2>/dev/null); then
       write_lease "$wt" "$branch"      # refresh the heartbeat so peers see us as live
       # Same invariant as the reattach path below, one case earlier: a long session's own
       # worktree drifts behind while peers land work. Reported WITHOUT fetching — this is
@@ -340,7 +340,7 @@ case "$CMD" in
     # canonical checkout — silently re-enabling the very shared-tree editing this tool
     # exists to prevent. Move it aside rather than delete it: it may hold untracked work,
     # and nothing here is ever worth losing to make a path free.
-    if [ -e "$wt" ] && ! git -C "$WIKI" worktree list --porcelain 2>/dev/null | grep -qxF "worktree $wt"; then
+    if [ -e "$wt" ] && ! grep -qxF -- "worktree $wt" < <(git -C "$WIKI" worktree list --porcelain 2>/dev/null); then
       orphan="$wt.orphaned-$(date +%Y%m%d-%H%M%S)"
       if mv "$wt" "$orphan" 2>/dev/null; then
         log "vault-worktree: found an ORPHANED worktree dir at $wt (git no longer tracks it)."
@@ -372,7 +372,7 @@ case "$CMD" in
     # the caller now is instead of reporting plain success.
     if git -C "$WIKI" show-ref --verify --quiet "refs/heads/$branch"; then
       bc=0; branch_contained "$branch" "$base" || bc=$?
-      if [ "$bc" = "0" ] && ! git -C "$WIKI" worktree list --porcelain 2>/dev/null | grep -qxF "branch refs/heads/$branch"; then
+      if [ "$bc" = "0" ] && ! grep -qxF -- "branch refs/heads/$branch" < <(git -C "$WIKI" worktree list --porcelain 2>/dev/null); then
         if git -C "$WIKI" branch -D "$branch" >/dev/null 2>&1; then
           log "vault-worktree: $branch held nothing $base lacks (already landed) — cutting it fresh off $base rather than reattaching behind it"
         fi
@@ -749,7 +749,7 @@ case "$CMD" in
       while IFS= read -r line; do
         case "$line" in worktree\ *) wt="${line#worktree }";; *) continue;; esac
         case "$wt" in "$WT_ROOT"/*) ;; *) continue;; esac
-        if ! find "$wt" -maxdepth 0 -mmin +"$stale_min" 2>/dev/null | grep -q .; then
+        if ! grep -q . < <(find "$wt" -maxdepth 0 -mmin +"$stale_min" 2>/dev/null); then
           continue  # still fresh; a live session likely owns it
         fi
         retire_worktree "$wt" && removed=$((removed+1))
@@ -786,7 +786,7 @@ case "$CMD" in
     orphans=0
     while IFS= read -r ob; do
       [ -n "$ob" ] || continue
-      printf '%s\n' "$attached" | grep -qxF "$ob" && continue
+      grep -qxF -- "$ob" <<<"$attached" && continue
       orphans=$((orphans+1))
       retire_branch "$ob"
     done <<EOF

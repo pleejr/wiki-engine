@@ -180,7 +180,7 @@ for f in "$PROJ_DIR"/*.md; do
   matched=""
   while IFS= read -r re; do
     [ -n "$re" ] || continue
-    if printf '%s' "$summary" | grep -qiE "$re"; then matched="$re"; break; fi
+    if grep -qiE -- "$re" <<<"$summary"; then matched="$re"; break; fi
   done <<<"$MARKERS"
   [ -n "$matched" ] || continue
 
