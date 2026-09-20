@@ -4,6 +4,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.0.4] — 2026-09-20
+
+Patch — the three pinned RAG deps `doctor.sh` was reporting, moved together.
+
+### Changed
+- **`scaffold/rag-requirements.txt`: `onnxruntime` 1.29.0 → 1.30.0, `numpy` 2.5.2 → 2.5.3, `huggingface_hub` 1.30.0 → 1.32.0.** Nothing automates this file — `dependabot.yml` declares only the `github-actions` ecosystem and the freshness cron reports drift rather than acting on it — so `doctor.sh` named all three on every consumer session. Re-derived at intake on the COMBINED set, which no report had tested (each was measured alone): six fresh `uv` venvs on cpython 3.12.13 / 3.13.14 / 3.14.6, install clean, `uv pip check` compatible, 28 packages each, 768-dim embed through `BAAI/bge-base-en-v1.5` on every venv. Combined drift against the current pins: cosine 0.9999997, max |per-component delta| 1.254e-04, identical to four significant figures on all three interpreters, with the baselines agreeing across interpreters at 0.0 — so the interpreter is not a confound and the whole drift is `onnxruntime`'s. Proposals: `bump-pinned-onnxruntime-1-30-0`, `bump-pinned-numpy-2-5-3`, `bump-pinned-huggingface-hub-1-32-0`.
+- **The file's `onnxruntime` warning now states the general claim instead of one instance.** Two consecutive minor steps each measure ~1e-04 (1.28.0 → 1.29.0: 1.5e-04; 1.29.0 → 1.30.0: 1.25e-04), so the drift is **cumulative**: the figure to reason about is the distance from the release a store was built under, not from the previous pin. At this magnitude no reindex is implied and nothing reorders retrieval; the header keeps the instruction to measure each step, because two points do not prove a rate. The wording call the reporter explicitly handed to intake, taken rather than deferred.
+
 ## [2.0.3] — 2026-09-20
 
 Patch — a write-time refusal named the drift, not the engine skew behind it.

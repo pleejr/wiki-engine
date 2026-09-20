@@ -1,7 +1,8 @@
 ---
 slug: bump-pinned-numpy-2-5-3
-outcome: open
+outcome: accepted
 received: 2026-09-20
+reason: "Re-derived at intake rather than taken on the report's word, and on the COMBINED set — the three bumps were each measured in isolation, but what ships is all three moved at once, which nothing had tested. Six fresh `uv` venvs, the file's current pins against all three new ones, on cpython 3.12.13 / 3.13.14 / 3.14.6: install clean, `uv pip check` 'All installed packages are compatible', 28 packages on every venv, and a 768-dim embed of three texts through `BAAI/bge-base-en-v1.5` on each. Combined drift against the baseline, same cached weights: cosine 0.9999997, max |per-component delta| 1.254e-04, identical to four significant figures on all three interpreters; the baselines agree across interpreters at max |delta| 0.0, so the interpreter is not a confound. That figure matches the reporter's onnxruntime-only measurement (1.293e-04), which independently confirms the other two pins are numerically inert. Shipped with its two siblings in one release: they are one report class from one `doctor.sh` output, and the v1.78.1 precedent batches pin bumps. Numerically inert on its own."
 ---
 
 HANDOFF — engine improvement proposal
