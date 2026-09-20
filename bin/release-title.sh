@@ -32,8 +32,11 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "$NOTES" ] || NOTES="$(cat)"
 
-# First line that is prose: not blank, not a heading, not a bullet.
-line="$(printf '%s\n' "$NOTES" | grep -m1 -E '^[[:space:]]*[^[:space:]#*-]' || true)"
+# First line that is prose: not blank, not a heading, not a bullet. A BULLET is `-` or `*`
+# followed by whitespace; `**bold**` opening a paragraph is prose, and reading it as a bullet
+# is how v2.0.0 — whose section opens `**Breaking.** …` — took its title from a sentence four
+# subsections down. Third defect in this deriver, so the test below carries the case.
+line="$(printf '%s\n' "$NOTES" | grep -m1 -E '^[[:space:]]*([^[:space:]#*-]|\*\*)' || true)"
 [ -n "$line" ] || { printf '%s' ""; exit 0; }
 
 suffix="$(printf '%s\n' "$line" \
