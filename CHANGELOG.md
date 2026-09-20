@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.0.2] — 2026-09-20
+
+Patch — the engine's repo page recorded a tag object, not its commit.
+
+### Fixed
+- **`update.sh` wrote the annotated tag's own object id as `sources.sha`.** The plugin cache is not a git repo, so the sha comes from `git ls-remote`, which answers in REFNAME order — `refs/tags/vX` sorts before `refs/tags/vX^{}` — and the code took the first line. A tag object is in no branch, so the page could never match `HEAD` again and would read stale forever, with `verify` comparing against a non-commit. The peeled line is now chosen by name, with the unpeeled one as the fallback a lightweight tag needs. Caught recording v2.0.1 in a real vault; CI builds a remote with an ANNOTATED tag and asserts the commit is recorded, red against 2.0.1.
+
 ## [2.0.1] — 2026-09-20
 
 Patch — a MAJOR refusal could not be cleared.

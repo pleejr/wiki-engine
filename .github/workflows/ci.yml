@@ -1668,6 +1668,37 @@ jobs:
           out="$("$C/bin/update.sh" --wiki "$V" 2>&1)" && rc=0 || rc=$?
           if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'differ in MAJOR' && [ "$(cat "$V/.engine-version")" = "v$((maj + 1)).0.0" ]; then ck 0 "update.sh refuses a MAJOR difference and leaves the record alone"; else ck 1 "update.sh refuses a MAJOR difference and leaves the record alone"; fi
 
+          # The repo page must record the tag's COMMIT, not the annotated tag's own object.
+          # The engine is delivered as a plugin cache, which is not a git repo, so the sha comes
+          # from `git ls-remote` — and that answers in REFNAME order, `refs/tags/vX` before
+          # `refs/tags/vX^{}`, so taking the first line recorded a sha that is in no branch and
+          # left the page permanently stale. The fixture's tag is ANNOTATED, or the two shas
+          # are the same and the test proves nothing.
+          # Named wiki-engine.git: update.sh matches a repo page by the manifest repository's
+          # basename, so a fixture remote called anything else silently matches no page.
+          R="$RUNNER_TEMP/wiki-engine.git"; git init -q --bare "$R"
+          P="$RUNNER_TEMP/peelwork"; git init -q "$P"; git -C "$P" config user.email ci@example.invalid; git -C "$P" config user.name ci
+          : > "$P/f"; git -C "$P" add f; git -C "$P" commit -qm seed
+          git -C "$P" tag -a v3.0.0 -m "annotated"; git -C "$P" remote add origin "$R"; git -C "$P" push -q origin HEAD --tags
+          want="$(git -C "$P" rev-parse --short 'v3.0.0^{}')"
+          tagobj="$(git -C "$P" rev-parse --short v3.0.0)"
+          if [ "$want" != "$tagobj" ]; then ck 0 "fixture: the annotated tag object and its commit differ"; else ck 1 "fixture: tag object equals commit — this case cannot be tested"; fi
+          PV="$RUNNER_TEMP/peelvault"; mkdir -p "$PV/repos"; git -C "$PV" init -q
+          git -C "$PV" config user.email ci@example.invalid; git -C "$PV" config user.name ci
+          printf 'v3.0.0\n' > "$PV/.engine-version"
+          printf -- '---\ntype: repo\nsources:\n  - repo: wiki-engine\n    ref: v0.0.0\n    sha: 0000000\n    ingested: 2026-01-01\nboundary: personal\n---\n' > "$PV/repos/wiki-engine.md"
+          git -C "$PV" add -A; git -C "$PV" commit -qm seed
+          PC="$RUNNER_TEMP/peelcache"; rsync -a --exclude .git "$GITHUB_WORKSPACE/" "$PC/"
+          python3 - "$PC/.claude-plugin/plugin.json" "$R" <<'PYP'
+          import json, sys
+          p, remote = sys.argv[1], sys.argv[2]
+          d = json.load(open(p)); d["version"] = "3.0.0"; d["repository"] = remote
+          json.dump(d, open(p, "w"), indent=2)
+          PYP
+          (cd "$PV" && WIKI_WORKTREE=0 "$PC/bin/update.sh" --wiki "$PV" >/dev/null 2>&1) || true
+          got="$(sed -nE 's/^[[:space:]]+sha: (.*)$/\1/p' "$PV/repos/wiki-engine.md")"
+          if [ "$got" = "$want" ]; then ck 0 "the repo page records the tag's commit, not the tag object"; else ck 1 "the repo page recorded [$got], wanted the commit [$want] (tag object is [$tagobj])"; fi
+
           # A MAJOR refusal must be CLEARABLE, and it is cleared by hand in a worktree, because
           # .engine-version is tracked content a gated canonical checkout will not commit. The
           # guard therefore has to read the record from the tree the caller stands in: reading

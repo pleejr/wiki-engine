@@ -111,10 +111,15 @@ new_sha=""
 if git -C "$ENGINE" rev-parse --git-dir >/dev/null 2>&1; then
   new_sha="$(git -C "$ENGINE" rev-parse --short HEAD 2>/dev/null || true)"
 elif [ -n "$engine_url" ]; then
-  # Peeled first: an annotated tag's own object is not the commit.
-  new_sha="$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 \
-    ls-remote "$engine_url" "refs/tags/$latest^{}" "refs/tags/$latest" 2>/dev/null \
-    | awk '{print substr($1,1,7)}' | head -1 || true)"
+  # THE PEELED LINE, chosen by NAME. An annotated tag's own object is not the commit, and
+  # `ls-remote` answers in REFNAME order — `refs/tags/vX` sorts before `refs/tags/vX^{}` —
+  # so asking for both and taking the first line records the tag object. That sha is in no
+  # branch, so the page can never match `HEAD` again and reads stale forever. A lightweight
+  # tag has no peeled line, hence the fallback.
+  ls_out="$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 \
+    ls-remote "$engine_url" "refs/tags/$latest^{}" "refs/tags/$latest" 2>/dev/null || true)"
+  new_sha="$(printf '%s\n' "$ls_out" | awk '$2 ~ /\^\{\}$/ { print substr($1,1,7); exit }')"
+  [ -n "$new_sha" ] || new_sha="$(printf '%s\n' "$ls_out" | awk 'NF { print substr($1,1,7); exit }')"
 fi
 
 bumped="" deferred_page=""
