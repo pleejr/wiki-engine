@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.0.5] — 2026-09-20
+
+Patch — the skew NOTE adoption added in 2.0.3 was silenced by a comment.
+
+### Fixed
+- **`30-vault-git-hooks.sh` matched `.engine-version` against the whole hook, comments included.** The reference hook's own engine-resolution comment names the file, so a vault whose installed `pre-commit` predates 2.0.3 — the exact vault the report exists for — read as already carrying the release comparison and got no NOTE. Found by adopting 2.0.4 into a real vault: the pointer named 2.0.2 while `.engine-version` said v2.0.4, the commit was gated by the older hook, and adoption said nothing. The check now strips comments and matches the remaining code through a here-string rather than a pipe, since `… | grep -q` under `pipefail` can report failure via SIGPIPE and would silence the NOTE rather than raise it. CI pins both directions: a hook naming `.engine-version` only in a comment is reported, and the shipped template is not — red against 2.0.4. Found while draining, and fixed in the same cycle rather than filed, since it is the 2.0.3 change's own adoption path.
+
 ## [2.0.4] — 2026-09-20
 
 Patch — the three pinned RAG deps `doctor.sh` was reporting, moved together.

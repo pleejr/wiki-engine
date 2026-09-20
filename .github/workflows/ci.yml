@@ -1527,6 +1527,34 @@ jobs:
             || { echo "a foreign core.hooksPath was stolen"; exit 1; }
           echo "ok: a foreign hooksPath is left alone"
 
+          # The release-skew NOTE must be raised by reading the hook's CODE. A hook that only
+          # MENTIONS .engine-version in a comment — which the reference hook's own resolution
+          # comment does — defeated the first cut of this check, so it stayed silent on exactly
+          # the vaults it exists for. Observed on a real vault whose installed hook predates
+          # the check: its single `engine-version` occurrence is inside a comment.
+          skewnote() { WIKI="$V" ENGINE="$PWD" ADOPT_LIB="$PWD/bin/adopt-lib.sh" ADOPT_CHECK="" \
+            bash adopt.d/30-vault-git-hooks.sh 2>&1 | grep -c 'never says which RELEASE' || true; }
+          git -C "$V" config core.hooksPath "$V/.githooks"
+          cat > "$V/.githooks/pre-commit" <<'HOOKEOF'
+          #!/usr/bin/env bash
+          # This vault records its release in .engine-version and has no submodule, so the
+          # engine is $WIKI_ENGINE, else the plugin pointer.
+          set -euo pipefail
+          ENGINE=""
+          for p in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/data/wiki-engine-*/engine/bin; do
+            [ -x "$p/lint.sh" ] && { ENGINE="$p"; break; }
+          done
+          [ -n "$ENGINE" ] && "$ENGINE/lint.sh" --wiki "$(git rev-parse --show-toplevel)"
+          HOOKEOF
+          chmod +x "$V/.githooks/pre-commit"
+          [ "$(skewnote)" -ge 1 ] || { echo "FAIL: a hook naming .engine-version only in a comment got no skew NOTE"; exit 1; }
+          echo "ok: the skew NOTE reads the hook's code, not its comments"
+          # CONTROL — the shipped template HAS the comparison, so it must stay silent, or the
+          # NOTE would fire on every freshly adopted vault forever.
+          cp scaffold/pre-commit "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"
+          [ "$(skewnote)" -eq 0 ] || { echo "FAIL: the current template was reported as missing the comparison"; exit 1; }
+          echo "ok: the current template is not reported"
+
       - name: Adoption writes only the vault, never the machine's config
         run: |
           # 1.x adoption wired a SessionStart hook into settings.json and linked skills into
