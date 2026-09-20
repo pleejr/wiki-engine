@@ -53,7 +53,14 @@ else
     echo "adopt:     CANON=\"\$(cd \"\$(git rev-parse --git-common-dir)/..\" && pwd)\""
     echo "adopt:   Reference implementation: $TMPL"
   fi
-  if grep -q 'plugins/data' "$HOOK" 2>/dev/null && ! grep -q 'engine-version' "$HOOK" 2>/dev/null; then
+  # READ THE CODE, NOT THE PROSE. Matching `.engine-version` against the whole file is
+  # defeated by a hook that merely MENTIONS it in a comment — which the reference hook's own
+  # resolution comment does, so the first cut of this check stayed silent on exactly the
+  # vaults it was written for. Comments are stripped first, and the stripped text is matched
+  # through a here-string rather than a pipe: `… | grep -q` under `pipefail` can report
+  # failure via SIGPIPE, and here that would silence the NOTE instead of raising it.
+  code="$(sed 's/#.*//' "$HOOK" 2>/dev/null || true)"
+  if grep -q 'plugins/data' <<<"$code" && ! grep -q 'engine-version' <<<"$code"; then
     # The pointer this hook follows is written once per session by the boot hook, so a
     # `claude plugin update` made mid-session leaves the gate running the PREVIOUS release
     # against content the current one generated. Without this comparison the refusal that
