@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.0.3] — 2026-09-20
+
+Patch — a write-time refusal named the drift, not the engine skew behind it.
+
+### Fixed
+- **The vault's `pre-commit` never said which engine RELEASE it ran.** The stable pointer it follows is written once per session, by the boot hook, from the plugin root Claude Code hands it — so a `claude plugin update` made mid-session moves the installed release while the pointer keeps naming the previous one until the next session starts, and the gate runs the PREVIOUS release's checks against content the CURRENT one generated. Reproduced with two releases installed: v1.81.0's `gen-skills-index.sh --check` reports drift on an `index.md` that v2.0.2 generated and calls up to date. The refusal named the disagreement, so the remedies at hand were `--no-verify` and `WIKI_WORKTREE=0` — disarming the gate over a healthy tree. `scaffold/pre-commit` now compares the release it resolved with the vault's `.engine-version`, prints both, and names the `WIKI_ENGINE=<path>` invocation that gates with the recorded release when it is installed beside the one the pointer names. **Reported, never enforced** — the NOTE cannot change a commit's exit status — and repeated beside a gate failure, where the reader is deciding what to bypass. Adoption is add-only, so `30-vault-git-hooks.sh` reports the missing comparison against a hook a vault already has rather than rewriting it. Proposal: `plugin-data-pointer-lags-a-mid-session-update`. CI asserts the text, the unchanged exit status, the fixture's own precondition, and two controls (records agreeing, explicit `WIKI_ENGINE`); red against 2.0.2.
+
 ## [2.0.2] — 2026-09-20
 
 Patch — the engine's repo page recorded a tag object, not its commit.

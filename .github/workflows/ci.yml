@@ -1713,6 +1713,64 @@ jobs:
           if [ "$rc" -eq 0 ]; then ck 0 "recording the release in the worktree clears the refusal, even with canonical behind"; else ck 1 "recording the release in the worktree clears the refusal (rc=$rc): $out"; fi
           exit "$fail"
 
+      - name: The vault gate names an engine-release skew instead of the drift it causes
+        run: |
+          # The pointer the vault's pre-commit follows is written ONCE PER SESSION, by the
+          # plugin's SessionStart hook, from the plugin root Claude Code hands it. So a
+          # `claude plugin update` made mid-session moves the installed release while the
+          # pointer keeps naming the previous one until the next session starts, and the gate
+          # then runs the PREVIOUS release's checks against content the CURRENT one generated.
+          # Observed on real caches: v1.81.0's `gen-skills-index.sh --check` reports drift on an
+          # index.md that v2.0.2 generated and calls up to date. The refusal then named the
+          # disagreement rather than the skew, so the remedies at hand were `--no-verify` and
+          # `WIKI_WORKTREE=0` — disarming the gate over a healthy tree.
+          #
+          # REPORTED, NEVER ENFORCED, which is why the exit status is asserted alongside the
+          # text: a check that refused every commit made on a lagging pointer would be worse
+          # than the failure it prevents.
+          T="$RUNNER_TEMP/skew"; rm -rf "$T"; mkdir -p "$T"
+          G="$T/cfg"; V="$T/vault"; C="$T/cache"
+          fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          # Two releases side by side, as a plugin cache holds them, with the manifest written
+          # multi-line because that is the shape the version is read from. Both lints PASS: the
+          # assertions here are about the NOTE, and a failing lint would mask it.
+          for v in 1.0.0 9.9.0; do
+            mkdir -p "$C/$v/bin" "$C/$v/.claude-plugin"
+            printf '#!/bin/sh\necho "LINT-FROM-%s"\nexit 0\n' "$v" > "$C/$v/bin/lint.sh"; chmod +x "$C/$v/bin/lint.sh"
+            printf '{\n  "name": "wiki-engine",\n  "version": "%s"\n}\n' "$v" > "$C/$v/.claude-plugin/plugin.json"
+          done
+          mkdir -p "$G/plugins/data/wiki-engine-wiki-engine"
+          ln -sfn "$C/9.9.0" "$G/plugins/data/wiki-engine-wiki-engine/engine"   # the pointer lags
+          mkdir -p "$V/.githooks"; git -C "$V" init -q
+          git -C "$V" config user.email ci@example.invalid; git -C "$V" config user.name ci
+          git -C "$V" config core.hooksPath .githooks
+          cp "$GITHUB_WORKSPACE/scaffold/pre-commit" "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"
+          export CLAUDE_CONFIG_DIR="$G" WIKI_WORKTREE=0
+          commit() { echo "$RANDOM" > "$V/n.md"; git -C "$V" add n.md; git -C "$V" commit -qm t 2>&1; }
+
+          printf 'v1.0.0\n' > "$V/.engine-version"
+          out="$(commit)" && rc=0 || rc=$?
+          # The fixture's own precondition: without this, a silent NOTE and a pointer that never
+          # lagged are the same observation.
+          if printf '%s' "$out" | grep -q 'LINT-FROM-9.9.0'; then ck 0 "fixture: the lagging pointer really does run the other release"; else ck 1 "fixture: the lagging pointer really does run the other release"; fi
+          if [ "$rc" -eq 0 ]; then ck 0 "the skew is reported, never enforced — the commit still succeeds"; else ck 1 "the skew must not fail a commit (rc=$rc)"; fi
+          if printf '%s' "$out" | grep -q 'v9.9.0' && printf '%s' "$out" | grep -q 'v1.0.0'; then ck 0 "the NOTE names both the release that ran and the one the vault records"; else ck 1 "the NOTE names both releases: $out"; fi
+          if printf '%s' "$out" | grep -qF "WIKI_ENGINE=$C/1.0.0"; then ck 0 "the NOTE names the installed release the vault asked for"; else ck 1 "the NOTE names the installed release the vault asked for: $out"; fi
+
+          # CONTROL — the same fixture with the two records AGREEING must be silent, or the
+          # check is a constant that would fire on every commit in every vault.
+          printf 'v9.9.0\n' > "$V/.engine-version"
+          out="$(commit)" || true
+          if ! printf '%s' "$out" | grep -qi 'records'; then ck 0 "no NOTE when the pointer names the release the vault records"; else ck 1 "NOTE fired with no skew: $out"; fi
+
+          # CONTROL — WIKI_ENGINE is an explicit choice of engine, not a pointer that lagged,
+          # and must not be reported as one: engine-dev runs every commit that way.
+          printf 'v1.0.0\n' > "$V/.engine-version"
+          out="$(WIKI_ENGINE="$C/9.9.0" commit)" || true
+          if ! printf '%s' "$out" | grep -qi 'records'; then ck 0 "no NOTE when WIKI_ENGINE names the engine explicitly"; else ck 1 "NOTE fired for an explicit WIKI_ENGINE: $out"; fi
+          exit "$fail"
+
+
       - name: CLAUDE_CONFIG_DIR moves the settings every wiring tool writes
         run: |
           # With CLAUDE_CONFIG_DIR set, Claude Code reads $CLAUDE_CONFIG_DIR/settings.json, while
