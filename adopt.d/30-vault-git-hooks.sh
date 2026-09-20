@@ -53,6 +53,17 @@ else
     echo "adopt:     CANON=\"\$(cd \"\$(git rev-parse --git-common-dir)/..\" && pwd)\""
     echo "adopt:   Reference implementation: $TMPL"
   fi
+  if grep -q 'plugins/data' "$HOOK" 2>/dev/null && ! grep -q 'engine-version' "$HOOK" 2>/dev/null; then
+    # The pointer this hook follows is written once per session by the boot hook, so a
+    # `claude plugin update` made mid-session leaves the gate running the PREVIOUS release
+    # against content the current one generated. Without this comparison the refusal that
+    # follows names the disagreement, not the skew — and the remedies it leads to disarm
+    # the gate. Reported, not edited: the hook is the vault's.
+    echo "adopt: NOTE — $HOOK follows the plugin pointer but never says which RELEASE it found."
+    echo "adopt:   The pointer is refreshed only at session start, so a mid-session plugin update"
+    echo "adopt:   leaves this gate running the previous release, and its refusal names the wrong"
+    echo "adopt:   cause. Compare it with the vault's .engine-version as $TMPL does."
+  fi
   if grep -q 'engine/bin' "$HOOK" 2>/dev/null && ! grep -q 'plugins/data' "$HOOK" 2>/dev/null \
      && ! grep -q 'WIKI_ENGINE' "$HOOK" 2>/dev/null; then
     # A 1.x hook finds the engine only in the vault's engine/ submodule. Once the vault drops

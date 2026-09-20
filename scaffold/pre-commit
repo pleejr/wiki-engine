@@ -24,10 +24,11 @@ CANON="$(cd "$(git rev-parse --git-common-dir)/.." 2>/dev/null && pwd)" || CANON
 # hook keeps at ${CLAUDE_PLUGIN_DATA}/engine. A hook runs outside Claude Code, so it cannot
 # read the plugin's own variables and reads that pointer instead.
 ENGINE=""
+VIA_POINTER=0
 if [ -n "${WIKI_ENGINE:-}" ]; then ENGINE="$WIKI_ENGINE/bin"
 else
   for p in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/data/wiki-engine-*/engine/bin; do
-    [ -x "$p/lint.sh" ] && { ENGINE="$p"; break; }
+    [ -x "$p/lint.sh" ] && { ENGINE="$p"; VIA_POINTER=1; break; }
   done
 fi
 
@@ -38,12 +39,64 @@ if [ -z "$ENGINE" ] || [ ! -x "$ENGINE/lint.sh" ]; then
   exit 0
 fi
 
+# RELEASE SKEW — say which engine is about to judge this tree, when it is not the one the
+# vault records. The pointer above is written ONCE PER SESSION, by the plugin's SessionStart
+# hook, from the plugin root Claude Code hands it. So `claude plugin update` run DURING a
+# session moves the installed release while the pointer keeps naming the previous one until
+# the next session starts, and this gate then runs the PREVIOUS release's checks against
+# content the CURRENT one generated. The two disagree, the commit is refused, and the
+# message names the disagreement rather than the skew behind it — so the remedies at hand
+# are `--no-verify` and `WIKI_WORKTREE=0`, i.e. disarming the gate over a healthy tree.
+#
+# REPORTED, NEVER ENFORCED. Most releases do not change what the gates decide, so refusing
+# every commit made on a lagging pointer would be a worse failure than the one it prevents.
+# Nothing in this block may change the exit status.
+SKEW=""
+if [ "$VIA_POINTER" = "1" ] && [ -f "$CANON/.engine-version" ]; then
+  want="$(tr -d '[:space:]' < "$CANON/.engine-version" 2>/dev/null || true)"
+  # FAIL-OPEN, and pipefail-safe. An engine with no manifest (a checkout laid out by hand, a
+  # stand-in) must leave the gate exactly as it was: `sed missing-file | head -1` returns
+  # sed's exit 2 under `pipefail` and `set -e` then kills the hook BEFORE the lint runs — a
+  # gate disarmed by its own diagnostic. `sed -n 1p` also reads its input to the end, where
+  # `head -1` closes the pipe early and can report SIGPIPE on a long manifest.
+  got=""
+  manifest="$ENGINE/../.claude-plugin/plugin.json"
+  if [ -f "$manifest" ]; then
+    got="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' \
+           "$manifest" 2>/dev/null | sed -n '1p')" || got=""
+  fi
+  if [ -n "$got" ]; then got="v$got"; fi
+  if [ -n "$want" ] && [ -n "$got" ] && [ "$want" != "$got" ]; then
+    SKEW="this gate ran engine $got, but the vault records $want"
+    # The release the vault asked for, when it is installed beside the one the pointer names.
+    # Derived from the pointer's own target rather than from a hardcoded cache layout, and
+    # only offered when its lint is actually there.
+    real="$(cd "$ENGINE/.." 2>/dev/null && pwd -P)" || real=""
+    cand=""
+    if [ -n "$real" ] && [ -x "${real%/*}/${want#v}/bin/lint.sh" ]; then cand="${real%/*}/${want#v}"; fi
+    echo "pre-commit: NOTE — running engine $got, but this vault records $want." >&2
+    echo "pre-commit:   The plugin pointer this hook follows is refreshed at session start, so a" >&2
+    echo "pre-commit:   \`claude plugin update\` made mid-session leaves it naming the previous release." >&2
+    if [ -n "$cand" ]; then
+      echo "pre-commit:   To gate with the release this vault records:" >&2
+      echo "pre-commit:     WIKI_ENGINE=$cand git commit ..." >&2
+    else
+      echo "pre-commit:   Restart the session, or set WIKI_ENGINE to that release, before trusting a refusal." >&2
+    fi
+  fi
+fi
+
 if [ -x "$ENGINE/vault-worktree.sh" ]; then
   WIKI_PATH="$CANON" "$ENGINE/vault-worktree.sh" guard || exit 1
 fi
 
 if ! "$ENGINE/lint.sh" --wiki "$ROOT"; then
   echo >&2
+  # A refusal produced by the wrong release is the case this whole block exists for, so the
+  # skew is repeated HERE, next to the failure, where the reader is deciding what to bypass.
+  if [ -n "$SKEW" ]; then
+    echo "pre-commit: and note $SKEW — rerun under the recorded release before assuming the tree is at fault." >&2
+  fi
   echo "pre-commit: vault gate FAILED (see above). Fix the violation, or commit with --no-verify to bypass." >&2
   exit 1
 fi
