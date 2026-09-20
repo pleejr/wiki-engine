@@ -54,8 +54,17 @@ fi
 SKEW=""
 if [ "$VIA_POINTER" = "1" ] && [ -f "$CANON/.engine-version" ]; then
   want="$(tr -d '[:space:]' < "$CANON/.engine-version" 2>/dev/null || true)"
-  got="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' \
-         "$ENGINE/../.claude-plugin/plugin.json" 2>/dev/null | head -1)"
+  # FAIL-OPEN, and pipefail-safe. An engine with no manifest (a checkout laid out by hand, a
+  # stand-in) must leave the gate exactly as it was: `sed missing-file | head -1` returns
+  # sed's exit 2 under `pipefail` and `set -e` then kills the hook BEFORE the lint runs — a
+  # gate disarmed by its own diagnostic. `sed -n 1p` also reads its input to the end, where
+  # `head -1` closes the pipe early and can report SIGPIPE on a long manifest.
+  got=""
+  manifest="$ENGINE/../.claude-plugin/plugin.json"
+  if [ -f "$manifest" ]; then
+    got="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' \
+           "$manifest" 2>/dev/null | sed -n '1p')" || got=""
+  fi
   if [ -n "$got" ]; then got="v$got"; fi
   if [ -n "$want" ] && [ -n "$got" ] && [ "$want" != "$got" ]; then
     SKEW="this gate ran engine $got, but the vault records $want"
