@@ -1,6 +1,6 @@
 {
   "name": "wiki-engine",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "LLM-Wiki engine: vault skills (checkpoint, wiki-context, verify, crossover, ...), write-time gates, recall, and the session boot and capture hooks. Reads the vault from $WIKI_PATH.",
   "author": { "name": "pleejr", "email": "preston@pleejr.com" },
   "homepage": "https://github.com/pleejr/wiki-engine",
