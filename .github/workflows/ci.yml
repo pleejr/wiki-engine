@@ -413,6 +413,56 @@ jobs:
           [ ! -e "$D/memory/test-note.md" ] \
             || { echo "truncated payload wrote a file into the destination"; exit 1; }
 
+      - name: A lookup on a long list survives pipefail (no false dead links)
+        run: |
+          # REGRESSION (proposal lint-links-pipefail-sigpipe-false-dead-links): the slug lookup
+          # was `printf '%s\n' "$SLUGS" | grep -qxF "$1"` under `set -o pipefail`. `grep -q`
+          # exits at the FIRST match and closes the read end; the writer takes EPIPE, and
+          # pipefail promotes that to the pipeline's status — so the lookup reports FAILURE
+          # exactly when it succeeds early on a long list, and a page that exists reads as
+          # missing. It needs the writer still writing, so it fires once the list outgrows the
+          # pipe buffer: macOS stayed clean while a Linux runner reported 40+ false dead links
+          # across a whole vault, on the same tree, on that vault's first CI run.
+          #
+          # The predicates are EXTRACTED from the shipped scripts and run here, so this tests
+          # the text that ships rather than a copy of it.
+          fail=0
+          # The list is built inside each child, never exported: 200k slugs is megabytes, and
+          # an environment that large fails every exec with E2BIG before the test can run.
+          mk='big="$(seq 1 200000 | sed "s/^/slug-/")"'
+          probe() {  # $1=file $2=function $3=variable — is the FIRST entry found?
+            local body; body="$(grep -E "^$2\(\)" "$1")"
+            [ -n "$body" ] || { echo "  FAIL could not extract $2() from $1 — the test is blind"; fail=1; return; }
+            local got
+            got="$(bash -c "set -uo pipefail; $mk; $3=\"\$big\"; $body; $2 slug-1 && echo PRESENT || echo MISSING")"
+            if [ "$got" = PRESENT ]; then echo "  ok   $1 $2() finds the first entry of a long list"
+            else echo "  FAIL $1 $2() reported the first entry of a long list as absent"; fail=1; fi
+          }
+          probe bin/lint-links.sh  has_slug    SLUGS
+          probe bin/lint-links.sh  is_external EXTERNAL
+          probe bin/lint-memory.sh has_slug    SLUGS
+
+          # DETECTOR CONTROL: the harness must be able to SEE the defect. With the old shape
+          # the same probe has to come back MISSING, or every line above is vacuous.
+          ctl="$(bash -c "set -uo pipefail; $mk; old() { printf '%s\n' \"\$big\" | grep -qxF \"\$1\"; }; old slug-1 && echo PRESENT || echo MISSING")"
+          if [ "$ctl" = MISSING ]; then echo "  ok   control: the pre-fix shape still fails here, so the checks above mean something"
+          else echo "  FAIL control: the pre-fix shape passed on this runner — this test cannot see the defect"; fail=1; fi
+
+          # THE SHAPE, not just these three call sites: any `… | grep -q` inside a script that
+          # sets pipefail is the same bug waiting for a long enough producer.
+          hits=0
+          for f in bin/*.sh adopt.d/*.sh scaffold/pre-commit; do
+            [ -e "$f" ] || continue
+            grep -q '^set -.*pipefail' "$f" || continue
+            while IFS= read -r line; do
+              case "$line" in \#*) continue;; esac
+              printf '  offending: %s: %s\n' "$f" "$line"; hits=$((hits + 1))
+            done < <(grep -hE '\| *grep -q' "$f" | sed 's/^[[:space:]]*//')
+          done
+          if [ "$hits" -eq 0 ]; then echo "  ok   no pipe-into-grep -q lookup remains in a pipefail script"
+          else echo "  FAIL $hits pipe-into-grep -q lookup(s) remain — same defect, different call site"; fail=1; fi
+          exit "$fail"
+
       - name: Link-integrity gate behaviour
         run: |
           # The gate's value is entirely in WHICH links it errors on, so pin both

@@ -167,8 +167,15 @@ near_miss() {
   '
 }
 
-is_external() { printf '%s\n' "$EXTERNAL" | grep -qxF "$1"; }
-has_slug()    { printf '%s\n' "$SLUGS"    | grep -qxF "$1"; }
+# A HERE-STRING, never `printf … | grep -q`. Under `set -o pipefail` the pipe form reports
+# FAILURE exactly when the lookup SUCCEEDS on a long list: `grep -q` exits at the first
+# match and closes the read end, the writer takes EPIPE, and pipefail promotes that to the
+# pipeline's status — so a page that exists reads as missing. It needs the writer to still
+# be writing, so it fires once the list outgrows the pipe buffer (~64 KB) and not before:
+# one platform stayed clean while a Linux runner reported 40+ false dead links across a
+# whole vault, on the same tree. A here-string has no reader to close early.
+is_external() { grep -qxF -- "$1" <<<"$EXTERNAL"; }
+has_slug()    { grep -qxF -- "$1" <<<"$SLUGS"; }
 
 errors=0 warnings=0 pages=0
 for d in "${NODE_DIRS[@]}"; do

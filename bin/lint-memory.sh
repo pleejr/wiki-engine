@@ -79,7 +79,10 @@ INDEX="$WIKI/index.md"
 # (basename without .md, excluding a leftover 1.x engine/ checkout, git, obsidian, and .rag dirs)
 SLUGS="$(vault_pages "$WIKI" | sed -e 's|.*/||' -e 's|\.md$||' | LC_ALL=C sort -u)"
 
-has_slug() { printf '%s\n' "$SLUGS" | grep -qxF "$1"; }
+# A here-string, not `printf … | grep -q`: under pipefail that shape reports failure when
+# the match is found early on a long list (the writer takes EPIPE), so a page that exists
+# reads as missing. See the same pair in bin/lint-links.sh.
+has_slug() { grep -qxF -- "$1" <<<"$SLUGS"; }
 
 # extract a single-line frontmatter value (between the first two --- fences)
 fm_get() {
@@ -152,7 +155,7 @@ for f in "${notes[@]}"; do
 
   # valid type
   typ="$(fm_get "$f" type)"
-  if [ -n "$typ" ] && ! printf '%s' " $TYPES " | grep -q " $typ "; then
+  if [ -n "$typ" ] && ! grep -qF -- " $typ " <<<" $TYPES "; then
     err "type '$typ' not in: $TYPES"
   fi
 

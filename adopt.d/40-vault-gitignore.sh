@@ -65,7 +65,7 @@ while IFS= read -r l || [ -n "$l" ]; do
     '#'*) pending="$pending$l"$'\n'; continue ;;
   esac
   entry="${l%"${l##*[![:space:]]}"}"
-  if ! printf '%s' "$have" | grep -qxF "$(norm "$entry")"; then
+  if ! grep -qxF -- "$(norm "$entry")" <<<"$have"; then
     # carry the comment across too: the reason an entry exists is the part a reader
     # needs, and .wiki-gates.local's comment IS its safety rationale
     add="$add"$'\n'"$pending$entry"$'\n'

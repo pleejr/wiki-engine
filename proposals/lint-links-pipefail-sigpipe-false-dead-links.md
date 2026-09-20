@@ -1,7 +1,8 @@
 ---
 slug: lint-links-pipefail-sigpipe-false-dead-links
-outcome: open
+outcome: accepted
 received: 2026-09-19
+reason: "Reproduced exactly as reported, and fixed as the CLASS rather than the call site: every `… | grep -q` inside a pipefail script is the same defect waiting for a long enough producer. The reporter's suggested here-string was taken; a process substitution covers the sites whose producer is a command. One of those, lint-docs.sh's missing-script check, failed OPEN — grep exited at the first finding, the loop took EPIPE and `&& fail=1` never ran, so two missing scripts could report as none."
 ---
 
 HANDOFF — engine defect report

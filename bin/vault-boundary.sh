@@ -42,7 +42,7 @@ while IFS= read -r line; do
   # strip leading space and markdown emphasis/backticks, then take the first word
   after="$(printf '%s' "$after" | sed -E 's/^[[:space:]`*_]+//')"
   tok="${after%%[![:alnum:]-]*}"
-  if printf '%s' "$tok" | grep -qE '^[a-z][a-z0-9-]*$'; then
+  if grep -qE -- '^[a-z][a-z0-9-]*$' <<<"$tok"; then
     printf '%s\n' "$tok"; exit 0
   fi
 done < "$CM"

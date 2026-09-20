@@ -58,7 +58,7 @@ fi
 
 # Decide: is there a foreign statusLine we must not clobber?
 existing_cmd="$(printf '%s' "$current" | jq -r '.statusLine.command // empty' 2>/dev/null)"
-if [ -n "$existing_cmd" ] && ! printf '%s' "$existing_cmd" | grep -qF "$MARKER"; then
+if [ -n "$existing_cmd" ] && ! grep -qF -- "$MARKER" <<<"$existing_cmd"; then
   # Someone else's statusLine — respect it, do nothing. But say what the alternative IS.
   # Silence here made the refusal a dead end rather than a fork in the road: every element
   # this engine ships to a status line was permanently unreachable for such a vault, and

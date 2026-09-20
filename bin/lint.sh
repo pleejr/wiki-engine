@@ -273,7 +273,7 @@ if [ -d "$WIKI/repos" ]; then
     [ -f "$f" ] || continue
     r="$(awk '/^[[:space:]]*-?[[:space:]]*ref:/{sub(/^[^:]*:[[:space:]]*/,""); gsub(/[[:space:]"'"'"'`]/,""); print; exit}' "$f")"
     [ -n "$r" ] || continue
-    if printf '%s' "$r" | grep -qE -- '-[0-9]+-g[0-9a-f]{7,}$'; then
+    if grep -qE -- '-[0-9]+-g[0-9a-f]{7,}$' <<<"$r"; then
       printf '  ✗ %s — ref: %s is a git-describe string, not a tag\n' "${f#$WIKI/}" "$r"
       printf '      Record the base tag (%s); the commit offset is already in sha:.\n' \
         "$(printf '%s' "$r" | sed -E 's/-[0-9]+-g[0-9a-f]{7,}$//')"
