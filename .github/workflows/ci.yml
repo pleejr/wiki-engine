@@ -3166,6 +3166,14 @@ jobs:
           # headings and bullets are skipped in favour of the first prose line
           got="$(printf '### Added\n- a bullet\nreal prose here.\n' | ./bin/release-title.sh)"
           eq "headings and bullets are skipped" "$got" "real prose here"
+          # ...but a paragraph OPENING in bold is prose, not a bullet. v2.0.0's section starts
+          # `**Breaking.** The plugin is…`, and reading that as a bullet published a title taken
+          # from a sentence four subsections down.
+          got="$(printf '**Breaking.** The plugin is the only delivery. More prose.\n\n### Removed\n- a bullet\n' | ./bin/release-title.sh)"
+          eq "a bold paragraph opener is prose" "$got" "Breaking. The plugin is the only delivery"
+          # a real bullet, bold or not, is still skipped
+          got="$(printf '### Added\n- **bold bullet** text.\nreal prose here.\n' | ./bin/release-title.sh)"
+          eq "a bold bullet is still skipped" "$got" "real prose here"
           # long clause degrades to a word boundary + ellipsis, never a mid-word slice
           got="$(t 'Minor — aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll mmmm nnnn oooo pppp qqqq')"
           case "$got" in *…) echo "  ok   a long clause ends in an ellipsis" ;; *) echo "  FAIL no ellipsis: [$got]"; fail=1 ;; esac

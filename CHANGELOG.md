@@ -4,6 +4,11 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Fixed
+- **A release section opening in bold took its title from somewhere else.** `release-title.sh` skipped any line starting with `*` as a bullet, so `**Breaking.** The plugin is the only delivery…` was passed over and v2.0.0's GitHub Release was titled from a sentence four subsections down (corrected by hand). A bullet is now `-` or `*` followed by whitespace. Third defect in this deriver, so CI carries the bold-opener case and a control that a bold BULLET is still skipped.
+
 ## [2.0.0] — 2026-09-20
 
 **Breaking.** The plugin is the only delivery. The `engine/` submodule path, the settings.json hooks 1.x adoption wired, and the skill symlinks are gone. Migrate each 1.x vault with "Dropping the vault's submodule" below, **after** every machine that uses it runs the plugin.
