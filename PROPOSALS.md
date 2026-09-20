@@ -46,10 +46,10 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `bump-pinned-huggingface-hub-1-28-0` | shipped | v1.73.1 |
 | `bump-pinned-huggingface-hub-1-29-0` | shipped | v1.73.4 |
 | `bump-pinned-huggingface-hub-1-30-0` | shipped | derived |
-| `bump-pinned-huggingface-hub-1-32-0` | open | received 2026-09-20 |
-| `bump-pinned-numpy-2-5-3` | open | received 2026-09-20 |
+| `bump-pinned-huggingface-hub-1-32-0` | shipped | derived |
+| `bump-pinned-numpy-2-5-3` | shipped | derived |
 | `bump-pinned-onnxruntime-1-29-0` | shipped | v1.73.1 |
-| `bump-pinned-onnxruntime-1-30-0` | open | received 2026-09-20 |
+| `bump-pinned-onnxruntime-1-30-0` | shipped | derived |
 | `bump-pinned-tokenizers-0-23-2` | shipped | derived |
 | `canonical-commit-refusal-strands-staged-work-and-names-no-way-to-carry-it` | shipped | v1.73.2 |
 | `capture-scales-with-harness-fanout` | shipped | v1.65.0 |

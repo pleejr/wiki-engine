@@ -10,15 +10,21 @@
 # fallback:
 #   RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M
 #
-# An onnxruntime bump can perturb embeddings WITHOUT changing their dimension: its
-# kernels differ in the last few float digits, so a store embedded under one release
-# and queried under the next mixes two numerically-different embedders in one
-# similarity space. Measured at 1.28.0 -> 1.29.0: cosine 0.9999997, max component
-# delta 1.5e-04, identical on 3.12/3.13/3.14 — negligible, and no reindex implied at
-# that magnitude. Check it when bumping this pin rather than assuming dimension is
-# the whole contract.
+# An onnxruntime bump perturbs embeddings WITHOUT changing their dimension: its kernels
+# differ in the last few float digits, so a store embedded under one release and queried
+# under the next mixes two numerically-different embedders in one similarity space.
+# EVERY minor step measured so far lands at the same order — 1.28.0 -> 1.29.0: cosine
+# 0.9999997, max component delta 1.5e-04; 1.29.0 -> 1.30.0: cosine 0.9999997, max
+# component delta 1.25e-04 — identical on 3.12/3.13/3.14 both times, so it is a
+# deterministic version step rather than per-machine noise. Treat the drift as
+# CUMULATIVE: a store spanning several onnxruntime generations mixes more than two
+# embedders, and the figure to reason about is the distance from the release the store
+# was built under, not from the previous pin. At ~1e-04 per step no reindex is implied,
+# and nothing has reordered retrieval; the point is to measure it each time rather than
+# to assume dimension is the whole contract. The other pins here are numerically inert:
+# with only numpy or only huggingface_hub moved the vectors are bit-identical.
 fastembed==0.8.0
-onnxruntime==1.29.0
-numpy==2.5.2
+onnxruntime==1.30.0
+numpy==2.5.3
 tokenizers==0.23.2
-huggingface_hub==1.30.0
+huggingface_hub==1.32.0
