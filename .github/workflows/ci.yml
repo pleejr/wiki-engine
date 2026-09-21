@@ -277,6 +277,69 @@ jobs:
 
           exit "$fail"
 
+      - name: The always-on rate-limit segment reports every window, and leaves rl alone
+        run: |
+          # `rl` answers "am I about to hit the wall?" and is gated at 80% so it only appears
+          # when actionable. `rl-all` answers the other question — "how much have I spent, and
+          # do I start the long task now?" — which needs the number BEFORE it is a problem and
+          # needs the 7-day window. It is a second NAME, not a flag, so `rl` must not move.
+          fail=0
+          RLALL_CFG="$RUNNER_TEMP/rlall-cfg"; rm -rf "$RLALL_CFG"; mkdir -p "$RLALL_CFG"
+          export CLAUDE_CONFIG_DIR="$RLALL_CFG"
+          BASE="$RUNNER_TEMP/statusline-base.sh"
+          git show "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)":bin/statusline.sh > "$BASE" 2>/dev/null; chmod +x "$BASE"
+          win() { printf '"%s":{"used_percentage":%s,"resets_at":1738425600}' "$1" "$2"; }
+          all="{\"rate_limits\":{$(win five_hour 42.7),$(win seven_day 18),$(win spend_limit 104)}}"
+          ra() { printf '%s' "$1" | NO_COLOR=1 ./bin/statusline.sh --segment rl-all; }
+
+          ./bin/statusline.sh --segments | grep -qx 'rl-all' \
+            && echo "  ok   --segments lists rl-all" \
+            || { echo "  FAIL --segments does not list rl-all"; fail=1; }
+
+          o="$(ra "$all")"
+          [ "$o" = "5h 42% 7d 18% spend 104%" ] \
+            && echo "  ok   every window the host reports is printed, truncated" \
+            || { echo "  FAIL all-windows output: '$o'"; fail=1; }
+          o="$(ra "{\"rate_limits\":{$(win seven_day 18)}}")"
+          [ "$o" = "7d 18%" ] \
+            && echo "  ok   a window the host omits is omitted" \
+            || { echo "  FAIL partial output: '$o'"; fail=1; }
+
+          for bad in '{}' '{"rate_limits":{}}' '{"rate_limits":{"five_hour":{"used_percentage":null}}}' \
+                     '{"rate_limits":{"seven_day":{"used_percentage":"abc"}}}' 'not json' ''; do
+            o="$(printf '%s' "$bad" | ./bin/statusline.sh --segment rl-all)"; rc=$?
+            [ "$rc" = "0" ] && [ -z "$o" ] \
+              || { echo "  FAIL rl-all misbehaved on: '$bad' (rc=$rc out=$o)"; fail=1; }
+          done
+          echo "  ok   no usable window yields silence and exit 0"
+
+          # the context gauge's bands, truncated: 84.9 must not escalate
+          band() { printf '{"rate_limits":{"seven_day":{"used_percentage":%s}}}' "$1" | ./bin/statusline.sh --segment rl-all | cat -v; }
+          for c in '69.9:92' '70:33' '84.9:33' '85:31' '104:31'; do
+            pct="${c%%:*}"; sgr="${c#*:}"
+            band "$pct" | grep -q "\^\[\[1m\^\[\[${sgr}m" \
+              && echo "  ok   $pct% is bold SGR $sgr" \
+              || { echo "  FAIL $pct% should be bold SGR $sgr: $(band "$pct")"; fail=1; }
+          done
+
+          printf '%s' "$all" | NO_COLOR=1 ./bin/statusline.sh --segment rl-all | grep -q $'\033' \
+            && { echo "  FAIL rl-all emits colour under NO_COLOR"; fail=1; } \
+            || echo "  ok   NO_COLOR is honoured"
+
+          # `rl` and the default row are character-identical to the previous release
+          for p in 79 81 95.5; do
+            j="{\"rate_limits\":{$(win five_hour "$p"),$(win seven_day 50)}}"
+            a="$(printf '%s' "$j" | ./bin/statusline.sh --segment rl)"; b="$(printf '%s' "$j" | "$BASE" --segment rl)"
+            [ "$a" = "$b" ] || { echo "  FAIL rl changed at $p%"; printf '%s\n%s\n' "$a" "$b" | cat -v; fail=1; }
+          done
+          echo "  ok   rl is byte-identical to the previous release"
+          j="{\"workspace\":{\"current_dir\":\"/w\"},\"model\":{\"display_name\":\"M\"},\"context_window\":{\"used_percentage\":40},\"rate_limits\":{$(win five_hour 81),$(win seven_day 50)}}"
+          [ "$(printf '%s' "$j" | ./bin/statusline.sh)" = "$(printf '%s' "$j" | "$BASE")" ] \
+            && echo "  ok   the default row does not gain rl-all" \
+            || { echo "  FAIL the default row changed"; fail=1; }
+
+          exit "$fail"
+
       - name: Engine docs are soft-wrapped
         run: |
           # proposals/ is EXCLUDED: those files are consumer-authored payloads, not engine

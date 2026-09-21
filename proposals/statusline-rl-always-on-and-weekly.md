@@ -1,7 +1,8 @@
 ---
 slug: statusline-rl-always-on-and-weekly
-outcome: open
+outcome: accepted
 received: 2026-09-21
+reason: "accepted as proposed — a second segment name, `rl-all`, listed by `--segments`; `rl` untouched and CI asserts it byte-identical to the previous release for the same payloads, as it does the default row, which does not gain the new segment. Field names checked against the host's status-line reference before building: `rate_limits.five_hour`, `.seven_day` and `.spend_limit`, each independently absent, and the spend limit can exceed 100% — it stays red. One implementation of the bands: `_band` now serves both the context gauge and `rl-all`, so escalation cannot drift between them. `rl` keeps its own fixed amber because it is gated at 80% and byte-identity was the stated criterion. The one detail the proposal left open, the separator between windows inside the fragment, is a single space; a row owner separates segments, not windows."
 ---
 
 HANDOFF — engine improvement proposal

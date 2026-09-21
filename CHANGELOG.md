@@ -4,6 +4,20 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.2.0] — 2026-09-21
+
+Minor — the status line can report subscription usage before it is a problem.
+
+### Added
+- **`statusline.sh --segment rl-all`: every rate-limit window, always on.** `rl` answers "am I about to hit the wall?" and is gated at 80%, so it says nothing while there is still a choice to make; it also reads only the 5-hour window. The other question — "how much have I spent, and do I start the long task now or after the reset?" — needs the figure before it is a problem and needs the 7-day window, the one that constrains a heavy week. The segments contract let a foreign row style a segment but never un-gate its silence, so the only way to get that figure was to hand-roll it in the local row. `rl-all` prints `5h N%`, `7d N%` and a gateway `spend N%` for each window the host reports and nothing for one it omits, in the context gauge's bands (calm below 70%, amber at 70%, red at 85%), truncated so 84.9% never escalates; the spend limit can exceed 100% and stays red. Listed by `--segments`; not in the default row.
+
+### Changed
+- **The context gauge's bands live in one function.** `_band` serves both `ctx` and `rl-all`, so escalation means the same thing across the row. `rl` is untouched.
+
+CI asserts every window, a partial payload, silence and exit 0 on six empty or malformed inputs, each band edge including 84.9 and 104, NO_COLOR, and that `rl` and the default row are character-identical to the previous release. Red against 2.1.1 on eight of twelve.
+
+Proposal: statusline-rl-always-on-and-weekly
+
 ## [2.1.1] — 2026-09-21
 
 Patch — the update remedy was a dead end on a directory-marketplace machine.
