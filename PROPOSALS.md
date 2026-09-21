@@ -101,6 +101,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `skills-descriptions-exceed-router-cut` | shipped | derived |
 | `skills-hardcode-boundary-value` | shipped | derived |
 | `soft-wrap-lint-covers-the-ignored-raw-sessions-buffer` | shipped | derived |
+| `statusline-activity-segment` | open | received 2026-09-21 |
 | `statusline-composable-segments` | shipped | derived |
 | `statusline-ctx-healthy-band-bold-green` | shipped | derived |
 | `statusline-rl-always-on-and-weekly` | open | received 2026-09-21 |
