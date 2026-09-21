@@ -1900,6 +1900,84 @@ jobs:
           if ! printf '%s' "$out" | grep -q 'is released'; then ck 0 "a release ahead of the remote is silent"; else ck 1 "nudged backwards: $out"; fi
           exit "$fail"
 
+      - name: The update remedy names the marketplace that actually gates this machine
+        run: |
+          # `claude plugin update` installs whatever the machine's marketplace advertises, and a
+          # DIRECTORY marketplace advertises whatever a local clone says. On such a machine the
+          # command the engine printed answers "already at the latest version" for as many
+          # releases as ship, while doctor.sh — which asks the REMOTE — reports the new one.
+          # Both true, about different sources, with nothing saying so. Observed on a consumer
+          # machine within minutes of the v2.1.0 nudge shipping: the nudge fired every session
+          # and pointed at a command that could not work there.
+          # Five scripts printed that line; they now render engine_update_remedy, and the last
+          # assertion here is the class gate that keeps a sixth from appearing.
+          T="$RUNNER_TEMP/remedy2"; rm -rf "$T"; mkdir -p "$T"
+          E="$T/engine"; R="$T/remote.git"; CLONE="$T/pleejr-wiki-engine"
+          fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          rsync -a --exclude .git "$GITHUB_WORKSPACE/" "$E/"
+          # A remote carrying a release newer than what the fixture engine claims to be, so every
+          # path below actually reaches the remedy line rather than "up to date".
+          git init -q --bare "$R"
+          P="$T/w"; git init -q "$P"; git -C "$P" config user.email ci@example.invalid; git -C "$P" config user.name ci
+          : > "$P/f"; git -C "$P" add f; git -C "$P" commit -qm seed
+          git -C "$P" tag -a v9.9.0 -m r; git -C "$P" remote add origin "$R"; git -C "$P" push -q origin HEAD --tags
+          RMIN="$T/minor.git"; git init -q --bare "$RMIN"
+          Q="$T/wmin"; git init -q "$Q"; git -C "$Q" config user.email ci@example.invalid; git -C "$Q" config user.name ci
+          : > "$Q/f"; git -C "$Q" add f; git -C "$Q" commit -qm seed
+          git -C "$Q" tag -a v2.9.0 -m r; git -C "$Q" remote add origin "$RMIN"; git -C "$Q" push -q origin HEAD --tags
+          python3 - "$E/.claude-plugin/plugin.json" "$R" <<'PY'
+          import json, sys
+          p, repo = sys.argv[1], sys.argv[2]
+          d = json.load(open(p)); d["version"] = "2.0.2"; d["repository"] = repo
+          json.dump(d, open(p, "w"), indent=2)
+          PY
+          mkreg() { # <cfgdir> <source-json>
+            mkdir -p "$1/plugins"
+            printf '{ "wiki-engine": { "source": %s, "installLocation": "%s", "lastUpdated": "2026-09-21T00:00:00.000Z" } }\n' "$2" "$CLONE" > "$1/plugins/known_marketplaces.json"
+            printf '{ "plugins": { "wiki-engine@wiki-engine": [ { "scope": "user", "version": "2.0.2" } ] } }\n' > "$1/plugins/installed_plugins.json"
+          }
+          mkreg "$T/dircfg" "{ \"source\": \"directory\", \"path\": \"$CLONE\" }"
+          mkreg "$T/ghcfg"  '{ "source": "github", "repo": "pleejr/wiki-engine" }'
+          export CLAUDE_PLUGIN_ROOT="$E"
+
+          # 1 — DIRECTORY marketplace: the remedy must lead with the pull that makes the update
+          # command mean anything, and name the marketplace refresh between them. Without this the
+          # printed command answers "already at the latest version" for as many releases as ship.
+          out="$(CLAUDE_CONFIG_DIR="$T/dircfg" "$E/bin/engine-version.sh" 2>&1)"
+          if printf '%s' "$out" | grep -qF "git -C $CLONE pull --ff-only"; then ck 0 "a directory marketplace's remedy pulls the clone first"; else ck 1 "no pull in the remedy: $out"; fi
+          if printf '%s' "$out" | grep -qF "claude plugin marketplace update wiki-engine"; then ck 0 "and refreshes the marketplace from that clone"; else ck 1 "no marketplace refresh: $out"; fi
+          if printf '%s' "$out" | grep -qF "claude plugin update wiki-engine@wiki-engine"; then ck 0 "and still ends with the install"; else ck 1 "install step lost: $out"; fi
+
+          # 2 — CONTROL. A github marketplace is advanced by the plain command; adding a pull there
+          # would send the reader into a clone that does not exist.
+          out="$(CLAUDE_CONFIG_DIR="$T/ghcfg" "$E/bin/engine-version.sh" 2>&1)"
+          if printf '%s' "$out" | grep -qF "claude plugin update wiki-engine@wiki-engine" && ! printf '%s' "$out" | grep -q 'pull --ff-only'; then ck 0 "a github marketplace keeps the plain remedy"; else ck 1 "github remedy wrong: $out"; fi
+
+          # 3 — CONTROL, fail-open. No host registry at all (a fresh machine, or a host that keeps
+          # it somewhere else) must still print a usable line and must not error.
+          out="$(CLAUDE_CONFIG_DIR="$T/nothing-here" "$E/bin/engine-version.sh" 2>&1)"; rc=$?
+          if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "claude plugin update wiki-engine@wiki-engine" && ! printf '%s' "$out" | grep -qi 'traceback\|no such file'; then ck 0 "no registry falls back to the plain remedy, quietly"; else ck 1 "fail-open broken (rc=$rc): $out"; fi
+
+          # 4 — the SESSION BANNER carries the same line, because that is where it is read most.
+          V="$T/vault"; mkdir -p "$V"; git -C "$V" init -q; printf 'v2.0.2\n' > "$V/.engine-version"
+          # Same-MAJOR, because the MAJOR branch withholds the one-line command by design and so
+          # could never show whether the remedy is right.
+          python3 - "$E/.claude-plugin/plugin.json" "$RMIN" <<'PYR'
+          import json, sys
+          p, repo = sys.argv[1], sys.argv[2]
+          d = json.load(open(p)); d["repository"] = repo
+          json.dump(d, open(p, "w"), indent=2)
+          PYR
+          rm -f "$T/dircfg/.wiki-engine-update"
+          out="$(CLAUDE_CONFIG_DIR="$T/dircfg" WIKI_PATH="$V" "$E/bin/session-preflight.sh" 2>&1)"
+          if printf '%s' "$out" | grep -qF "git -C $CLONE pull --ff-only"; then ck 0 "the session banner's nudge carries the directory remedy"; else ck 1 "banner nudge still names the dead end: $out"; fi
+
+          # 5 — CLASS GATE. No shipped script may hardcode the bare command again; there were five
+          # such sites and one of them was wrong on every directory-marketplace machine.
+          hits="$(grep -rn 'claude plugin update wiki-engine@' "$GITHUB_WORKSPACE/bin" "$GITHUB_WORKSPACE/adopt.d" 2>/dev/null | grep -v '/plugin-lib\.sh:' | grep -v '^[^:]*:[0-9]*: *#' || true)"
+          if [ -z "$hits" ]; then ck 0 "no shipped script hardcodes the update command"; else ck 1 "hardcoded remedy reintroduced: $hits"; fi
+          exit "$fail"
+
       - name: CLAUDE_CONFIG_DIR moves the settings every wiring tool writes
         run: |
           # With CLAUDE_CONFIG_DIR set, Claude Code reads $CLAUDE_CONFIG_DIR/settings.json, while

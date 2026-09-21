@@ -84,5 +84,5 @@ if [ "$level" = "MAJOR" ]; then
 else
   echo "engine: running $running, latest $latest_tag — $level update; safe to adopt"
 fi
-echo "  to update: claude plugin update wiki-engine@wiki-engine (restart), then update.sh --wiki <vault>"
+echo "  to update: $(engine_update_remedy) (restart), then update.sh --wiki <vault>"
 exit 1

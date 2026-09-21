@@ -17,6 +17,9 @@
 #   settings_legacy_engine_hooks  settings.json hook commands a 1.x adoption wired, which
 #                             point into a vault's `engine/` and fail once it is gone.
 #   engine_version_lt         whether release A sorts before release B (`v`-prefixed or not).
+#   engine_marketplace_source which marketplace gates this plugin's updates, and whether it
+#                             is a DIRECTORY source (a local clone that must be pulled first).
+#   engine_update_remedy      the one command that actually advances this machine.
 #   engine_bump_level         how a running release relates to a latest one: same / ahead /
 #                             MAJOR / minor / patch. The single definition both the
 #                             freshness report and the session banner read.
@@ -62,6 +65,59 @@ settings_legacy_engine_hooks() { # [settings.json]
   grep -oE '"command"[[:space:]]*:[[:space:]]*"[^"]*engine/bin/(session-boot|rag-capture|session-preflight|session-banner)\.sh[^"]*"' "$s" 2>/dev/null \
     | sed -E 's/^"command"[[:space:]]*:[[:space:]]*"//; s/"$//' \
     | grep -v 'plugins/' || true
+}
+
+# WHICH MARKETPLACE GATES THIS PLUGIN, and how it is advanced. `claude plugin update`
+# installs whatever the machine's marketplace advertises, and a DIRECTORY marketplace
+# advertises whatever a local clone says — so on such a machine the update command answers
+# "already at the latest version" however many releases have shipped, and every remedy the
+# engine printed was a dead end. Observed on a second machine: `doctor.sh` reported
+# `latest v2.1.0` (it asks the remote) while the update command reported 2.0.2 (it asks the
+# clone); both true, about different sources, with nothing saying so.
+#
+# Echoes: <marketplace-name><TAB><source-type><TAB><path>  (path empty unless directory).
+# FAIL-OPEN and silent — no host metadata, no python3, unreadable JSON: prints nothing and
+# the caller falls back to the plain remedy. This reads the host's own plugin registry,
+# which is why it is guarded rather than trusted.
+engine_marketplace_source() {
+  local cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" name
+  name="$(sed -nE 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' \
+         "${CLAUDE_PLUGIN_ROOT:-}/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
+  [ -n "$name" ] || name=wiki-engine
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$cfg" "$name" <<'PYMP' 2>/dev/null || true
+import json, os, sys
+cfg, plugin = sys.argv[1], sys.argv[2]
+try:
+    installed = json.load(open(os.path.join(cfg, "installed_plugins.json")))["plugins"]
+    known = json.load(open(os.path.join(cfg, "known_marketplaces.json")))
+except Exception:
+    sys.exit(0)
+# The plugin id is "<plugin>@<marketplace>"; the marketplace half is what gates updates.
+mp = next((k.split("@", 1)[1] for k in installed if k.split("@", 1)[0] == plugin and "@" in k), None)
+if not mp or mp not in known:
+    sys.exit(0)
+src = known[mp].get("source") or {}
+kind = src.get("source") or ""
+path = src.get("path") or (known[mp].get("installLocation") if kind == "directory" else "") or ""
+print("%s\t%s\t%s" % (mp, kind, path if kind == "directory" else ""))
+PYMP
+}
+
+# The ONE remedy string, so the five places that tell someone how to update cannot drift
+# into four right answers and one wrong one. On a directory marketplace it leads with the
+# pull that makes the update command mean anything; everywhere else it is the plain
+# command, exactly as before.
+engine_update_remedy() {
+  local line mp kind path
+  line="$(engine_marketplace_source)"
+  mp="$(printf '%s' "$line" | cut -f1)"; kind="$(printf '%s' "$line" | cut -f2)"; path="$(printf '%s' "$line" | cut -f3)"
+  [ -n "$mp" ] || mp=wiki-engine
+  if [ "$kind" = "directory" ] && [ -n "$path" ]; then
+    printf 'git -C %s pull --ff-only && claude plugin marketplace update %s && claude plugin update wiki-engine@%s\n' "$path" "$mp" "$mp"
+  else
+    printf 'claude plugin update wiki-engine@%s\n' "$mp"
+  fi
 }
 
 # The ONE definition of how two releases relate. `engine-version.sh` reports it and

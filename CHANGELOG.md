@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.1.1] — 2026-09-21
+
+Patch — the update remedy was a dead end on a directory-marketplace machine.
+
+### Fixed
+- **Every "run `claude plugin update wiki-engine@wiki-engine`" was wrong on a machine whose marketplace is a DIRECTORY source.** That command installs whatever the machine's marketplace advertises, and a directory marketplace advertises whatever a local clone says — so it answers `already at the latest version (2.0.2)` for as many releases as ship, while `doctor.sh` (which asks the remote with `git ls-remote`) reports the new one. Both true, about different sources, with nothing saying so. Found on a consumer machine minutes after v2.1.0 shipped: the new session nudge fired correctly and pointed at a command that could not work there. Pre-existing in `engine-version.sh` since 2.0.0; the nudge only made it per-session.
+- **One remedy, rendered from the host's own plugin registry.** `engine_update_remedy` (`bin/plugin-lib.sh`) reads `installed_plugins.json` for the marketplace this plugin came from and `known_marketplaces.json` for how that marketplace is advanced. On a directory source it prints `git -C <clone> pull --ff-only && claude plugin marketplace update <name> && claude plugin update wiki-engine@<name>`; everywhere else the plain command, unchanged. **Fail-open and silent** — no registry, no `python3`, unreadable JSON: the plain command, no error. The five scripts that printed the line by hand (`engine-version.sh`, `session-preflight.sh` ×2, `update.sh`, `engine-proposal.sh`) now render it, and the `update` skill hands over the line `doctor` printed instead of restating one from memory.
+
+CI pins the directory form, both controls (a github marketplace keeps the plain command; no registry falls back quietly), that the session banner carries it, and a **class gate** that fails the build if any script under `bin/` or `adopt.d/` hardcodes the command again — five sites is how one of them came to be wrong. Red against 2.1.0 on four of seven.
+
 ## [2.1.0] — 2026-09-21
 
 Minor — the session banner tells you a newer release exists again.

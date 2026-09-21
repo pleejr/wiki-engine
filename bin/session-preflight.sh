@@ -76,7 +76,7 @@ elif [ -n "$req_ver" ] && [ "$req_ver" != "$run_ver" ]; then
     summary="${summary:+$summary · }engine MAJOR ${run_ver}≠${req_ver}"
   elif engine_version_lt "$run_ver" "$req_ver"; then
     echo "wiki-engine: ⚠ the vault requires $req_ver but the plugin is $run_ver — update the plugin"
-    action="${action}- wiki-engine: plugin $run_ver is older than the vault's .engine-version $req_ver. Offer to run: claude plugin update wiki-engine@wiki-engine (then restart).
+    action="${action}- wiki-engine: plugin $run_ver is older than the vault's .engine-version $req_ver. Offer to run: $(engine_update_remedy) (then restart).
 "
     summary="${summary:+$summary · }engine ${run_ver}<${req_ver}"
   else
@@ -120,7 +120,7 @@ if [ "${WIKI_ENGINE_UPDATE_CHECK:-1}" != "0" ]; then
         ;;
       minor|patch)
         echo "wiki-engine: ⚠ $upd_tag is released and this is $run_ver — update available"
-        action="${action}- wiki-engine: $upd_tag is available and $run_ver is running. Offer to run: claude plugin update wiki-engine@wiki-engine (then restart), followed by update.sh for the vault.
+        action="${action}- wiki-engine: $upd_tag is available and $run_ver is running. Offer to run: $(engine_update_remedy) (then restart), followed by update.sh for the vault.
 "
         summary="${summary:+$summary · }engine ${run_tag}→${upd_tag}"
         ;;

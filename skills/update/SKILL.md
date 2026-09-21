@@ -14,11 +14,7 @@ Converge the wiki-engine loop on this machine, low-friction and safe. The engine
 Run `"${CLAUDE_SKILL_DIR}"/../../bin/doctor.sh` — the running release vs the latest tag, RAG deps, embedding model. Reports only.
 
 ## 2. Offer the update (only if behind)
-If `doctor` shows a newer release, **ask the user** before updating. On confirmation, the plugin first — the user runs it, then restarts Claude Code so the new release loads:
-```sh
-claude plugin update wiki-engine@wiki-engine
-```
-Then, in the restarted session, record the release in the vault:
+If `doctor` shows a newer release, **ask the user** before updating. On confirmation, hand them **the command `doctor` printed on its `to update:` line, verbatim** — do not restate it from memory. It is not always `claude plugin update wiki-engine@wiki-engine`: when this machine's marketplace is a **directory** source, that command reads a local clone and answers *already at the latest version* however many releases have shipped, so the line leads with the `git pull` that makes it mean anything. Then they restart Claude Code so the new release loads, and in the restarted session record it in the vault:
 ```sh
 "${CLAUDE_SKILL_DIR}"/../../bin/update.sh
 ```
