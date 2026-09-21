@@ -380,7 +380,7 @@ do_status() {
         elif [[ "$(printf '%s\n%s\n' "$rel" "$pinned" | sort -V | tail -1)" == "$pinned" ]]; then
           printf '    SHIPPED in %s — you already have it (running %s). Safe to drop the block.\n' "$rel" "$pinned"
         else
-          printf '    SHIPPED in %s — NEWER than what you run (%s). Run: claude plugin update wiki-engine@wiki-engine\n' "$rel" "$pinned"
+          printf '    SHIPPED in %s — NEWER than what you run (%s). Run: %s\n' "$rel" "$pinned" "$(engine_update_remedy)"
         fi ;;
       *)
         printf '    unrecognised outcome "%s" — the ledger is newer than this tool; update the engine.\n' "${l_out[$idx]}" ;;

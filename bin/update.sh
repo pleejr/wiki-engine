@@ -66,7 +66,7 @@ if [ -n "$required" ] && [ "$(core_major "$latest")" != "$(core_major "$required
   exit 1
 fi
 if [ -n "$required" ] && engine_version_lt "$latest" "$required"; then
-  echo "update: the running engine $latest is older than the vault's $required — run: claude plugin update wiki-engine@wiki-engine" >&2
+  echo "update: the running engine $latest is older than the vault's $required — run: $(engine_update_remedy)" >&2
   exit 1
 fi
 
