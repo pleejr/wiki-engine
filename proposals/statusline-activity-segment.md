@@ -1,7 +1,8 @@
 ---
 slug: statusline-activity-segment
-outcome: open
+outcome: accepted
 received: 2026-09-21
+reason: "accepted as proposed, named `activity` (the slug's word; the proposal offered `work` or `activity`). The process-shape claim was checked on a live host before building: a tool command runs as `<shell> -c source …/shell-snapshots/snapshot-… && …`, a direct child of the client whose argv0 is `claude`, and a backgrounded one stays that child after its tool call returns — so the process table does see exactly the case the marker-file alternative misses. The client is found by walking UP from the segment's own process, never by name alone: a second session on the same machine was live during the check, and a by-name lookup would have counted its work. That walk also yields the ancestry to exclude, so the segment cannot count itself however the host spawns the status line. Degrades to silence when no `claude` ancestor exists (an install that runs the client under `node` gets silence, declared in the source) or no child matches the shape; CI proves the shape-mismatch control is silent under the same fake client that counts two tool-shaped shells. Frame state is one small file per session under the cache directory, pruned after a day by the next session's first render. Not added to the default row: it animates only with `refreshInterval`, which is the row owner's setting. Measured at about 49 ms per render on the intake machine."
 ---
 
 HANDOFF — engine improvement proposal

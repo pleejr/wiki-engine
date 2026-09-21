@@ -66,7 +66,7 @@ if [ -n "$existing_cmd" ] && ! grep -qF -- "$MARKER" <<<"$existing_cmd"; then
   # therefore you get none of this".
   printf 'statusLine: leaving your own in place (%s).\n' "$existing_cmd"
   printf '  To adopt one element without giving up your row, interpolate a segment:\n'
-  printf '    %s --segment ctx     (also: stale, rl, rl-all, model, dir; --segments lists them)\n' "${COMMAND%% *}"
+  printf '    %s --segment ctx     (also: stale, rl, rl-all, activity, model, dir; --segments lists them)\n' "${COMMAND%% *}"
   printf '  Segments print only their fragment, nothing when they have nothing to say, and\n'
   printf '  keep receiving threshold and format fixes with the pin — no copied code.\n'
   exit 0
