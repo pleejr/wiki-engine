@@ -31,6 +31,7 @@
 #   statusline.sh --segment ctx    < session-json     # just the context gauge
 #   statusline.sh --segment stale  < session-json     # just the version warning
 #   statusline.sh --segment rl-all < session-json     # every rate-limit window, always on
+#   statusline.sh --segment activity < session-json   # this session's shell work in flight
 #   statusline.sh --segments                          # list the available names
 #
 # The contract a consuming row can rely on:
@@ -63,7 +64,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$LIST" -eq 1 ]; then
-  printf 'dir\nmodel\nctx\nrl\nrl-all\nstale\n'
+  printf 'dir\nmodel\nctx\nrl\nrl-all\nactivity\nstale\n'
   exit 0
 fi
 
@@ -83,7 +84,7 @@ fi
 
 # --- session context from stdin JSON (dir + model + context usage), best-effort -------
 input=""; [ -t 0 ] || input="$(cat)"
-dir=""; model=""; ctx=""; ratelimit=""; rl5=""; rl7=""; rlspend=""
+dir=""; model=""; ctx=""; ratelimit=""; rl5=""; rl7=""; rlspend=""; sid=""
 if command -v jq >/dev/null 2>&1 && [ -n "$input" ]; then
   dir="$(printf '%s' "$input"  | jq -r '.workspace.current_dir // .cwd // empty' 2>/dev/null)"
   model="$(printf '%s' "$input" | jq -r '.model.display_name // empty' 2>/dev/null)"
@@ -95,6 +96,7 @@ if command -v jq >/dev/null 2>&1 && [ -n "$input" ]; then
   rl5="$ratelimit"
   rl7="$(printf '%s' "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null | cut -d. -f1)"
   rlspend="$(printf '%s' "$input" | jq -r '.rate_limits.spend_limit.used_percentage // empty' 2>/dev/null | cut -d. -f1)"
+  sid="$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null | tr -cd 'A-Za-z0-9._-')"
 fi
 
 # --- the segments ----------------------------------------------------------------------
@@ -171,6 +173,58 @@ seg_rl_all() {
   printf '%s' "$out"
 }
 
+# Shell work still in flight. The host's spinner runs only while a turn does; a backgrounded
+# command outlives its turn, so once the turn ends nothing on screen says the script is still
+# running. This reads the PROCESS TABLE rather than a marker file, which is what makes it
+# self-clearing: a finished task disappears with its process, with no hook to fire and nothing
+# a crash can leave behind. (A hook-maintained marker was the rejected alternative — a
+# backgrounded tool call returns at once, so the marker clears while the script still runs.)
+#
+# What is counted: children of THIS session's client — the nearest ancestor whose argv0 is
+# `claude`, so another session's work is never counted — that are shells run as
+# `<sh> -c ... shell-snapshots/snapshot-...`, which is how the host launches a tool command.
+# Our own ancestry is excluded, so the segment never counts itself.
+#
+# DECLARED FRAGILITY: that invocation shape is host-internal. If it changes, or the client is
+# not named `claude` (an install that runs under `node`, say), nothing matches and the segment
+# is SILENT — never a wrong count, which would be worse than no count.
+#
+# One spinner frame per render, stored per session. With `statusLine.refreshInterval` set to
+# 1 it animates at a frame a second; without it the frame is static and the count still true.
+# Not in the default row: animation depends on that refresh setting, which is the row owner's.
+ACTIVITY_FRAMES=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+seg_activity() {
+  command -v ps >/dev/null 2>&1 || return 0
+  local n
+  n="$(ps -A -o pid= -o ppid= -o args= 2>/dev/null | awk -v me="$$" '
+    { pid = $1; par[pid] = $2; cmd = $0
+      sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+/, "", cmd); line[pid] = cmd }
+    END {
+      p = me; client = ""
+      for (i = 0; i < 64 && p != "" && p > 1; i++) {
+        anc[p] = 1; split(line[p], w, " ")
+        if (w[1] ~ /(^|\/)claude$/) { client = p; break }
+        p = par[p]
+      }
+      if (client == "") exit
+      c = 0
+      for (q in par)
+        if (par[q] == client && !(q in anc) && line[q] ~ /^[^ ]*sh -c .*shell-snapshots\/snapshot-/) c++
+      print c
+    }')"
+  [ -n "$n" ] && [ "$n" -gt 0 ] 2>/dev/null || return 0
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/wiki-engine/activity" f i=0
+  f="$dir/${sid:-default}"
+  # a session's first render prunes frame files no render has touched in a day, so ended
+  # sessions do not accumulate
+  if [ -r "$f" ]; then i="$(head -c 8 "$f" 2>/dev/null | tr -cd 0-9)"
+  else find "$dir" -type f -mtime +1 -delete 2>/dev/null; fi
+  [ -n "$i" ] || i=0
+  i=$(( i % ${#ACTIVITY_FRAMES[@]} ))
+  { mkdir -p "$dir" && printf '%s\n' $(( (i + 1) % ${#ACTIVITY_FRAMES[@]} )) > "$f"; } 2>/dev/null
+  printf '%s%s %s%s' "$BOLD" "${ACTIVITY_FRAMES[$i]}" "$n" "$RESET"
+}
+
 # The staleness verdict, read from the preflight cache (may be empty/absent). A cache the
 # preflight has not refreshed in a week is IGNORED rather than shown: stale information
 # about staleness is worse than none. Bold, like everything else that carries a colour —
@@ -195,7 +249,7 @@ seg_stale() {
 
 if [ -n "$SEGMENT" ]; then
   case "$SEGMENT" in
-    dir|model|ctx|rl|rl-all|stale) out="$("seg_${SEGMENT//-/_}")"; [ -n "$out" ] && printf '%s\n' "$out" ;;
+    dir|model|ctx|rl|rl-all|activity|stale) out="$("seg_${SEGMENT//-/_}")"; [ -n "$out" ] && printf '%s\n' "$out" ;;
     *) printf 'statusline: no such segment "%s" — try: statusline.sh --segments\n' "$SEGMENT" >&2 ;;
   esac
   exit 0

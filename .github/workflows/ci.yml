@@ -340,6 +340,84 @@ jobs:
 
           exit "$fail"
 
+      - name: The activity segment counts this session's live shell work, and is silent otherwise
+        run: |
+          # A backgrounded command outlives the turn that launched it: the host's spinner
+          # stops and nothing on screen says the script is still running. `activity` reads the
+          # process table — this session's client process and its snapshot-sourcing shells —
+          # so a finished task disappears with its process, and no marker can go stale.
+          # The fixture is a real process tree: bash invoked as `claude` stands in for the
+          # client, and its children source a file under `shell-snapshots/`, as the host's do.
+          fail=0
+          T="$RUNNER_TEMP/activity"; rm -rf "$T"; mkdir -p "$T/shell-snapshots"
+          : > "$T/shell-snapshots/snapshot-bash-1.sh"
+          ln -s "$(command -v bash)" "$T/claude"   # a symlink: argv0 is what names the client
+          export XDG_CACHE_HOME="$T/cache"
+          SL="$PWD/bin/statusline.sh"; SNAP="$T/shell-snapshots/snapshot-bash-1.sh"
+          J='{"session_id":"s-one","workspace":{"current_dir":"/w"}}'
+          # tool-shaped shell: sources the snapshot, and `; true` keeps bash from exec-ing away
+          tool() { printf 'bash -c "source %s 2>/dev/null || true && %s; true" >/dev/null 2>&1 &' "$SNAP" "$1"; }
+          # run the segment under a fake client that has launched $1 (a shell snippet) first
+          under() { J="$J" SL="$SL" "$T/claude" -c "$1 sleep 0.3; printf '%s' \"\$J\" | NO_COLOR=1 \"\$SL\" --segment activity; r=\$?; kill \$(jobs -p) 2>/dev/null; exit \$r"; }
+
+          ./bin/statusline.sh --segments | grep -qx 'activity' \
+            && echo "  ok   --segments lists activity" \
+            || { echo "  FAIL --segments does not list activity"; fail=1; }
+
+          # double fork, so the ancestry really has no client — run by hand from inside a
+          # session, the plain call would inherit that session's `claude`
+          ( { sleep 0.3; printf '%s' "$J" | ./bin/statusline.sh --segment activity; echo "rc=$?"; } > "$T/orphan" 2>&1 & )
+          sleep 1; o="$(cat "$T/orphan")"
+          [ "$o" = "rc=0" ] \
+            && echo "  ok   no client process in the ancestry: silent, exit 0" \
+            || { echo "  FAIL outside a session: '$o'"; fail=1; }
+
+          o="$(under '')"; rc=$?
+          [ "$rc" = 0 ] && [ -z "$o" ] \
+            && echo "  ok   no live shell work: silent, exit 0" \
+            || { echo "  FAIL idle session: rc=$rc out='$o'"; fail=1; }
+
+          o="$(under "$(tool 'sleep 5') $(tool 'sleep 5')")"
+          case "$o" in
+            ?' 2') echo "  ok   two live shells: a frame and the count ($o)" ;;
+            *) echo "  FAIL two live shells printed '$o'"; fail=1 ;;
+          esac
+
+          # control: the same processes WITHOUT the snapshot shape must not count — this is
+          # the shape-change case, and it must degrade to silence, never a wrong number
+          o="$(under 'bash -c "sleep 5; true" >/dev/null 2>&1 & sleep 5 >/dev/null 2>&1 &')"
+          [ -z "$o" ] \
+            && echo "  ok   children not shaped like tool shells are not counted" \
+            || { echo "  FAIL counted non-tool children: '$o'"; fail=1; }
+
+          # the segment runs INSIDE a tool-shaped shell: its own ancestry must not count
+          o="$(J="$J" SL="$SL" SNAP="$SNAP" "$T/claude" -c "$(tool 'sleep 5') sleep 0.3; bash -c \"source \$SNAP 2>/dev/null || true && printf '%s' '\$J' | NO_COLOR=1 \$SL --segment activity; true\"; kill \$(jobs -p) 2>/dev/null")"
+          case "$o" in
+            ?' 1') echo "  ok   it never counts itself or its own ancestry ($o)" ;;
+            *) echo "  FAIL self-count: '$o'"; fail=1 ;;
+          esac
+
+          # frame advances per render, per session
+          a="$(under "$(tool 'sleep 5')")"; b="$(under "$(tool 'sleep 5')")"
+          [ -n "$a" ] && [ -n "$b" ] && [ "$a" != "$b" ] \
+            && echo "  ok   consecutive renders advance the frame ($a -> $b)" \
+            || { echo "  FAIL frame did not advance: '$a' -> '$b'"; fail=1; }
+
+          o="$(J="$J" SL="$SL" "$T/claude" -c "$(tool 'sleep 5') sleep 0.3; printf '%s' \"\$J\" | \"\$SL\" --segment activity; kill \$(jobs -p) 2>/dev/null" | cat -v)"
+          printf '%s' "$o" | grep -q '\^\[\[1m' \
+            && echo "  ok   bold when coloured" || { echo "  FAIL not bold: $o"; fail=1; }
+          printf '%s' "$(under "$(tool 'sleep 5')")" | grep -q $'\033' \
+            && { echo "  FAIL colour under NO_COLOR"; fail=1; } || echo "  ok   NO_COLOR is honoured"
+
+          # not in the default row: it animates only with refreshInterval, which is the row
+          # owner's choice to make
+          full="$(J="$J" SL="$SL" "$T/claude" -c "$(tool 'sleep 5') sleep 0.3; printf '%s' \"\$J\" | NO_COLOR=1 \"\$SL\"; kill \$(jobs -p) 2>/dev/null")"
+          [ "$full" = "/w" ] \
+            && echo "  ok   the default row does not gain activity" \
+            || { echo "  FAIL default row changed: '$full'"; fail=1; }
+
+          exit "$fail"
+
       - name: Engine docs are soft-wrapped
         run: |
           # proposals/ is EXCLUDED: those files are consumer-authored payloads, not engine

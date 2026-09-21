@@ -4,6 +4,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.3.0] — 2026-09-21
+
+Minor — the status line can show that a backgrounded script is still running.
+
+### Added
+- **`statusline.sh --segment activity`: this session's shell work in flight.** The host's spinner runs only while a turn does, and a backgrounded command outlives its turn — the tool call returns at once, the spinner stops, and nothing on screen says the script is still running. `activity` prints a spinner frame and the count of this session's live tool shells, and nothing when there are none. It reads the process table: children of the nearest ancestor whose argv0 is `claude` that run as `<shell> -c … shell-snapshots/snapshot-…`, minus its own ancestry. Walking up from itself is what keeps another session's work out of the count. A finished task disappears with its process, so there is no marker for a crash to strand. The frame advances once per render per session; set `statusLine.refreshInterval` to `1` to animate it. Not in the default row.
+- **It degrades to silence, never a wrong count.** The invocation shape is host-internal; if it changes, or the client is not named `claude`, nothing matches and the segment prints nothing.
+
+CI builds a real process tree — bash invoked as `claude`, children sourcing a `shell-snapshots/` file — and asserts silence outside a session and when idle, the count with two live shells, silence for the same children without the snapshot shape, that the segment run inside a tool shell does not count itself, that the frame advances, bold and NO_COLOR, and that the default row is unchanged. Red against 2.2.0 on six of ten.
+
+Proposal: statusline-activity-segment
+
 ## [2.2.0] — 2026-09-21
 
 Minor — the status line can report subscription usage before it is a problem.
