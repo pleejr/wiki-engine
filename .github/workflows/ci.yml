@@ -1808,6 +1808,98 @@ jobs:
           exit "$fail"
 
 
+      - name: The session banner nudges a newer release, once a day, and stops the moment it lands
+        run: |
+          # Until 2.0.0 this hook delegated to engine-version.sh and the banner said "update
+          # available". Plugin delivery removed that call along with the submodule and nothing
+          # replaced it, so a machine could sit releases behind with every surface green — found
+          # on a second machine still running 2.0.2 three releases later, its banner silent.
+          # The check is back on two rails, and the rails are what this step pins: the NETWORK
+          # lookup is rate-limited and cached, the COMPARISON is recomputed every session from
+          # the cached TAG. Caching a verdict instead would keep nagging for a day after the
+          # update landed, which is the constant-warning shape the engine already refuses.
+          T="$RUNNER_TEMP/nudge"; rm -rf "$T"; mkdir -p "$T"
+          E="$T/engine"; G="$T/cfg"; V="$T/vault"; R="$T/minor.git"; RMAJ="$T/major.git"
+          fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          rsync -a --exclude .git "$GITHUB_WORKSPACE/" "$E/"
+          mkdir -p "$G" "$V"; git -C "$V" init -q
+          # TWO remotes, because --latest-tag answers with the single highest tag: one carrying a
+          # same-MAJOR release and one carrying a MAJOR ahead. A single remote could only ever
+          # exercise whichever branch its newest tag falls in.
+          mk() { git init -q --bare "$1"; P="$T/w$$$2"; git init -q "$P"
+            git -C "$P" config user.email ci@example.invalid; git -C "$P" config user.name ci
+            : > "$P/f"; git -C "$P" add f; git -C "$P" commit -qm seed
+            git -C "$P" tag -a "$2" -m r; git -C "$P" remote add origin "$1"; git -C "$P" push -q origin HEAD --tags; }
+          mk "$R" v2.9.0
+          mk "$RMAJ" v9.9.0
+          setver() { python3 - "$E/.claude-plugin/plugin.json" "$1" "$2" <<'PY'
+          import json, sys
+          p, ver, repo = sys.argv[1], sys.argv[2], sys.argv[3]
+          d = json.load(open(p)); d["version"] = ver; d["repository"] = repo
+          json.dump(d, open(p, "w"), indent=2)
+          PY
+          }
+          export CLAUDE_CONFIG_DIR="$G" CLAUDE_PLUGIN_ROOT="$E"
+          UPD="$G/.wiki-engine-update"; STATUS="$G/.wiki-engine-status"
+          run() { printf 'v%s\n' "$1" > "$V/.engine-version"; WIKI_PATH="$V" "$E/bin/session-preflight.sh" 2>&1; }
+
+          # 1 — a newer same-MAJOR release is named, carries the command that acts on it, and
+          # reaches the status line as a compact fragment.
+          setver 2.0.2 "$R"; rm -f "$UPD"
+          out="$(run 2.0.2)"
+          if printf '%s' "$out" | grep -q 'v2.9.0 is released and this is v2.0.2'; then ck 0 "a newer release on the remote is named in the banner"; else ck 1 "no nudge: $out"; fi
+          if printf '%s' "$out" | grep -q 'claude plugin update wiki-engine@wiki-engine'; then ck 0 "the nudge carries the command that acts on it"; else ck 1 "nudge names no remedy: $out"; fi
+          if grep -q 'engine v2.0.2→v2.9.0' "$STATUS"; then ck 0 "the status line gets a compact fragment"; else ck 1 "status fragment missing: $(cat "$STATUS")"; fi
+          if grep -q 'v2.9.0' "$UPD"; then ck 0 "the lookup is cached"; else ck 1 "cache not written"; fi
+          stamp="$(cut -f1 "$UPD")"
+
+          # 2 — RATE LIMIT. The remote is now unreachable; a fresh cache must mean no fetch at all,
+          # so the nudge still renders and the timestamp is untouched.
+          setver 2.0.2 "$T/does-not-exist.git"
+          out="$(run 2.0.2)"
+          if printf '%s' "$out" | grep -q 'v2.9.0 is released'; then ck 0 "a fresh cache answers without touching the network"; else ck 1 "cached nudge lost when the remote went away"; fi
+          if [ "$(cut -f1 "$UPD")" = "$stamp" ]; then ck 0 "a fresh cache is not re-fetched"; else ck 1 "the lookup ran again inside the interval"; fi
+
+          # 3 — SELF-CLEARING. The plugin moves to the released version; the SAME cache must go
+          # quiet in the very next session, remote still unreachable. Caching a VERDICT rather than
+          # a TAG is what this rules out — that would nag for a day after the update landed.
+          setver 2.9.0 "$T/does-not-exist.git"
+          out="$(run 2.9.0)"
+          if ! printf '%s' "$out" | grep -q 'is released'; then ck 0 "updating the plugin clears the nudge with no new lookup"; else ck 1 "still nagging after the update: $out"; fi
+          if [ -z "$(cat "$STATUS")" ]; then ck 0 "the status-line fragment clears too"; else ck 1 "status still stale: $(cat "$STATUS")"; fi
+
+          # 4 — OFFLINE keeps the tag it already had, and still stamps the attempt, so a machine
+          # with no network pays the timeout once a day rather than on every session.
+          setver 2.0.2 "$T/does-not-exist.git"; printf '0\tv2.9.0\n' > "$UPD"
+          out="$(run 2.0.2)"
+          if printf '%s' "$out" | grep -q 'v2.9.0 is released'; then ck 0 "a failed lookup keeps the previous tag"; else ck 1 "offline lost the known tag: $out"; fi
+          if [ "$(cut -f1 "$UPD")" != "0" ]; then ck 0 "a failed lookup still stamps the attempt"; else ck 1 "offline re-tries on every session"; fi
+
+          # 5 — MAJOR is worded as a migration and withholds the one-line command, because adopting
+          # it is not a thing to do unprompted.
+          setver 2.0.2 "$RMAJ"; rm -f "$UPD"
+          out="$(run 2.0.2)"
+          if printf '%s' "$out" | grep -q 'MAJOR bump' && ! printf '%s' "$out" | grep -q 'update available'; then ck 0 "a MAJOR release reads as a migration, not an update"; else ck 1 "MAJOR wording wrong: $out"; fi
+          if ! printf '%s' "$out" | grep -q 'Offer to run'; then ck 0 "a MAJOR nudge does not hand over a one-line update command"; else ck 1 "MAJOR offered an unreviewed update: $out"; fi
+
+          # 6 — the opt-out reaches the network never, and says nothing.
+          setver 2.0.2 "$R"; rm -f "$UPD"
+          out="$(WIKI_ENGINE_UPDATE_CHECK=0 run 2.0.2)"
+          if ! printf '%s' "$out" | grep -q 'is released' && [ ! -f "$UPD" ]; then ck 0 "WIKI_ENGINE_UPDATE_CHECK=0 makes no lookup and no noise"; else ck 1 "opt-out did not hold: $out"; fi
+
+          # 7 — CONTROL. Running the newest release must be silent, or the nudge is a constant that
+          # carries no information.
+          setver 2.9.0 "$R"; rm -f "$UPD"
+          out="$(run 2.9.0)"
+          if ! printf '%s' "$out" | grep -q 'is released'; then ck 0 "no nudge when the running release IS the newest"; else ck 1 "nudge fired with nothing to adopt: $out"; fi
+
+          # 8 — CONTROL. A running release AHEAD of the remote (engine-dev between releases) is not
+          # a downgrade prompt.
+          setver 3.0.0 "$R"; rm -f "$UPD"
+          out="$(run 3.0.0)"
+          if ! printf '%s' "$out" | grep -q 'is released'; then ck 0 "a release ahead of the remote is silent"; else ck 1 "nudged backwards: $out"; fi
+          exit "$fail"
+
       - name: CLAUDE_CONFIG_DIR moves the settings every wiring tool writes
         run: |
           # With CLAUDE_CONFIG_DIR set, Claude Code reads $CLAUDE_CONFIG_DIR/settings.json, while

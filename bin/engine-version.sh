@@ -11,7 +11,16 @@
 # Exit: 0 up to date (or ahead) · 1 update available · 2 error (no remote / offline).
 # A MAJOR-version bump is flagged as breaking — review the migration before adopting.
 #
-# Usage: engine-version.sh
+# `--latest-tag` prints ONLY the newest release tag on the remote and exits, so a caller
+# that wants to cache the lookup and decide for itself (session-preflight.sh) does not
+# have to parse a sentence written for a human. The comparison itself lives in ONE place,
+# `engine_bump_level` in plugin-lib.sh, which this script and the banner both read.
+#
+# WIKI_ENGINE_NET_TIMEOUT — seconds git may spend below the low-speed floor before giving
+# up (default 10). The SessionStart path passes a smaller budget; a hook must never be the
+# slow thing in a boot.
+#
+# Usage: engine-version.sh [--latest-tag]
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,17 +31,38 @@ running="$(engine_release "$ENGINE")"
 # the release tag at or behind what runs (no -N-g suffix)
 running_tag="$(printf '%s' "$running" | sed -E 's/-[0-9]+-g[0-9a-f]+$//')"
 
+MODE=""
+case "${1:-}" in
+  --latest-tag) MODE=tag;;
+  -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
+  "") ;;
+  *) echo "unknown arg: $1" >&2; exit 2;;
+esac
+
 remote=""
 if git -C "$ENGINE" rev-parse --git-dir >/dev/null 2>&1; then
   remote="$(git -C "$ENGINE" remote get-url origin 2>/dev/null || true)"
 fi
 [ -n "$remote" ] || remote="$(sed -nE 's/^[[:space:]]*"repository"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$ENGINE/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
-[ -n "$remote" ] || { echo "engine: running $running — no remote to compare against"; exit 2; }
+if [ -z "$remote" ]; then
+  # stdout stays EMPTY in --latest-tag mode: a caller reads "no answer" from the exit
+  # status and an empty capture, never from a sentence it would have to recognise.
+  [ "$MODE" = tag ] || echo "engine: running $running — no remote to compare against"
+  exit 2
+fi
 
-tags="$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=10 \
+NET="${WIKI_ENGINE_NET_TIMEOUT:-10}"
+case "$NET" in ''|*[!0-9]*) NET=10;; esac
+tags="$(GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c "http.lowSpeedTime=$NET" \
   ls-remote --tags --refs "$remote" 'v*' 2>/dev/null)" \
-  || { echo "engine: running $running — could not reach $remote (offline?); skipping update check"; exit 2; }
+  || { [ "$MODE" = tag ] || echo "engine: running $running — could not reach $remote (offline?); skipping update check"; exit 2; }
 latest_tag="$(printf '%s\n' "$tags" | sed -nE 's#.*refs/tags/(v[0-9]+\.[0-9]+\.[0-9]+)$#\1#p' | sort -V | tail -1)"
+
+if [ "$MODE" = tag ]; then
+  [ -n "$latest_tag" ] || exit 2
+  printf '%s\n' "$latest_tag"
+  exit 0
+fi
 
 if [ -z "$latest_tag" ]; then
   echo "engine: running $running — no release tags on $remote; skipping update check"
@@ -43,23 +73,11 @@ case "$running_tag" in
   *) echo "engine: running $running (not a release) — latest tag $latest_tag"; exit 1;;
 esac
 
-if [ "$running_tag" = "$latest_tag" ]; then
-  echo "engine: up to date ($running)"
-  exit 0
-fi
-higher="$(printf '%s\n%s\n' "$running_tag" "$latest_tag" | sort -V | tail -1)"
-if [ "$higher" = "$running_tag" ]; then
-  echo "engine: running $running is ahead of the latest tag ($latest_tag) — no action"
-  exit 0
-fi
-
-core() { printf '%s' "$1" | sed -E 's/^v//; s/-.*$//'; }
-rc="$(core "$running_tag")"; lc="$(core "$latest_tag")"
-rmaj="${rc%%.*}"; lmaj="${lc%%.*}"
-rrest="${rc#*.}"; lrest="${lc#*.}"; rmin="${rrest%%.*}"; lmin="${lrest%%.*}"
-if [ "$rmaj" != "$lmaj" ]; then level="MAJOR"
-elif [ "$rmin" != "$lmin" ]; then level="minor"
-else level="patch"; fi
+level="$(engine_bump_level "$running_tag" "$latest_tag")"
+case "$level" in
+  same)  echo "engine: up to date ($running)"; exit 0;;
+  ahead) echo "engine: running $running is ahead of the latest tag ($latest_tag) — no action"; exit 0;;
+esac
 
 if [ "$level" = "MAJOR" ]; then
   echo "engine: running $running, latest $latest_tag — ⚠ MAJOR bump: review the CHANGELOG migration BEFORE adopting"
