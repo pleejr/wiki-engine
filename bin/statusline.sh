@@ -30,6 +30,7 @@
 #
 #   statusline.sh --segment ctx    < session-json     # just the context gauge
 #   statusline.sh --segment stale  < session-json     # just the version warning
+#   statusline.sh --segment rl-all < session-json     # every rate-limit window, always on
 #   statusline.sh --segments                          # list the available names
 #
 # The contract a consuming row can rely on:
@@ -62,7 +63,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$LIST" -eq 1 ]; then
-  printf 'dir\nmodel\nctx\nrl\nstale\n'
+  printf 'dir\nmodel\nctx\nrl\nrl-all\nstale\n'
   exit 0
 fi
 
@@ -82,7 +83,7 @@ fi
 
 # --- session context from stdin JSON (dir + model + context usage), best-effort -------
 input=""; [ -t 0 ] || input="$(cat)"
-dir=""; model=""; ctx=""; ratelimit=""
+dir=""; model=""; ctx=""; ratelimit=""; rl5=""; rl7=""; rlspend=""
 if command -v jq >/dev/null 2>&1 && [ -n "$input" ]; then
   dir="$(printf '%s' "$input"  | jq -r '.workspace.current_dir // .cwd // empty' 2>/dev/null)"
   model="$(printf '%s' "$input" | jq -r '.model.display_name // empty' 2>/dev/null)"
@@ -91,6 +92,9 @@ if command -v jq >/dev/null 2>&1 && [ -n "$input" ]; then
   # context. Truncated, not rounded — 89.9% must not display as 90.
   ctx="$(printf '%s' "$input" | jq -r '.context_window.used_percentage // empty' 2>/dev/null | cut -d. -f1)"
   ratelimit="$(printf '%s' "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null | cut -d. -f1)"
+  rl5="$ratelimit"
+  rl7="$(printf '%s' "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null | cut -d. -f1)"
+  rlspend="$(printf '%s' "$input" | jq -r '.rate_limits.spend_limit.used_percentage // empty' 2>/dev/null | cut -d. -f1)"
 fi
 
 # --- the segments ----------------------------------------------------------------------
@@ -118,11 +122,21 @@ seg_model() { [ -n "$model" ] && printf '%s' "$model"; return 0; }
 # Bolding the calm band alone then made it the only unbolded pair on the row, so the whole
 # gauge is bold and the contrast between bands is purely chromatic. BOLD must be blanked in
 # the NO_COLOR branch alongside the others, or raw escapes leak into the row.
+#
+# The bands themselves (calm < 70, amber >= 70, red >= 85) live in `_band`, which the
+# always-on rate-limit segment reads too, so escalation means the same thing across the row.
+_is_pct() { [ -n "$1" ] && [ "$1" -eq "$1" ] 2>/dev/null; }
+_band() {
+  if   [ "$1" -ge 85 ]; then printf '%s' "$BOLD$RED"
+  elif [ "$1" -ge 70 ]; then printf '%s' "$BOLD$AMBER"
+  else                       printf '%s' "$BOLD$GREEN"
+  fi
+}
 seg_ctx() {
-  [ -n "$ctx" ] && [ "$ctx" -eq "$ctx" ] 2>/dev/null || return 0
-  if   [ "$ctx" -ge 85 ]; then printf '%sctx %s%% — checkpoint now%s'    "$BOLD$RED" "$ctx" "$RESET"
-  elif [ "$ctx" -ge 70 ]; then printf '%sctx %s%% — checkpoint soon%s' "$BOLD$AMBER" "$ctx" "$RESET"
-  else                         printf '%sctx %s%%%s'                   "$BOLD$GREEN" "$ctx" "$RESET"
+  _is_pct "$ctx" || return 0
+  if   [ "$ctx" -ge 85 ]; then printf '%sctx %s%% — checkpoint now%s'  "$(_band "$ctx")" "$ctx" "$RESET"
+  elif [ "$ctx" -ge 70 ]; then printf '%sctx %s%% — checkpoint soon%s' "$(_band "$ctx")" "$ctx" "$RESET"
+  else                         printf '%sctx %s%%%s'                   "$(_band "$ctx")" "$ctx" "$RESET"
   fi
 }
 
@@ -134,6 +148,27 @@ seg_rl() {
   [ -n "$ratelimit" ] && [ "$ratelimit" -eq "$ratelimit" ] 2>/dev/null || return 0
   [ "$ratelimit" -ge 80 ] || return 0
   printf '%s5h limit %s%%%s' "$BOLD$AMBER" "$ratelimit" "$RESET"
+}
+
+# The OTHER rate-limit question: not "am I about to hit the wall?" (that is `rl`, gated so
+# it only appears when actionable) but "how much of this window have I spent — do I start
+# the long task now or after the reset?" That needs the figure BEFORE it is a problem, and
+# the 7-day window, which is the one that constrains a heavy week. So it is always on, and
+# it is a separate NAME rather than a flag on `rl`: a name is listed by --segments, and `rl`
+# keeps its behaviour byte for byte. Not in the default row — it serves a preference, and
+# the default row's gated `rl` is the property worth keeping there.
+#
+# Each window the host reports gets a fragment in the context gauge's bands; one it omits
+# (Pro/Max only, gateway only, dropped once `resets_at` passes) gets nothing. The spend
+# limit can exceed 100%, which simply stays red.
+seg_rl_all() {
+  local out="" label pct
+  for label in 5h 7d spend; do
+    case "$label" in 5h) pct="$rl5";; 7d) pct="$rl7";; spend) pct="$rlspend";; esac
+    _is_pct "$pct" || continue
+    out="${out:+$out }$(_band "$pct")$label $pct%$RESET"
+  done
+  printf '%s' "$out"
 }
 
 # The staleness verdict, read from the preflight cache (may be empty/absent). A cache the
@@ -160,7 +195,7 @@ seg_stale() {
 
 if [ -n "$SEGMENT" ]; then
   case "$SEGMENT" in
-    dir|model|ctx|rl|stale) out="$("seg_$SEGMENT")"; [ -n "$out" ] && printf '%s\n' "$out" ;;
+    dir|model|ctx|rl|rl-all|stale) out="$("seg_${SEGMENT//-/_}")"; [ -n "$out" ] && printf '%s\n' "$out" ;;
     *) printf 'statusline: no such segment "%s" — try: statusline.sh --segments\n' "$SEGMENT" >&2 ;;
   esac
   exit 0
