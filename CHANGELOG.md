@@ -4,6 +4,21 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.1.0] — 2026-09-21
+
+Minor — the session banner tells you a newer release exists again.
+
+### Added
+- **The update nudge is back, rate-limited.** Until v1.79.1 `session-preflight.sh` delegated to `engine-version.sh` and the banner said *update available*. v2.0.0 removed that call along with the submodule path and nothing replaced it: the marketplace only advances the plugin when someone runs `claude plugin update`, so a machine could sit three releases behind with the banner, the status line and `.engine-version` all reading green. Found exactly that way — a second machine still on 2.0.2 after 2.0.3–2.0.5 shipped, its banner silent and correct. The docs were never wrong (`SCHEMA.md` and `USAGE.md` were rewritten at 2.0.0 to describe the narrower check); the trade was simply never named.
+- **Two rails, deliberately separate.** The **network lookup** runs at most once per `WIKI_ENGINE_CHECK_INTERVAL` (default `86400`s) and is bounded by `WIKI_ENGINE_NET_TIMEOUT` — the SessionStart path passes 4 seconds inside its 30-second hook budget, because a hook must never be the slow thing in a boot. The **comparison** runs every session against the cached TAG, so the nudge clears the moment the plugin moves instead of lingering until the cache expires; caching a verdict would nag for a day after the update landed. A failed lookup keeps the tag it had and still stamps the attempt, so an offline machine pays the timeout once a day rather than every session. `WIKI_ENGINE_UPDATE_CHECK=0` disables the lookup outright.
+- **`engine-version.sh --latest-tag`** prints only the newest release tag and exits, so a caller that wants to cache the answer never has to recognise a sentence written for a human. Its stdout stays empty when there is no remote or the lookup fails; the exit status carries that.
+- **A MAJOR release is worded as a migration and withholds the one-line command.** A patch or minor nudge hands over `claude plugin update wiki-engine@wiki-engine`; a MAJOR one names the CHANGELOG migration and says not to update without the user's confirmation.
+
+### Changed
+- **The release comparison lives in one place.** `engine_bump_level` (`bin/plugin-lib.sh`) answers `same`/`ahead`/`MAJOR`/`minor`/`patch`, and `engine-version.sh` and the banner both read it. The two had no shared definition, and a guard and its writer drifting apart over one question is a defect this engine has already shipped (`ensure-hook.sh`, v1.54.0).
+
+CI pins both rails and both silences: the nudge names the release and the remedy, the status line gets `engine vX→vY`, a fresh cache answers with the remote deleted and does not re-fetch, updating the plugin clears the banner *and* the status fragment with no new lookup, an offline run keeps the known tag, MAJOR reads as a migration and offers no command, the opt-out touches nothing, and the two quiet cases — running the newest release, and running ahead of it — stay quiet. Red against 2.0.5 on eight of fifteen assertions, green on the seven controls in both states.
+
 ## [2.0.5] — 2026-09-20
 
 Patch — the skew NOTE adoption added in 2.0.3 was silenced by a comment.

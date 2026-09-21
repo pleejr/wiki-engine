@@ -17,6 +17,9 @@
 #   settings_legacy_engine_hooks  settings.json hook commands a 1.x adoption wired, which
 #                             point into a vault's `engine/` and fail once it is gone.
 #   engine_version_lt         whether release A sorts before release B (`v`-prefixed or not).
+#   engine_bump_level         how a running release relates to a latest one: same / ahead /
+#                             MAJOR / minor / patch. The single definition both the
+#                             freshness report and the session banner read.
 
 engine_running_as_plugin() {
   [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ] || return 1
@@ -59,6 +62,26 @@ settings_legacy_engine_hooks() { # [settings.json]
   grep -oE '"command"[[:space:]]*:[[:space:]]*"[^"]*engine/bin/(session-boot|rag-capture|session-preflight|session-banner)\.sh[^"]*"' "$s" 2>/dev/null \
     | sed -E 's/^"command"[[:space:]]*:[[:space:]]*"//; s/"$//' \
     | grep -v 'plugins/' || true
+}
+
+# The ONE definition of how two releases relate. `engine-version.sh` reports it and
+# `session-preflight.sh` renders it into the banner; two copies of the same comparison
+# drifting apart is a defect this engine has already shipped once (ensure-hook's guard
+# asked `any(...)` while its writer answered with `map(...)`).
+#
+# Echoes: same | ahead | MAJOR | minor | patch. A release-suffixed running tag
+# (`v1.2.3-4-gabc`) compares as its base release, which is what a consumer can install.
+engine_bump_level() { # <running-tag> <latest-tag>
+  local r="${1:-}" l="${2:-}" rmaj lmaj rrest lrest rmin lmin
+  r="${r#v}"; r="${r%%-*}"; l="${l#v}"; l="${l%%-*}"
+  if [ -z "$r" ] || [ -z "$l" ]; then echo unknown; return 1; fi
+  if [ "$r" = "$l" ]; then echo same; return 0; fi
+  if [ "$(printf '%s\n%s\n' "$r" "$l" | sort -V | tail -1)" = "$r" ]; then echo ahead; return 0; fi
+  rmaj="${r%%.*}"; lmaj="${l%%.*}"
+  rrest="${r#*.}"; lrest="${l#*.}"; rmin="${rrest%%.*}"; lmin="${lrest%%.*}"
+  if [ "$rmaj" != "$lmaj" ]; then echo MAJOR
+  elif [ "$rmin" != "$lmin" ]; then echo minor
+  else echo patch; fi
 }
 
 engine_version_lt() { # <a> <b>
