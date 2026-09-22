@@ -81,6 +81,12 @@ elif [ -n "$req_ver" ] && [ "$req_ver" != "$run_ver" ]; then
     summary="${summary:+$summary · }engine ${run_ver}<${req_ver}"
   else
     echo "wiki-engine: the vault records $req_ver in .engine-version — its CI runs that tag until update.sh records $run_ver"
+    # An offer, not an alarm. With marketplace auto-update the plugin moves on its own, the
+    # "newer release" nudge clears the moment it does, and this line was then the only trace
+    # that the vault still records the old release — printed, but never queued for the
+    # assistant, so nobody was ever asked to record it.
+    action="${action}- wiki-engine: the plugin ($run_ver) is newer than the vault's .engine-version ($req_ver). Offer to record it: the \`update\` skill, or update.sh --wiki \"\$WIKI_PATH\"; stages only, the user commits.
+"
   fi
 fi
 

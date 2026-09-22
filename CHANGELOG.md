@@ -4,6 +4,15 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.4.1] — 2026-09-22
+
+Patch — with marketplace auto-update on, nothing asked for the vault record to catch up.
+
+### Fixed
+- **A vault record behind the running plugin is now offered to the assistant, not only printed.** Auto-update installs a new release in the background, and the next session loads it. The "newer release available" nudge clears at that point, because the plugin matches the latest tag. The only remaining trace was a banner line, `its CI runs that tag until update.sh records vX`. That line never reached the ACTION-REQUIRED block, so the vault's `.engine-version` could lag the plugin indefinitely. `session-preflight.sh` now queues an offer to record the release (the `update` skill or `update.sh`) when the plugin is newer in the same MAJOR. It is an offer, not a warning: no `⚠`, and nothing is written until the user confirms.
+
+CI asserts the offer appears when the record lags, carries no `⚠`, and is absent when the record matches the running release. Red against 2.4.0 on one of four.
+
 ## [2.4.0] — 2026-09-22
 
 Minor — updating the engine and recording it in the vault now takes one session and one restart, not two sessions.
