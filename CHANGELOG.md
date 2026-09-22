@@ -4,6 +4,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.4.0] — 2026-09-22
+
+Minor — updating the engine and recording it in the vault now takes one session and one restart, not two sessions.
+
+### Changed
+- **`update.sh` records the release installed mid-session, not the one the session started on.** It records the release it belongs to, and the `update` skill calls it through `CLAUDE_SKILL_DIR`, which is fixed when the session starts. So after `claude plugin update` in a session, `update.sh` found its own old release, printed `.engine-version already records` it and did nothing. The only fix was to restart and run it again in the new session. Now it reads the host's `installed_plugins.json` (`engine_installed_root` in `plugin-lib.sh`). When that registry names a newer release than the one running, it hands off to that release's `update.sh`, once (guarded by `WIKI_ENGINE_UPDATE_HANDOFF`). It never hands off to an older or identical release. With no registry it behaves exactly as before, without an error.
+- **The engine pointer follows the handoff.** Session start writes `plugins/data/wiki-engine-wiki-engine/engine`, and the vault's pre-commit, the status line and the vault's `CLAUDE.md` import all read it. Left alone, the commit that records the new release would be checked by the old one — the skew the gate already warns about. The handoff moves the pointer only when it names the engine being replaced, so a pointer aimed at a development checkout stays where it is.
+- **The `update` skill runs the update itself after one confirmation.** It runs the `to update:` command that `doctor` printed, then `update.sh` in the same session, then asks for a restart so the new skills and hooks load. The session banner and `engine-version.sh` give the same order.
+
+CI builds two plugin caches (9.9.0 and 9.10.0) and a registry, then runs the old cache's `update.sh`. It asserts the new release is recorded, the handoff is reported and the pointer moves. It also asserts none of these happen when the pointer names another engine, when the registry names the running release or an older one, when there is no registry, or when the sentinel is set. Red against 2.3.0 on three of eight.
+
 ## [2.3.0] — 2026-09-21
 
 Minor — the status line can show that a backgrounded script is still running.

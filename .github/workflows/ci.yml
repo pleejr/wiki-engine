@@ -1882,6 +1882,67 @@ jobs:
           if [ "$rc" -eq 0 ]; then ck 0 "recording the release in the worktree clears the refusal, even with canonical behind"; else ck 1 "recording the release in the worktree clears the refusal (rc=$rc): $out"; fi
           exit "$fail"
 
+      - name: update.sh run from an old session records the release installed mid-session
+        run: |
+          # In-session update: `claude plugin update` installs a new release, but the session's skill
+          # path (and so the update.sh it calls) stays on the release the session started with. That
+          # update.sh must record the INSTALLED release, not its own, or the vault waits for a restart.
+          T="$RUNNER_TEMP/handoff"; rm -rf "$T"; mkdir -p "$T"
+          fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          mkcache() { # <dir> <version>
+            rsync -a --exclude .git --exclude .worktrees "$GITHUB_WORKSPACE/" "$1/"
+            python3 - "$1/.claude-plugin/plugin.json" "$2" <<'PYH'
+          import json, sys
+          p, v = sys.argv[1], sys.argv[2]
+          d = json.load(open(p)); d["version"] = v; d["repository"] = "file:///nonexistent/wiki-engine.git"
+          json.dump(d, open(p, "w"), indent=2)
+          PYH
+          }
+          OLD="$T/cache/9.9.0"; NEW="$T/cache/9.10.0"; mkcache "$OLD" 9.9.0; mkcache "$NEW" 9.10.0
+          G="$T/cfg"; mkdir -p "$G/plugins/data/wiki-engine-wiki-engine"
+          reg() { printf '{ "version": 2, "plugins": { "wiki-engine@wiki-engine": [ { "scope": "user", "installPath": "%s", "version": "x" } ] } }\n' "$1" > "$G/plugins/installed_plugins.json"; }
+          mkvault() {
+            V="$T/vault-$1"; mkdir -p "$V"; git -C "$V" init -q
+            git -C "$V" config user.email ci@example.invalid; git -C "$V" config user.name ci
+            printf 'v9.9.0\n' > "$V/.engine-version"; git -C "$V" add -A; git -C "$V" commit -qm seed
+          }
+          run() { (cd "$V" && CLAUDE_CONFIG_DIR="$G" CLAUDE_PLUGIN_ROOT="$OLD" WIKI_WORKTREE=0 "$OLD/bin/update.sh" --wiki "$V" 2>&1); }
+          PTR="$G/plugins/data/wiki-engine-wiki-engine/engine"
+
+          # 1 — the registry names a newer release: the session's old update.sh records it.
+          reg "$NEW"; ln -sfn "$OLD" "$PTR"; mkvault a
+          out="$(run)" && rc=0 || rc=$?
+          if [ "$rc" -eq 0 ] && [ "$(cat "$V/.engine-version")" = "v9.10.0" ]; then ck 0 "an old session's update.sh records the installed release"; else ck 1 "recorded $(cat "$V/.engine-version") (rc=$rc): $out"; fi
+          if printf '%s' "$out" | grep -qF "continuing with v9.10.0"; then ck 0 "and says which release it handed off to"; else ck 1 "handoff not reported: $out"; fi
+          if [ "$(cd "$PTR" && pwd -P)" = "$(cd "$NEW" && pwd -P)" ]; then ck 0 "the engine pointer follows to the installed release"; else ck 1 "pointer still names $(readlink "$PTR")"; fi
+
+          # 2 — CONTROL: a pointer that names some OTHER engine (a dev checkout) is not moved.
+          reg "$NEW"; ln -sfn "$T" "$PTR"; mkvault b
+          run >/dev/null || true
+          if [ "$(readlink "$PTR")" = "$T" ]; then ck 0 "a pointer naming another engine is left alone"; else ck 1 "pointer moved from a foreign engine to $(readlink "$PTR")"; fi
+
+          # 3 — CONTROL: registry names the running release: no handoff, records its own.
+          reg "$OLD"; ln -sfn "$OLD" "$PTR"; mkvault c
+          out="$(run)" || true
+          if [ "$(cat "$V/.engine-version")" = "v9.9.0" ] && ! printf '%s' "$out" | grep -q 'continuing with'; then ck 0 "no handoff when the running release is the installed one"; else ck 1 "unexpected handoff: $out"; fi
+
+          # 4 — CONTROL: registry names an OLDER release: never a downgrade.
+          OLDER="$T/cache/9.8.0"; mkcache "$OLDER" 9.8.0; reg "$OLDER"; mkvault d
+          out="$(run)" || true
+          if [ "$(cat "$V/.engine-version")" = "v9.9.0" ] && ! printf '%s' "$out" | grep -q 'continuing with'; then ck 0 "no handoff to an older installed release"; else ck 1 "handed off to an older release: $out"; fi
+
+          # 5 — CONTROL, fail-open: no registry behaves exactly as before.
+          rm -f "$G/plugins/installed_plugins.json"; mkvault e
+          out="$(run)" && rc=0 || rc=$?
+          if [ "$rc" -eq 0 ] && ! printf '%s' "$out" | grep -qi 'continuing with\|traceback'; then ck 0 "no registry: no handoff, no error"; else ck 1 "no-registry run (rc=$rc): $out"; fi
+
+          # 6 — the handoff happens once: a new release whose own update.sh sees an even newer registry
+          # entry would loop; the sentinel stops it.
+          reg "$NEW"; mkvault f
+          out="$(cd "$V" && CLAUDE_CONFIG_DIR="$G" WIKI_ENGINE_UPDATE_HANDOFF=1 WIKI_WORKTREE=0 "$OLD/bin/update.sh" --wiki "$V" 2>&1)" || true
+          if ! printf '%s' "$out" | grep -q 'continuing with'; then ck 0 "the sentinel suppresses a second handoff"; else ck 1 "handed off despite the sentinel"; fi
+          exit "$fail"
+
       - name: The vault gate names an engine-release skew instead of the drift it causes
         run: |
           # The pointer the vault's pre-commit follows is written ONCE PER SESSION, by the
