@@ -1890,7 +1890,7 @@ jobs:
           T="$RUNNER_TEMP/handoff"; rm -rf "$T"; mkdir -p "$T"
           fail=0; ck() { if [ "$1" -eq 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
           mkcache() { # <dir> <version>
-            rsync -a --exclude .git --exclude .worktrees "$GITHUB_WORKSPACE/" "$1/"
+            mkdir -p "$1"; rsync -a --exclude .git --exclude .worktrees "$GITHUB_WORKSPACE/" "$1/"
             python3 - "$1/.claude-plugin/plugin.json" "$2" <<'PYH'
           import json, sys
           p, v = sys.argv[1], sys.argv[2]
