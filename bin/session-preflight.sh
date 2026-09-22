@@ -3,19 +3,11 @@
 # wiki-engine status and, when it is stale, prints an ACTION-REQUIRED block telling the
 # assistant to ASK the user before updating — the hook itself never prompts or changes
 # anything:
-#   - wiki-engine  — the running release vs the vault's .engine-version; the running
-#                    release vs the newest tag on the engine's remote (rate-limited, see
-#                    below); a leftover 1.x submodule or settings.json hook.
+#   - wiki-engine  — the running release vs the vault's .engine-version; a leftover 1.x
+#                    submodule or settings.json hook.
 #
-# THE UPDATE NUDGE. Until 2.0.0 this hook delegated to engine-version.sh and the banner
-# said "update available". Plugin delivery removed that call along with the submodule, and
-# nothing replaced it: the marketplace advances the plugin only when someone runs
-# `claude plugin update`, so a machine could sit releases behind with every surface green.
-# The check is back, on two rails. The NETWORK lookup is rate-limited to once per
-# WIKI_ENGINE_CHECK_INTERVAL (default 86400s) and bounded by WIKI_ENGINE_NET_TIMEOUT; the
-# COMPARISON runs every session against the cached tag, so the warning clears the moment
-# the plugin moves rather than lingering until the cache expires. WIKI_ENGINE_UPDATE_CHECK=0
-# disables the lookup outright, for a machine that must not reach the network at boot.
+# Whether a NEWER release exists is not asked here since 2.5.0: install the plugin-updates
+# plugin (pleejr/skills), which reports every installed plugin behind its latest release.
 #
 # Deterministic. NEVER runs the `claude` binary (hard rule: no claude in a hook); a hook
 # that spawned claude is the fork-bomb trap. Always exits 0 so it can't
@@ -66,7 +58,10 @@ fi
 
 # The vault records the release its CI checks out.
 req_ver=""; [ -n "$WIKI" ] && req_ver="$(vault_engine_required "$WIKI")"
-if [ -n "$WIKI" ] && [ -z "$req_ver" ] && ! vault_has_engine_submodule "$WIKI"; then
+if [ -n "$req_ver" ] && [ "$req_ver" = "$run_ver" ]; then
+  # Said, not implied: a silent banner reads the same as a check that never ran.
+  echo "wiki-engine: the vault's .engine-version matches ($req_ver)"
+elif [ -n "$WIKI" ] && [ -z "$req_ver" ] && ! vault_has_engine_submodule "$WIKI"; then
   echo "wiki-engine: the vault records no .engine-version — run update.sh to record $run_ver"
 elif [ -n "$req_ver" ] && [ "$req_ver" != "$run_ver" ]; then
   if [ "$(printf '%s' "${req_ver#v}" | cut -d. -f1)" != "$(printf '%s' "${run_ver#v}" | cut -d. -f1)" ]; then
@@ -90,74 +85,12 @@ elif [ -n "$req_ver" ] && [ "$req_ver" != "$run_ver" ]; then
   fi
 fi
 
-# wiki-engine — the running release vs the newest release tag on the remote. ------------
-# Two rails, deliberately separate: the NETWORK lookup is rate-limited and cached, the
-# COMPARISON is recomputed every session from the cached tag. That is what makes the nudge
-# self-clearing — update the plugin and the very next session reads `same` off the same
-# cache with no network at all. Caching a verdict instead would keep nagging for a day
-# after the update, which is the "constant warning" shape the engine already refuses.
-UPD_CACHE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.wiki-engine-update"
-if [ "${WIKI_ENGINE_UPDATE_CHECK:-1}" != "0" ]; then
-  upd_ts=0; upd_tag=""
-  if [ -f "$UPD_CACHE" ]; then
-    IFS="$(printf '\t')" read -r upd_ts upd_tag < "$UPD_CACHE" 2>/dev/null || { upd_ts=0; upd_tag=""; }
-    case "${upd_ts:-}" in ''|*[!0-9]*) upd_ts=0;; esac
-  fi
-  interval="${WIKI_ENGINE_CHECK_INTERVAL:-86400}"
-  case "$interval" in ''|*[!0-9]*) interval=86400;; esac
-  now="$(date +%s 2>/dev/null || echo 0)"
-  run_tag="$(printf '%s' "$run_ver" | sed -E 's/-[0-9]+-g[0-9a-f]+$//')"
-  # A cached tag BEHIND the running release is provably stale: the plugin moved since the
-  # lookup (auto-update, or `claude plugin update`), so a newer release may have landed and
-  # the interval would hide it for up to a day. Re-fetch at once — but only once per running
-  # release, recorded in a sidecar, or an engine-dev tree ahead of the remote would pay the
-  # timeout every boot. The sidecar, not a third column, because a session still on the
-  # previous release reads the same cache and would misparse a new field into its tag.
-  upd_ran=""; [ -f "$UPD_CACHE.ran" ] && upd_ran="$(head -n1 "$UPD_CACHE.ran" 2>/dev/null)"
-  refetch=0
-  if [ -n "$upd_tag" ] && [ "$(engine_bump_level "$run_tag" "$upd_tag")" = ahead ] && [ "$upd_ran" != "$run_tag" ]; then
-    refetch=1
-  fi
-  if [ "$refetch" -eq 1 ] || [ "$now" -ge $((upd_ts + interval)) ] 2>/dev/null; then
-    # 4 seconds, not engine-version.sh's default 10: this runs inside a 30s SessionStart
-    # budget it shares with adoption, and a slow boot is a worse failure than a late nudge.
-    fetched="$(WIKI_ENGINE_NET_TIMEOUT="${WIKI_ENGINE_NET_TIMEOUT:-4}" "$SCRIPT_DIR/engine-version.sh" --latest-tag 2>/dev/null)" || fetched=""
-    # A failed lookup keeps the PREVIOUS tag and still stamps the attempt: an offline
-    # machine must not pay the timeout every session, and must not lose a nudge it had.
-    [ -n "$fetched" ] && upd_tag="$fetched"
-    printf '%s\t%s\n' "$now" "$upd_tag" > "$UPD_CACHE" 2>/dev/null || true
-    printf '%s\n' "$run_tag" > "$UPD_CACHE.ran" 2>/dev/null || true
-    upd_ts="$now"
-  fi
-  if [ -n "$upd_tag" ]; then
-    # How long ago the lookup ran, so a current engine reads as checked rather than silent.
-    age=$((now - upd_ts))
-    if [ "$age" -lt 60 ] 2>/dev/null; then ago="just now"
-    elif [ "$age" -lt 3600 ]; then ago="$((age / 60))m ago"
-    elif [ "$age" -lt 86400 ]; then ago="$((age / 3600))h ago"
-    else ago="$((age / 86400))d ago"; fi
-    case "$(engine_bump_level "$run_tag" "$upd_tag")" in
-      same)
-        echo "wiki-engine: current — latest release $upd_tag (looked up $ago)"
-        ;;
-      ahead)
-        echo "wiki-engine: ahead of the latest release $upd_tag (looked up $ago)"
-        ;;
-      MAJOR)
-        echo "wiki-engine: ⚠ $upd_tag is released and this is $run_ver — a MAJOR bump; read the CHANGELOG migration first"
-        action="${action}- wiki-engine: a MAJOR release ($upd_tag) is available and $run_ver is running. Tell the user and point at the CHANGELOG migration; do NOT update without their confirmation.
-"
-        summary="${summary:+$summary · }engine ${run_tag}→${upd_tag}"
-        ;;
-      minor|patch)
-        echo "wiki-engine: ⚠ $upd_tag is released and this is $run_ver — update available"
-        action="${action}- wiki-engine: $upd_tag is available and $run_ver is running. Offer to run: $(engine_update_remedy), then update.sh for the vault in the same session, then restart.
-"
-        summary="${summary:+$summary · }engine ${run_tag}→${upd_tag}"
-        ;;
-    esac
-  fi
-fi
+# The "newer release on the remote" lookup lived here until 2.5.0. It now belongs to the
+# standalone plugin-updates plugin, which checks EVERY installed plugin against its
+# marketplace, not only this one, and needs no engine. The engine keeps what only it can
+# know: how the running release relates to the vault's record. Its old cache files are removed
+# so nothing reads a tag that will never be refreshed again.
+rm -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.wiki-engine-update" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.wiki-engine-update.ran" 2>/dev/null
 
 # consumer session-checks — a generic seam so a machine can fold ITS OWN extra checks into
 # this one banner without the engine knowing anything about them. Each executable drop-in in

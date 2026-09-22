@@ -4,6 +4,20 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.5.0] — 2026-09-22
+
+Minor — the session-start "newer release" lookup moves out of the engine into the standalone `plugin-updates` plugin, which checks every installed plugin.
+
+### Changed
+- **`session-preflight.sh` no longer looks up the newest release tag.** The question was never specific to the engine: a machine can sit behind on any plugin, and a directory marketplace is never refreshed by Claude Code's auto-update. The `plugin-updates` plugin in `pleejr/skills` now asks it at session start for **every** installed plugin, with the same two rails (a lookup rate-limited per marketplace, a comparison every session), and needs no engine. Install it with `claude plugin install plugin-updates@pleejr`. The preflight keeps what only the engine knows: how the running release relates to the vault's `.engine-version`, and a leftover 1.x submodule or hook.
+- **A matching vault record is said, not implied.** The banner prints `the vault's .engine-version matches (vX)`. A banner holding only the plugin line read the same as a check that never ran.
+- The preflight deletes the old lookup cache, `.wiki-engine-update` and `.wiki-engine-update.ran`, so no later reader trusts a tag nothing refreshes. `WIKI_ENGINE_UPDATE_CHECK` and `WIKI_ENGINE_CHECK_INTERVAL` are now no-ops. `doctor.sh` and the `update` skill still ask the remote on demand.
+
+### Migration
+- A machine that relied on the banner's "newer release" nudge installs `plugin-updates@pleejr` (from `pleejr/skills`). Without it, the engine still flags a plugin older than the vault's record, but not a release nobody has installed yet.
+
+CI asserts the preflight makes no network call, removes the old cache, states a matching record, and does not call a lagging record a match. Red against 2.4.2 on three of five. The update-remedy check moved to the plugin-older-than-record branch, the one that still prints the command.
+
 ## [2.4.2] — 2026-09-22
 
 Patch — a current engine said nothing, so a working release check looked like a missing one.
