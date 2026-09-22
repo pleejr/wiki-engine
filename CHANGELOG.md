@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.4.2] — 2026-09-22
+
+Patch — a current engine said nothing, so a working release check looked like a missing one.
+
+### Fixed
+- **The banner now says when the engine is current.** `session-preflight.sh` printed only the plugin line when no newer release existed, which read the same as a check that never ran. It now prints `wiki-engine: current — latest release vX (looked up 2h ago)`, or `ahead of the latest release vX` on an engine-dev tree. The `WIKI_ENGINE_UPDATE_CHECK=0` opt-out stays silent.
+- **A cached tag behind the running release is re-fetched at once.** Found live: the cache held `v2.3.0` while `v2.4.1` ran. The plugin moved after the last lookup, so a newer release could have landed since, and the daily interval would hide it for up to a day. The preflight now re-fetches when the cached tag is behind the running release, once per running release. The release that last looked up is kept in a sidecar, `.wiki-engine-update.ran`, so an engine-dev tree ahead of the remote does not pay the timeout on every boot. The cache itself keeps its two fields, because a session still on the previous release reads the same file and would misparse a third column into its tag.
+
+CI asserts the current line and its lookup age, the immediate re-fetch, the unchanged cache format, and a single re-fetch per running release. Red against 2.4.1 on four of five; the once-per-release check was shown to fail with its guard removed.
+
 ## [2.4.1] — 2026-09-22
 
 Patch — with marketplace auto-update on, nothing asked for the vault record to catch up.

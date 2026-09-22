@@ -106,7 +106,19 @@ if [ "${WIKI_ENGINE_UPDATE_CHECK:-1}" != "0" ]; then
   interval="${WIKI_ENGINE_CHECK_INTERVAL:-86400}"
   case "$interval" in ''|*[!0-9]*) interval=86400;; esac
   now="$(date +%s 2>/dev/null || echo 0)"
-  if [ "$now" -ge $((upd_ts + interval)) ] 2>/dev/null; then
+  run_tag="$(printf '%s' "$run_ver" | sed -E 's/-[0-9]+-g[0-9a-f]+$//')"
+  # A cached tag BEHIND the running release is provably stale: the plugin moved since the
+  # lookup (auto-update, or `claude plugin update`), so a newer release may have landed and
+  # the interval would hide it for up to a day. Re-fetch at once — but only once per running
+  # release, recorded in a sidecar, or an engine-dev tree ahead of the remote would pay the
+  # timeout every boot. The sidecar, not a third column, because a session still on the
+  # previous release reads the same cache and would misparse a new field into its tag.
+  upd_ran=""; [ -f "$UPD_CACHE.ran" ] && upd_ran="$(head -n1 "$UPD_CACHE.ran" 2>/dev/null)"
+  refetch=0
+  if [ -n "$upd_tag" ] && [ "$(engine_bump_level "$run_tag" "$upd_tag")" = ahead ] && [ "$upd_ran" != "$run_tag" ]; then
+    refetch=1
+  fi
+  if [ "$refetch" -eq 1 ] || [ "$now" -ge $((upd_ts + interval)) ] 2>/dev/null; then
     # 4 seconds, not engine-version.sh's default 10: this runs inside a 30s SessionStart
     # budget it shares with adoption, and a slow boot is a worse failure than a late nudge.
     fetched="$(WIKI_ENGINE_NET_TIMEOUT="${WIKI_ENGINE_NET_TIMEOUT:-4}" "$SCRIPT_DIR/engine-version.sh" --latest-tag 2>/dev/null)" || fetched=""
@@ -114,10 +126,23 @@ if [ "${WIKI_ENGINE_UPDATE_CHECK:-1}" != "0" ]; then
     # machine must not pay the timeout every session, and must not lose a nudge it had.
     [ -n "$fetched" ] && upd_tag="$fetched"
     printf '%s\t%s\n' "$now" "$upd_tag" > "$UPD_CACHE" 2>/dev/null || true
+    printf '%s\n' "$run_tag" > "$UPD_CACHE.ran" 2>/dev/null || true
+    upd_ts="$now"
   fi
   if [ -n "$upd_tag" ]; then
-    run_tag="$(printf '%s' "$run_ver" | sed -E 's/-[0-9]+-g[0-9a-f]+$//')"
+    # How long ago the lookup ran, so a current engine reads as checked rather than silent.
+    age=$((now - upd_ts))
+    if [ "$age" -lt 60 ] 2>/dev/null; then ago="just now"
+    elif [ "$age" -lt 3600 ]; then ago="$((age / 60))m ago"
+    elif [ "$age" -lt 86400 ]; then ago="$((age / 3600))h ago"
+    else ago="$((age / 86400))d ago"; fi
     case "$(engine_bump_level "$run_tag" "$upd_tag")" in
+      same)
+        echo "wiki-engine: current — latest release $upd_tag (looked up $ago)"
+        ;;
+      ahead)
+        echo "wiki-engine: ahead of the latest release $upd_tag (looked up $ago)"
+        ;;
       MAJOR)
         echo "wiki-engine: ⚠ $upd_tag is released and this is $run_ver — a MAJOR bump; read the CHANGELOG migration first"
         action="${action}- wiki-engine: a MAJOR release ($upd_tag) is available and $run_ver is running. Tell the user and point at the CHANGELOG migration; do NOT update without their confirmation.
