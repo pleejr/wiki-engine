@@ -1813,6 +1813,11 @@ jobs:
           if printf '%s' "$out" | grep -q 'different MAJOR'; then ck 0 "preflight flags a MAJOR mismatch"; else ck 1 "preflight flags a MAJOR mismatch"; fi
           out="$(pf "v$maj.0.0")"
           if printf '%s' "$out" | grep -q "records v$maj.0.0"; then ck 0 "preflight notes an older record without alarm"; else ck 1 "preflight notes an older record without alarm"; fi
+          # An auto-updated plugin clears the "newer release" nudge, so the lagging record is the
+          # only trace left: it must reach the assistant as an offer, never as a warning.
+          if printf '%s' "$out" | grep -q "Offer to record it" && ! printf '%s' "$out" | grep -q '⚠'; then ck 0 "preflight offers update.sh when the record lags the plugin"; else ck 1 "preflight offers update.sh when the record lags the plugin: $out"; fi
+          out="$(pf "$ver")"
+          if ! printf '%s' "$out" | grep -q "Offer to record it"; then ck 0 "no record offer when the vault records the running release"; else ck 1 "record offered with the record current"; fi
 
           # pre-commit: a stand-in engine whose lint always refuses proves which engine ran.
           F="$RUNNER_TEMP/v2fake"; mkdir -p "$F/bin"; printf '#!/bin/sh\necho FAKE-LINT-RAN\nexit 1\n' > "$F/bin/lint.sh"; chmod +x "$F/bin/lint.sh"
