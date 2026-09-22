@@ -999,6 +999,29 @@ jobs:
             && { echo "  FAIL a remedy still says -am, which sweeps a peer's work"; fail=1; } \
             || echo "  ok   no tool prints a -am remedy"
 
+          # (2a') A LINKED WORKTREE NAMED AS --wiki is still a worktree. `--wiki "$PWD"` from a
+          # worktree once compared equal to the tree the caller stood in, read as "standing in
+          # canonical", deferred everything, and printed a rerun carrying the same worktree path
+          # back as --wiki — a hint that reproduces its own refusal. Asserted from inside the
+          # worktree AND from an unrelated cwd, since the explicit path is the whole signal.
+          for from in wt elsewhere; do
+            L="$T/v/.worktrees/named-$from"
+            git -C "$V" worktree add -q -b "named-$from" "$L" HEAD 2>/dev/null || true
+            [ "$(cat "$L/.engine-version" 2>/dev/null)" = v1.0.0 ] \
+              || { echo "  FAIL precondition: worktree $from does not start at v1.0.0"; fail=1; }
+            case "$from" in wt) cwd="$L" ;; *) cwd="$T" ;; esac
+            outn="$(cd "$cwd" && "$E/bin/update.sh" --wiki "$L" 2>&1 || true)"
+            [ "$(cat "$L/.engine-version")" = v1.1.0 ] && git -C "$L" diff --cached --name-only | grep -qx '.engine-version' \
+              && echo "  ok   --wiki <linked worktree> (cwd: $from) records and stages there" \
+              || { echo "  FAIL --wiki <linked worktree> (cwd: $from) wrote nothing: $(printf '%s' "$outn" | grep -m1 'NOT written')"; fail=1; }
+            [ "$(cat "$V/.engine-version")" = v1.0.0 ] && [ -z "$(git -C "$V" diff --cached --name-only)" ] \
+              && echo "  ok   ...and canonical is untouched" \
+              || { echo "  FAIL --wiki <linked worktree> (cwd: $from) wrote canonical"; fail=1; }
+            printf '%s' "$outn" | grep -qF -- "--wiki \"$L\"" \
+              && { echo "  FAIL a rerun hint repeats the linked worktree as --wiki"; fail=1; } \
+              || echo "  ok   ...and no hint carries the worktree back as --wiki"
+          done
+
           # (2b) THE SAME VAULT WITH NOTHING OPEN must behave identically. Isolation being
           # configured and a worktree being open are different states, and between sessions
           # the second is false while the first stays true.
@@ -1014,6 +1037,14 @@ jobs:
           [ "$(git -C "$V" hash-object repos/wiki-engine.md)" = "$before" ] && [ "$(cat "$V/.engine-version")" = v1.0.0 ] \
             && echo "  ok   with isolation on and NO worktree open, the writes are still deferred" \
             || { echo "  FAIL update.sh wrote into canonical because no worktree happened to be open"; fail=1; }
+          # ...and when canonical is reached through a SYMLINK (`/tmp` on macOS is one). git
+          # answers with the physical toplevel, the shell keeps the logical path, and a
+          # logical-vs-physical compare took canonical for a worktree and wrote into it.
+          ln -sfn "$V" "$T/vlink"
+          (cd "$T/vlink" && "$E/bin/update.sh" --wiki "$T/vlink" >/dev/null 2>&1) || true
+          [ "$(cat "$V/.engine-version")" = v1.0.0 ] && [ -z "$(git -C "$V" diff --cached --name-only)" ] \
+            && echo "  ok   canonical reached through a symlink is still deferred" \
+            || { echo "  FAIL a symlinked path to canonical bypassed the deferral"; fail=1; }
 
           # (2c) the deferral predicate itself, at both ends. It must follow the GATE, not
           # the worktree count: a vault that never wired one, or whose core.hooksPath
