@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
-# session-banner.sh — render the one-line version banner MESSAGE (plain text) to stdout.
+# session-banner.sh — render the session-start WARNING line (plain text) to stdout, or nothing.
 # A PURE RENDERER: no network, no JSON, no hook semantics. session-boot.sh calls it right
 # AFTER session-preflight.sh has written the staleness cache, then delivers the string to
 # the user via the hook `systemMessage` field. Keeping the text in one testable place —
 # and out of the hook-output layer — is what lets session-boot guarantee the banner
 # reflects the CURRENT session's check (preflight → render, one process, no race).
 #
-# Instant: engine version from `git describe`, staleness from the preflight cache
+# Silent when healthy. The all-clear `wiki-engine vX ✓` line was dropped at 2.6.0: the
+# plugin-updates plugin reports every installed plugin's currency at session start, so a
+# second line saying the engine is fine only trained the reader to skip the one that isn't.
+# What remains is what only the engine knows — a vault-record mismatch from the preflight
+# cache, and live peer sessions — each prefixed `⚠`.
+#
+# Instant: engine version from the manifest, staleness from the preflight cache
 # (empty cache = all current). Deterministic; never runs `claude`.
 #
-# Usage: WIKI_PATH=/path/to/vault session-banner.sh   # prints e.g.
-#   wiki-engine v1.13.0 ✓
+# Usage: WIKI_PATH=/path/to/vault session-banner.sh   # prints nothing, or e.g.
+#   wiki-engine v2.6.0  ·  ⚠ engine v2.6.0<v2.7.0  ·  ⚠ 1 other session(s) writing — take a worktree
 set -uo pipefail
 
 WIKI="${WIKI_PATH:-}"
@@ -49,8 +55,8 @@ if [ -n "$WIKI" ]; then
   fi
 fi
 
-if [ -z "$frag" ]; then
-  printf 'wiki-engine %s ✓%s\n' "$eng" "$peers"
-else
+if [ -n "$frag" ]; then
   printf 'wiki-engine %s  ·  ⚠ %s%s\n' "$eng" "$frag" "$peers"
+elif [ -n "$peers" ]; then
+  printf 'wiki-engine %s%s\n' "$eng" "$peers"
 fi
