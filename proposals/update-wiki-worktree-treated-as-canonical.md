@@ -1,6 +1,7 @@
 ---
 slug: update-wiki-worktree-treated-as-canonical
-outcome: open
+outcome: accepted
+reason: "accepted, Expected (a): reproduced at HEAD from inside the worktree and from an unrelated cwd. update.sh now resolves a linked worktree given as --wiki to its main checkout for adoption, the RAG venv and the gate question, and writes and stages in the named worktree, so the deferral and its hint are unreachable from one. The suggested normalization was taken, via the existing _canonical_root. DECLINED: a non-zero exit on deferral. From a real canonical checkout the deferral is the designed outcome with a runnable next step, and the misleading case no longer reaches it. The sibling sweep found a fail-open in the same comparison family: resolve_wiki_root compared a logical path with git's physical toplevel, so canonical reached through a symlink (/tmp on macOS) read as another worktree and update.sh wrote and staged in canonical past the gate. Fixed in the same release; both cases are red in CI with their fix reverted"
 received: 2026-09-22
 ---
 

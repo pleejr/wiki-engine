@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.5.1] — 2026-09-22
+
+Patch — `update.sh --wiki <worktree>` wrote nothing and printed a rerun that repeated the refusal.
+
+### Fixed
+- **A linked worktree passed as `--wiki` is treated as a worktree.** Run as `update.sh --wiki "$PWD"` from a session worktree, the script took the worktree for the vault. The tree to write then compared equal to it, which read as "standing in canonical". On a gated vault it deferred everything, exited 0, and printed a rerun passing the same worktree back as `--wiki`. `update.sh` now splits the two. The main checkout is the vault for adoption, the RAG venv and the gate question. The named worktree receives `.engine-version`, the engine page and the catalog, staged. This works from any cwd. The reporter's suggestion to exit non-zero on a deferral was not taken: from a real canonical checkout the deferral is the designed outcome with a runnable next step, and the misleading case no longer reaches it.
+- **Canonical reached through a symlink is no longer written.** `resolve_wiki_root` compared the shell's logical path with git's physical `--show-toplevel`. Under a symlinked prefix (`/tmp` and `$TMPDIR` on macOS) canonical read as "another worktree" and came back in its physical spelling. `update.sh` then saw a tree different from the vault and wrote and staged tracked content in canonical, past the gate. It is fail-open, and the sibling of a mismatch `vault-worktree.sh` fixed earlier. The comparison is now physical on both sides, and the logical path is still what is returned.
+
+CI asserts both cases. With `--wiki <linked worktree>`, from inside it and from an unrelated cwd, the write and stage land there, canonical is untouched, and no hint repeats the worktree. A symlinked canonical path still defers. Each case is red with its fix reverted.
+
 ## [2.5.0] — 2026-09-22
 
 Minor — the session-start "newer release" lookup moves out of the engine into the standalone `plugin-updates` plugin, which checks every installed plugin.

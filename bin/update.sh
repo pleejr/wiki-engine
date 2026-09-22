@@ -64,6 +64,16 @@ fi
 
 core_major() { printf '%s' "$1" | sed -E 's/^v//; s/[.-].*$//'; }
 
+# A LINKED WORKTREE named as --wiki is the tree to write, not the vault. Taken as the vault,
+# it compared equal to the tree the caller stood in, read as "standing in canonical", deferred
+# everything, and printed a rerun carrying the same worktree back as --wiki. Split it: the
+# vault (adoption, the RAG venv, the gate question) is the main worktree; the writes go here.
+EXPLICIT_TREE=""
+if canon="$(_canonical_root "$WIKI")" && [ -n "$canon" ] \
+   && [ "$canon" != "$(git -C "$WIKI" rev-parse --show-toplevel 2>/dev/null)" ]; then
+  EXPLICIT_TREE="$WIKI"; WIKI="$canon"
+fi
+
 # A 1.x vault pins the engine as a submodule. Recording .engine-version beside it would give
 # two answers to "which engine does this vault need", while its import, gate and CI kept
 # running the submodule copy. The migration drops the submodule first.
@@ -81,7 +91,7 @@ case "$latest" in unknown|"") echo "update: cannot tell which release is running
 # can commit from. Reading it from canonical instead made the MAJOR refusal unclearable: a
 # migration is recorded by hand in a worktree, canonical still said the old release, and the
 # next run refused again — with no way forward that the message named.
-PAGE_TREE="$(WIKI_PATH="$WIKI" resolve_wiki_root "" 2>/dev/null)" || PAGE_TREE="$WIKI"
+PAGE_TREE="$(WIKI_PATH="$WIKI" resolve_wiki_root "$EXPLICIT_TREE" 2>/dev/null)" || PAGE_TREE="$WIKI"
 required="$(vault_engine_required "$PAGE_TREE")"
 [ -n "$required" ] || required="$(vault_engine_required "$WIKI")"
 

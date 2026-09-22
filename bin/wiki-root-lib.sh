@@ -243,9 +243,13 @@ resolve_wiki_root() {
     printf '%s\n' "$canon_abs"; return 0
   }
 
+  # PHYSICAL on both sides: git answers with the physical toplevel while `pwd` keeps the
+  # logical path, so a $WIKI_PATH under a symlink (`/tmp`, `$TMPDIR` on macOS) read as
+  # "cwd is another worktree", returned the physical spelling of canonical itself, and a
+  # caller comparing that with $WIKI_PATH took canonical for a worktree and wrote into it.
   local top; top="$(git rev-parse --show-toplevel 2>/dev/null)" || { printf '%s\n' "$canon_abs"; return 0; }
-  top="$(cd "$top" 2>/dev/null && pwd)" || { printf '%s\n' "$canon_abs"; return 0; }
-  [ "$top" != "$canon_abs" ] || { printf '%s\n' "$canon_abs"; return 0; }
+  top="$(cd "$top" 2>/dev/null && pwd -P)" || { printf '%s\n' "$canon_abs"; return 0; }
+  [ "$top" != "$(cd "$canon_abs" && pwd -P)" ] || { printf '%s\n' "$canon_abs"; return 0; }
 
   # Say so. Silence is what made the original bug fail open: the tool reported
   # success naming a path the caller was not committing from, and it read as
