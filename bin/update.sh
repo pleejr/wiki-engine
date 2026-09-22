@@ -17,6 +17,12 @@
 # refused (canonical_commit_gated), nothing is written and the command to rerun from a
 # worktree is printed. A vault that can commit in canonical is unaffected.
 #
+# WHICH ENGINE. The release recorded is the one this script belongs to, and a session's
+# skill path is fixed at the release it started on. So when the host's registry says a NEWER
+# release is installed — a `claude plugin update` made in this very session — this hands off
+# to that release's update.sh, and the record, adoption and catalog all come from it. The
+# session still needs a restart to load the new skills and hooks; the vault does not wait.
+#
 # Usage: update.sh [--wiki DIR]
 set -euo pipefail
 
@@ -24,6 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
 . "$SCRIPT_DIR/plugin-lib.sh"
+ARGS=("$@")
 WIKI="${WIKI_PATH:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,6 +42,26 @@ done
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
 WIKI="$(cd "$WIKI" && pwd)"
+# --- hand off to the installed release, once -------------------------------------------
+if [ -z "${WIKI_ENGINE_UPDATE_HANDOFF:-}" ]; then
+  inst="$(engine_installed_root)"
+  if [ -n "$inst" ] && [ -x "$inst/bin/update.sh" ] \
+     && [ "$(cd "$inst" && pwd -P)" != "$(cd "$ENGINE" && pwd -P)" ]; then
+    here="$(engine_release "$ENGINE")"; there="$(engine_release "$inst")"
+    if [ "$there" != unknown ] && engine_version_lt "$here" "$there"; then
+      echo "update: this session runs $here; the installed plugin is $there — continuing with $there"
+      # The stable pointer (vault pre-commit, statusLine, CLAUDE.md import) is re-pointed at
+      # session start; left on the old release, the commit that records $there would be
+      # checked by $here. Moved only when it names the engine being replaced.
+      ptr="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/data/wiki-engine-wiki-engine/engine"
+      if [ -L "$ptr" ] && [ "$(cd "$ptr" 2>/dev/null && pwd -P)" = "$(cd "$ENGINE" && pwd -P)" ]; then
+        ln -sfn "$inst" "$ptr" && echo "update: engine pointer -> $there"
+      fi
+      WIKI_ENGINE_UPDATE_HANDOFF=1 exec "$inst/bin/update.sh" ${ARGS[@]+"${ARGS[@]}"}
+    fi
+  fi
+fi
+
 core_major() { printf '%s' "$1" | sed -E 's/^v//; s/[.-].*$//'; }
 
 # A 1.x vault pins the engine as a submodule. Recording .engine-version beside it would give

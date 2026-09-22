@@ -20,6 +20,8 @@
 #   engine_marketplace_source which marketplace gates this plugin's updates, and whether it
 #                             is a DIRECTORY source (a local clone that must be pulled first).
 #   engine_update_remedy      the one command that actually advances this machine.
+#   engine_installed_root     where the host installed this plugin — which a mid-session
+#                             `claude plugin update` moves while CLAUDE_PLUGIN_ROOT stays put.
 #   engine_bump_level         how a running release relates to a latest one: same / ahead /
 #                             MAJOR / minor / patch. The single definition both the
 #                             freshness report and the session banner read.
@@ -118,6 +120,33 @@ engine_update_remedy() {
   else
     printf 'claude plugin update wiki-engine@%s\n' "$mp"
   fi
+}
+
+# The directory the host's registry says this plugin is installed at. The session's own
+# CLAUDE_PLUGIN_ROOT is fixed when it starts, so after an in-session `claude plugin update`
+# only the registry names the new release. Prints nothing when it cannot tell (no registry,
+# no python3, no entry, or an entry whose directory is not a wiki-engine plugin).
+engine_installed_root() {
+  local cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" p
+  command -v python3 >/dev/null 2>&1 || return 0
+  p="$(python3 - "$cfg" <<'PYIR' 2>/dev/null || true
+import json, os, sys
+try:
+    installed = json.load(open(os.path.join(sys.argv[1], "installed_plugins.json")))["plugins"]
+except Exception:
+    sys.exit(0)
+for key, entries in installed.items():
+    if key.split("@", 1)[0] != "wiki-engine":
+        continue
+    for e in entries if isinstance(entries, list) else [entries]:
+        if isinstance(e, dict) and e.get("installPath"):
+            print(e["installPath"]); sys.exit(0)
+PYIR
+)"
+  [ -n "$p" ] && [ -f "$p/.claude-plugin/plugin.json" ] \
+    && grep -qE '"name"[[:space:]]*:[[:space:]]*"wiki-engine"' "$p/.claude-plugin/plugin.json" \
+    && printf '%s\n' "$p"
+  return 0
 }
 
 # The ONE definition of how two releases relate. `engine-version.sh` reports it and
