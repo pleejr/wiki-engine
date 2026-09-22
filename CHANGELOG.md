@@ -4,6 +4,15 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.6.0] — 2026-09-22
+
+Minor — the session-start banner is silent when nothing is wrong.
+
+### Changed
+- **No more `wiki-engine vX ✓` line.** Since 2.5.0 the `plugin-updates` plugin reports every installed plugin's currency at session start, so the engine's all-clear repeated it one line above. `session-banner.sh` now prints only warnings: a running release that disagrees with the vault's `.engine-version`, a `session-checks.d` fragment, or `⚠ N other session(s) writing — take a worktree`. With none of them, `session-boot.sh` sends no `systemMessage`. The model-facing preflight detail and the status line are unchanged.
+
+CI asserts a healthy boot shows the user no banner and that a vault-record mismatch still reaches it. The first check is red against 2.5.1.
+
 ## [2.5.1] — 2026-09-22
 
 Patch — `update.sh --wiki <worktree>` wrote nothing and printed a rerun that repeated the refusal.

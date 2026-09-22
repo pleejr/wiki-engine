@@ -1773,7 +1773,16 @@ jobs:
           boot() { echo '{"source":"startup"}' | CLAUDE_PLUGIN_ROOT="$1" CLAUDE_PLUGIN_DATA="$D" WIKI_PATH="$V" "$1/bin/session-boot.sh"; }
 
           if out="$(boot "$C")"; then ck 0 "plugin boot exits 0"; else ck 1 "plugin boot exits 0"; fi
-          if printf '%s' "$out" | jq -r .systemMessage | grep -qF "v$ver"; then ck 0 "banner names the plugin's release (v$ver)"; else ck 1 "banner names the plugin's release (v$ver)"; fi
+          # A healthy boot says nothing to the user: plugin-updates owns the all-clear, and a
+          # second green line only teaches the reader to skip the one that carries a warning.
+          if [ "$(printf '%s' "$out" | jq -r '.systemMessage // ""')" = "" ]; then ck 0 "a healthy boot shows the user no banner"; else ck 1 "a healthy boot shows the user no banner (got $(printf '%s' "$out" | jq -r .systemMessage))"; fi
+          # ...and a real mismatch still reaches the user, naming the running release, or the
+          # silence above is indistinguishable from a banner that can never speak.
+          printf 'v%s\n' "$((${ver%%.*} + 1)).0.0" > "$V/.engine-version"
+          sm="$(boot "$C" | jq -r '.systemMessage // ""')"
+          if printf '%s' "$sm" | grep -qF "v$ver" && printf '%s' "$sm" | grep -qF "⚠"; then ck 0 "a vault-record mismatch reaches the user banner"; else ck 1 "a vault-record mismatch reaches the user banner (got [$sm])"; fi
+          printf 'v%s\n' "$ver" > "$V/.engine-version"
+          out="$(boot "$C")"
           if [ "$(readlink "$D/engine")" = "$C" ]; then ck 0 "boot keeps \$CLAUDE_PLUGIN_DATA/engine pointing at the running engine"; else ck 1 "boot keeps \$CLAUDE_PLUGIN_DATA/engine pointing at the running engine"; fi
           if [ "$(cat "$V/.engine-adopted" 2>/dev/null)" = "v$ver" ]; then ck 0 "adoption marker is the manifest version in a non-git cache"; else ck 1 "adoption marker is the manifest version in a non-git cache (got $(cat "$V/.engine-adopted" 2>/dev/null))"; fi
           if [ "$(cat "$S")" = '{ "enabledPlugins": { "wiki-engine@wiki-engine": true } }' ] && [ "$(readlink "$K/scrutinize")" = /elsewhere/skills/scrutinize ] && [ "$(ls "$K")" = scrutinize ]; then ck 0 "boot writes no settings.json hook and no skill link"; else ck 1 "boot writes no settings.json hook and no skill link"; fi
