@@ -2105,6 +2105,35 @@ jobs:
           setver 3.0.0 "$R"; rm -f "$UPD"
           out="$(run 3.0.0)"
           if ! printf '%s' "$out" | grep -q 'is released'; then ck 0 "a release ahead of the remote is silent"; else ck 1 "nudged backwards: $out"; fi
+
+          # 9 — A CURRENT engine SAYS so. Silence on "current" was indistinguishable from a check
+          # that never ran: the banner printed the plugin line and nothing else either way.
+          setver 2.9.0 "$R"; rm -f "$UPD"
+          out="$(run 2.9.0)"
+          if printf '%s' "$out" | grep -q 'current — latest release v2.9.0 (looked up just now)'; then ck 0 "a current engine names the latest release and when it was looked up"; else ck 1 "current engine is silent: $out"; fi
+          printf '%s\tv2.9.0\n' "$(( $(date +%s) - 7200 ))" > "$UPD"
+          out="$(run 2.9.0)"
+          if printf '%s' "$out" | grep -q '(looked up 2h ago)'; then ck 0 "the lookup age is reported from the cache"; else ck 1 "lookup age missing: $out"; fi
+
+          # 10 — A CACHED TAG BEHIND THE RUNNING RELEASE IS PROVABLY STALE. The plugin moved since
+          # the lookup (auto-update, or `claude plugin update`), so the cache predates at least one
+          # release and a newer one may have landed since; waiting out the interval hides it for up
+          # to a day. Found live: cache said v2.3.0 while v2.4.1 ran. Re-fetch at once.
+          setver 2.4.0 "$R"; rm -f "$UPD.ran"; printf '%s\tv2.3.0\n' "$(date +%s)" > "$UPD"
+          out="$(run 2.4.0)"
+          if printf '%s' "$out" | grep -q 'v2.9.0 is released and this is v2.4.0'; then ck 0 "a cached tag behind the running release is re-fetched inside the interval"; else ck 1 "stale cache hid a newer release: $out"; fi
+          # The cache stays two fields: a session still running the previous release reads the
+          # same file, and a third column would reach its tag and nudge it to update to itself.
+          if [ "$(awk -F'\t' '{print NF}' "$UPD")" = 2 ]; then ck 0 "the lookup cache keeps its two-field format"; else ck 1 "cache format changed: $(cat "$UPD")"; fi
+
+          # 11 — but ONCE per running release. An engine-dev tree ahead of the remote is always
+          # behind-the-cache; re-fetching every session would pay the timeout every boot.
+          # Back-date the stamp so a re-fetch inside the same second still shows as a changed stamp.
+          setver 3.0.0 "$R"; rm -f "$UPD" "$UPD.ran"; run 3.0.0 >/dev/null
+          stamp=$(( $(cut -f1 "$UPD") - 60 )); printf '%s\tv2.9.0\n' "$stamp" > "$UPD"
+          setver 3.0.0 "$T/does-not-exist.git"
+          run 3.0.0 >/dev/null
+          if [ "$(cut -f1 "$UPD")" = "$stamp" ]; then ck 0 "a release ahead of the remote re-fetches once, not every session"; else ck 1 "ahead-of-remote re-fetched again"; fi
           exit "$fail"
 
       - name: The update remedy names the marketplace that actually gates this machine
