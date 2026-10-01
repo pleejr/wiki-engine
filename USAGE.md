@@ -43,7 +43,8 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 
 | Command | What it does |
 | --- | --- |
-| `recall.sh "query"` | Semantic search → `file:line` pointers into the real pages (`--json` for tools). |
+| `recall.sh "query"` | Semantic search → `file:line` pointers into the real pages, one per page (`--json` for tools, `--min-score F` to drop weak matches, `--min-gap F` to return nothing unless the best page stands that far above the mean of the top 20, `--include-hubs` to keep `index.md`/`log.md`, which are left out by default). |
+| `recall-hook.sh` | The plugin's **UserPromptSubmit** hook (`"timeout": 10`): runs `recall.sh` on each prompt and hands the model up to five pointers as context when the best page stands clear of the rest (`--min-gap 0.04`). Silent on slash commands, prompts under four words, vaults with no index, and prompts no page stands out for. `RAG_RECALL_HOOK=0` turns it off. Deterministic — never calls `claude`. |
 | `rag-build.sh` | (Re)build the `.rag` index from the markdown. Incremental; run after big edits (`checkpoint` does it). |
 | `rag-setup.sh` | Provision the self-contained `.rag/venv` CPU embedder (once per vault). `--force` to rebuild/change model. |
 | `rag-capture.sh` | Deterministic session auto-capture → `raw/sessions/`. Safe to run from a SessionEnd hook. `WIKI_PATH` must be a **vault**, not just a directory that exists: the boundary stamped on each capture file is read from the vault's own `CLAUDE.md` and never defaulted, so a target with no readable declaration is **refused by name** rather than captured under a guess. |
@@ -76,7 +77,7 @@ For the *spec* (node model, conventions, lifecycle) see `SCHEMA.md`. For *first-
 
 ## Setup & activation
 
-- **Delivery (2.0.0+):** the engine is the Claude Code plugin `wiki-engine@wiki-engine` and nothing else. It carries the skills (as `wiki-engine:<name>`), the SessionStart boot, and the SessionEnd capture, and updates itself from the marketplace's release tag. The vault is read from `$WIKI_PATH`; set it as `env.WIKI_PATH` in `~/.claude/settings.json` (`wire-machine.sh --wire-env`), which reaches hooks, the Bash tool and the status line alike.
+- **Delivery (2.0.0+):** the engine is the Claude Code plugin `wiki-engine@wiki-engine` and nothing else. It carries the skills (as `wiki-engine:<name>`), the SessionStart boot, the UserPromptSubmit recall, and the SessionEnd capture, and updates itself from the marketplace's release tag. The vault is read from `$WIKI_PATH`; set it as `env.WIKI_PATH` in `~/.claude/settings.json` (`wire-machine.sh --wire-env`), which reaches hooks, the Bash tool and the status line alike.
 
   ```sh
   claude plugin marketplace add pleejr/wiki-engine
@@ -219,6 +220,7 @@ Optional, `key = value`, **parsed and never sourced** — a config file that can
 - `WIKI_PATH` — the vault root the skills/tools resolve from.
 - `UPKEEP_STALE_ACTIVE_DAYS` / `UPKEEP_STALE_PAUSED_DAYS` — how long an untouched project page may go before `upkeep scan` queues it (defaults 14 and 90). Knobs rather than constants because "how often should an active project move?" is a property of the consumer's cadence, not of the engine. `paused` gets its own longer horizon because it asks a different question — *should this still be paused?* — not *is this current?*
 - Embedding: `RAG_LOCAL_MODEL`, `RAG_PIP_PKG`, `RAG_REQUIREMENTS`, `RAG_MODEL_CACHE` (where weights live; default `${XDG_CACHE_HOME:-~/.cache}/wiki-engine/models`, machine-global — set it to `$WIKI/.rag/models` for vault-local); or an endpoint via `RAG_EMBED_API` (`ollama`|`openai`) + `RAG_EMBED_URL` / `RAG_API_KEY`.
-- Recall: `RAG_RAW_WEIGHT` (curated-over-raw penalty, default `0.80`).
+- Recall: `RAG_RAW_WEIGHT` (curated-over-raw penalty, default `0.80`), `RAG_HUB_FILES` (pages `recall.sh` leaves out unless `--include-hubs`, default `index.md log.md`), `RAG_QUERY_PREFIX` (the model's query instruction; default chosen per model in `rag_embed.py`, `""` disables; also `query_prefix` in `.rag/config.json`).
+- Recall hook: `RAG_RECALL_HOOK` (`0` disables), `RAG_RECALL_MIN_GAP` (default `0.04`), `RAG_RECALL_MIN_SCORE` (absolute floor, unset by default), `RAG_RECALL_MIN_WORDS` (default `4`), `RAG_RECALL_N` (default `5`), `RAG_RECALL_STDIN_TIMEOUT` (default `2`).
 - Freshness: `WIKI_ENGINE_NET_TIMEOUT` (seconds `git ls-remote` may spend below the low-speed floor, default `10`) bounds `doctor.sh`'s lookup. `WIKI_ENGINE_UPDATE_CHECK` and `WIKI_ENGINE_CHECK_INTERVAL` are no-ops since 2.5.0 — the session-start lookup moved to `plugin-updates` (`PLUGIN_UPDATES_CHECK`, `PLUGIN_UPDATES_INTERVAL`).
 - Capture: `RAG_CAPTURE_TRANSCRIPT_PATH`, `RAG_CAPTURE_FILES`, `RAG_CAPTURE_COMMITS`, `RAG_CAPTURE_SINCE`, `RAG_CAPTURE_STDIN_TIMEOUT` (seconds to wait for hook JSON on stdin, default `2`; a timeout means "no payload" and falls back to `--repo`/`$PWD`, so a caller whose stdin is an open pipe nobody closes gets an answer instead of a hang).

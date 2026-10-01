@@ -4,6 +4,26 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.7.0] — 2026-10-01
+
+Minor — semantic recall runs on every prompt, and ranks better when it does.
+
+### Added
+- **A UserPromptSubmit recall hook.** Recall was correct and almost never ran. Its only trigger was the `wiki-context` skill, and over 30 days two machines logged 2 recall calls in about 600 transcripts. The plugin now runs `recall-hook.sh` on each prompt (`"timeout": 10`). It hands the model up to five `file:line` pointers as context, never page text. It stays silent on slash commands, prompts under four words, vaults with no index, and prompts where no page stands clear of the rest. It always exits 0 and never calls `claude`. Measured cost: 0.52 s per prompt on a 1,325-chunk index, 0.88 s on 3,975. `RAG_RECALL_HOOK=0` turns it off.
+- **`recall.sh --min-gap F`.** Returns nothing unless the best page scores F above the mean of the top 20. The hook gates on 0.04. An absolute floor separated on-topic from off-topic prompts poorly: on 34 on-topic and 18 off-topic prompts, 0.62 kept 24/34 and fired on 4/18, while a 0.04 gap kept 32/34 and fired on 7/18. `--min-score F` adds an absolute floor.
+
+### Changed
+- **Queries carry the model's query instruction.** bge, mxbai and arctic models are trained with an instruction on the query side only, and recall sent queries bare. `rag_embed.py` now applies a per-model prefix (`RAG_QUERY_PREFIX` or `query_prefix` in `.rag/config.json` overrides it; `""` disables). Documents are unchanged, so no re-index is needed.
+- **`index.md` and `log.md` are left out of recall results.** Both mention nearly every page, so they took about a fifth of the top-5 slots while pointing at the page that should have been returned. `--include-hubs` keeps them; `RAG_HUB_FILES` changes the list.
+- **One result per page.** Recall returned chunks, so a page with two matching sections took two of five slots. It now returns each page's best chunk.
+
+Measured on a 34-query paraphrase set over the engine's own vault, with the same index: hits in the top 5 rose from 82% to 97%, first-place hits from 62% to 68%, and MRR from 0.73 to 0.79. Swapping the embedder did not help: bge-small, nomic-embed v1.5, arctic-embed-m-long and mxbai-embed-large all scored at or below bge-base.
+
+### Known gap
+- About 30% of chunks exceed bge's 512-token window, so roughly a fifth of indexed text is never embedded. Chunking at 2,000 characters fixed the coverage, but top-5 rose only from 97% to 100% and first place fell from 68% to 65%. That is within the noise of 34 queries and costs every vault a full re-embed, so the chunk size is unchanged in this release.
+
+CI asserts hub exclusion, one result per page, the query instruction, both gates, and the hook's silent paths: short, slash, off-topic, disabled, no index, unreachable embedder. It also asserts the hook's wiring and timeout, and that it never invokes `claude`. Nine of the assertions are red against 2.6.1. The off-topic assertion is red with the gap gate disabled.
+
 ## [2.6.1] — 2026-10-01
 
 Patch — `checkpoint` no longer integrates a change that ships by pull request.
