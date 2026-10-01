@@ -18,7 +18,7 @@ A skill is worth writing when a procedure **repeats**, and the end of a session 
 
 - `WORK="$(${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh ensure)" || { echo "not isolated — resolve before writing"; }` — **check the exit status** and read its stderr for a stale base; the full contract is `checkpoint` §0.
 - **Read the evidence from canonical `$WIKI_PATH`, write the verdicts to `$WORK`.** The session buffer is git-ignored, so it exists only in canonical; a worktree's empty copy is indistinguishable from a quiet month.
-- Commit, `vault-worktree.sh integrate`, then `gc "$WORK"`.
+- Commit, land it as `checkpoint` §0 does — `vault-worktree.sh integrate` when the vault commits straight to `main`, or push and merge a pull request (no `integrate`) when it ships by one — then `gc "$WORK"`.
 
 This skill invokes nothing; writing its own notes is not an invocation.
 
@@ -128,7 +128,7 @@ The discard reason is where your recommendation is most likely wrong: recurrence
 
 ## 7. Close the loop — record the verdicts here
 
-**Do not write the `SKILL.md`** — authoring is a different job. **Record the verdicts yourself**, into the worktree from *Where it runs*: one commit, `integrate`, `gc`. The verdict note is the only thing that persists: a run that decides and writes nothing leaves the vault indistinguishable from one never mined.
+**Do not write the `SKILL.md`** — authoring is a different job. **Record the verdicts yourself**, into the worktree from *Where it runs*: one commit, landed by `integrate` or by pull request as *Where it runs* says, then `gc`. The verdict note is the only thing that persists: a run that decides and writes nothing leaves the vault indistinguishable from one never mined.
 
 Each verdict becomes a `type: decision` note tagged `skill-candidate`:
 
