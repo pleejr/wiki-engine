@@ -26,6 +26,28 @@ DEFAULT_MODEL = "BAAI/bge-base-en-v1.5"
 # still carried the whole file's sha. One definition, imported by rag_chunk.
 MAX_CHARS = 6000
 
+# Asymmetric retrieval models are trained with an instruction on the QUERY side only;
+# omitting it embeds a question as though it were a passage. Measured on this engine's
+# own vault (34 paraphrased queries, bge-base): top-5 hit rate 0.82 -> 0.91 with the
+# prefix. Documents are embedded bare, so adding it needs no re-index. Keyed by model
+# prefix; `.rag/config.json` `query_prefix` (or RAG_QUERY_PREFIX) overrides, "" disables.
+_BGE_QUERY = "Represent this sentence for searching relevant passages: "
+QUERY_PREFIXES = {
+    "BAAI/bge-": _BGE_QUERY,                 # v1.5 family (en)
+    "mixedbread-ai/mxbai-embed-large": _BGE_QUERY,
+    "snowflake/snowflake-arctic-embed": _BGE_QUERY,
+    "nomic-ai/nomic-embed-text": "search_query: ",
+}
+
+
+def query_prefix(model, override=None):
+    if override is not None:
+        return override
+    for key, pre in QUERY_PREFIXES.items():
+        if model.startswith(key):
+            return pre
+    return ""
+
 
 def default_cache_root():
     """Machine-global cache root for local model weights.
@@ -200,6 +222,11 @@ class Embedder:
                  "  Provision the vault's runtime:  engine/bin/rag-setup.sh\n"
                  "  or use an endpoint: RAG_EMBED_API=ollama RAG_EMBED_URL=..."
                  % ("; ".join(errs), self.cache or self.cache_pin or default_cache_root()))
+
+    def embed_query(self, text):
+        """Embed a search query — with the model's query instruction, see QUERY_PREFIXES."""
+        override = os.environ.get("RAG_QUERY_PREFIX", self._cfg.get("query_prefix"))
+        return self.embed([query_prefix(self.model, override) + text])[0]
 
     def embed(self, texts):
         # Backstop only — rag_chunk guarantees nothing arrives over the cap. Kept

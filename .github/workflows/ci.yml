@@ -2908,6 +2908,91 @@ jobs:
 
           exit "$fail"
 
+      - name: recall leaves out the hubs, returns pages, and the prompt hook stays quiet off-topic
+        run: |
+          # Recall was correct and unused: its only trigger was a skill sessions rarely ran.
+          # 2.7.0 runs it from a UserPromptSubmit hook, which makes its output reach EVERY
+          # prompt — so the properties that were cosmetic when a human read the list are
+          # now the cost of the feature: a hub page in a slot, two slots for one page, a
+          # pointer injected under "yes", or a broken index that blocks typing. Each is
+          # asserted here, against a stub embedder that scores by shared words (vector
+          # quality is not the subject) and records what it was asked to embed.
+          set +e
+          fail=0
+          ck() { if [ "$1" = 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          SEEN="$RUNNER_TEMP/recall-seen.txt"; : > "$SEEN"
+          SEEN="$SEEN" python3 - <<'PY' &
+          import json, os, re, zlib
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          class H(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  t = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))["prompt"]
+                  open(os.environ["SEEN"], "a").write(t.replace("\n", " ") + "\n")
+                  v = [0.0] * 512
+                  for w in re.findall(r"[a-z]+", t.lower()):
+                      if len(w) > 3: v[zlib.crc32(w.encode()) % 511] += 1.0
+                  v[511] += 0.05
+                  b = json.dumps({"embedding": v}).encode()
+                  self.send_response(200); self.send_header('Content-Type', 'application/json')
+                  self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+              def log_message(self, *a): pass
+          HTTPServer(('127.0.0.1', 8773), H).serve_forever()
+          PY
+          STUB=$!
+          trap 'kill $STUB 2>/dev/null' EXIT
+          for _ in $(seq 1 50); do
+            python3 -c "import socket;socket.create_connection(('127.0.0.1',8773),0.2)" 2>/dev/null && break
+            sleep 0.1
+          done
+          export RAG_EMBED_API=ollama RAG_EMBED_URL=http://127.0.0.1:8773/api/embeddings
+
+          V="$RUNNER_TEMP/recallvault"; rm -rf "$V"; mkdir -p "$V/memory"
+          printf -- '---\nboundary: personal\n---\n# v\n' > "$V/CLAUDE.md"
+          printf -- '---\nboundary: personal\n---\n# Lock\n\n## A\n\nmortgage rate lock expires closing\n\n## B\n\nmortgage rate lock extension closing\n' > "$V/memory/lock.md"
+          printf -- '---\nboundary: personal\n---\n# Herdr\n\n## A\n\nkeyboard shortcut herdr spaces\n' > "$V/memory/herdr.md"
+          # filler, so "stands clear of the rest" has a rest: with two pages any gap is noise
+          for t in garden kayak sourdough telescope violin bicycle chess pottery; do
+            printf -- '---\nboundary: personal\n---\n# %s\n\n## A\n\nnotes on %s practice\n' "$t" "$t" > "$V/memory/$t.md"
+          done
+          printf -- '# Index\n\n- [[lock]] mortgage rate lock expires closing\n- [[herdr]] keyboard shortcut\n' > "$V/index.md"
+          ./bin/rag-build.sh --wiki "$V" >/dev/null 2>&1; ck $? "the stub vault indexes"
+
+          : > "$SEEN"
+          out="$(./bin/recall.sh --wiki "$V" --json -n 5 "mortgage rate lock closing")"
+          printf '%s' "$out" | python3 -c 'import json,sys; f=[h["file"] for h in json.load(sys.stdin)]; sys.exit(0 if "index.md" not in f else 1)'
+          ck $? "index.md is left out of results by default"
+          printf '%s' "$out" | python3 -c 'import json,sys; f=[h["file"] for h in json.load(sys.stdin)]; sys.exit(0 if f.count("memory/lock.md")==1 else 1)'
+          ck $? "a page with two matching chunks takes one slot"
+          ./bin/recall.sh --wiki "$V" --json --include-hubs "mortgage rate lock closing" | grep -q '"index.md"'
+          ck $? "--include-hubs brings index.md back"
+          grep -q '^Represent this sentence for searching relevant passages: mortgage' "$SEEN"
+          ck $? "the query carries the bge query instruction"
+          [ "$(./bin/recall.sh --wiki "$V" --json --min-score 0.999 "keyboard spaces")" = "[]" ]
+          ck $? "--min-score drops matches below the floor"
+          [ "$(./bin/recall.sh --wiki "$V" --json --min-gap 0.5 "keyboard spaces")" = "[]" ]
+          ck $? "--min-gap returns nothing when no page stands out by that much"
+          [ "$(./bin/recall.sh --wiki "$V" --json --min-gap 0.04 "keyboard shortcut herdr spaces")" != "[]" ]
+          ck $? "--min-gap keeps a page that stands clear of the rest"
+
+          H=./bin/recall-hook.sh
+          hk() { printf '{"prompt":%s}' "$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$1")" | WIKI_PATH="$V" "$H"; }
+          out="$(hk "the mortgage rate lock expires before closing")"; rc=$?
+          [ $rc = 0 ] && printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin)["hookSpecificOutput"]; sys.exit(0 if d["hookEventName"]=="UserPromptSubmit" and "memory/lock.md" in d["additionalContext"] else 1)'
+          ck $? "an on-topic prompt gets pointers as additionalContext"
+          [ -z "$(hk "yes")" ];                               ck $? "a short prompt adds nothing"
+          [ -z "$(hk "/checkpoint the mortgage rate lock now")" ]; ck $? "a slash command adds nothing"
+          [ -z "$(hk "write a haiku about autumn leaves falling")" ]; ck $? "an off-topic prompt adds nothing"
+          [ -z "$(RAG_RECALL_HOOK=0 hk "the mortgage rate lock expires before closing")" ]; ck $? "RAG_RECALL_HOOK=0 disables it"
+          out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$RUNNER_TEMP/novault" "$H")"; rc=$?
+          [ $rc = 0 ] && [ -z "$out" ]; ck $? "a vault with no index exits 0 and adds nothing"
+          out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:9/x "$H")"; rc=$?
+          [ $rc = 0 ] && [ -z "$out" ]; ck $? "an unreachable embedder exits 0 and adds nothing"
+          python3 -c 'import json; h=json.load(open("hooks/hooks.json"))["hooks"]["UserPromptSubmit"][0]["hooks"][0]; assert "recall-hook.sh" in h["command"] and h.get("timeout")'
+          ck $? "hooks.json wires the hook with a timeout"
+          ! grep -Eq '(^|[^-])\bclaude +(-p|--print)|exec +claude|"claude"' "$H"
+          ck $? "the hook never invokes claude"
+          exit "$fail"
+
       - name: A spawn that did not happen is never reported as one
         run: |
           # spawn-session.sh composes an adapter the machine supplies, so the engine can

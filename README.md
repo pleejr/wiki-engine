@@ -19,7 +19,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 ## What's here
 
 - `skills/` — the Claude Code skills, loaded as `wiki-engine:<name>`: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`, `update`, `verify`, `crossover`, `engine-proposal`, and more (the vault's generated catalog lists them).
-- `.claude-plugin/` + `hooks/hooks.json` — the plugin manifest, its marketplace (pinned to the latest release tag), and the SessionStart boot + SessionEnd capture hooks.
+- `.claude-plugin/` + `hooks/hooks.json` — the plugin manifest, its marketplace (pinned to the latest release tag), and the SessionStart boot, UserPromptSubmit recall and SessionEnd capture hooks.
 - `SCHEMA.md` — node model, three layers, page conventions, memory lifecycle.
 - `CLAUDE.md` — generic context router a wiki imports from its own thin `CLAUDE.md`.
 - `bin/` — deterministic maintenance tools (no LLM):
@@ -28,7 +28,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
   - `wire-machine.sh` — idempotently make a machine ready for an existing vault (plugin present, `WIKI_PATH` in settings `env`, CLAUDE.md import, status line, `.rag`, vault adoption); `--check` previews. The "wire an existing clone" converge verb behind `wiki-adopt`, and the shared wiring path `new-wiki.sh` calls after scaffolding.
   - `engine-version.sh` · `doctor.sh` · `update.sh` — freshness: the running release vs the latest tag; full health report (engine + RAG deps + security + model); record the running release in the vault (same-MAJOR).
   - `session-boot.sh` · `session-preflight.sh` — the plugin's SessionStart hook: vault adoption, then the running release vs the vault's `.engine-version` and vs the newest release tag on the remote (a once-a-day lookup; and a leftover 1.x submodule or settings hook); on a mismatch it prints an ACTION-REQUIRED block telling the assistant to ask before changing anything. Deterministic, never runs `claude`.
-  - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
+  - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `recall-hook.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
   - `lint.sh` — umbrella lint **and write-time gate** (memory + frontmatter-property + soft-wrap + catalog + boundary-present + boundary-matches-vault + provenance-present + repo-ref-is-a-clean-tag + link-integrity + foreign-boundary); `checkpoint`, a pre-commit hook, and vault CI run it.
   - `verify-status.sh` · `upkeep.sh` — the `verified:` correctness reporter (verified/stale/unverified, `--todo`, `--check`), and the drainable upkeep queue (`scan`/`next`/`done`) it feeds.
   - `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation (skills + projects), memory validation, soft-wrap normalization. The generators write the working tree they are invoked from rather than `$WIKI_PATH`, so a session in its own worktree updates the index on the branch it is committing from (`bin/wiki-root-lib.sh`).
