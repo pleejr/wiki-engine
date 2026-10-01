@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # lint-docs.sh — keep the usage docs honest so new users adopt with the lowest friction.
-# Nine cheap, deterministic checks (no LLM, never `claude`):
+# Twelve cheap, deterministic checks (no LLM, never `claude`):
 #   1. every skill (skills/*/) is mentioned in USAGE.md  — nothing user-facing goes undocumented
 #   2. every engine-shipped file USAGE/SCHEMA/README reference actually exists — no stale
 #      pointers to deleted tools, whether written bare (`foo.sh`) or as a path (`adopt.d/foo.sh`)
@@ -19,6 +19,10 @@
 #   9. every `skills/<s>/references/*.md` is linked from that skill's SKILL.md — a
 #      reference file nothing links to is never loaded, so content moved there to
 #      slim a body has silently left the skill (v1.75.0)
+#  10. skill bodies reach bin/ through their own directory, and every target exists
+#  11. the plugin manifest, its marketplace pin, its hooks and the CHANGELOG agree
+#  12. a worktree-taking skill that prescribes `integrate` names the pull-request route on
+#      the same line — integrate before a squash-merge diverges canonical main (v2.6.1)
 #      — see the section comments below; the count above and this list have both been wrong
 #      before, so keep all three in step: this header, the numbered sections, and the
 #      success line at the bottom that names each check to the reader.
@@ -405,7 +409,34 @@ if [ -f "$pj" ]; then
   fi
 fi
 
+# 12. a worktree-taking skill that prescribes integrate names the pull-request route ------
+# `integrate` fast-forwards canonical main to the session's own commit. In a vault that ships
+# by branch -> pull request -> squash-merge, the squash then lands a DIFFERENT commit with the
+# same tree, and the post-merge fast-forward fails: `ahead 1, behind 1`, fixed only by a
+# manual reset. checkpoint §0 prescribed integrate unconditionally and skill-candidates copied
+# it; one consumer hit it three times in five days, each time by following the written step.
+# Fail-closed (trees are identical) but a reader who does not check tree equality may merge
+# or rebase and duplicate history.
+#
+# The mechanical signal is line-level: every line that mentions integrating must also name
+# the pull-request route, so the condition travels with the step instead of living one
+# section away. A line that says NOT to integrate is not a prescription and passes.
+for f in "$ROOT"/skills/*/SKILL.md; do
+  [ -f "$f" ] || continue
+  grep -q 'vault-worktree\.sh ensure' "$f" || continue
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    case "$hit" in *'pull request'*) continue ;; esac
+    printf '%s' "$hit" | grep -qiE '(\bno|\bnot|never)[^.]{0,20}\bintegrate' && continue
+    echo "lint-docs: skills/$(basename "$(dirname "$f")")/SKILL.md:${hit%%:*} prescribes integrate without the pull-request route" >&2
+    echo "lint-docs:   in a vault that squash-merges pull requests, integrate moves canonical main to a" >&2
+    echo "lint-docs:   commit the merge then replaces — say on the same line that a PR-bound change" >&2
+    echo "lint-docs:   is pushed and merged instead, and the merge moves main." >&2
+    fail=1
+  done < <(grep -nwE 'integrate|integrated|integrating' "$f" || true)
+done
+
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces; every skill description fits the router's cut; every references/ file is linked from its skill; skill bodies reach bin/ through their own directory; plugin pins, hooks and CHANGELOG agree"
+  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces; every skill description fits the router's cut; every references/ file is linked from its skill; skill bodies reach bin/ through their own directory; plugin pins, hooks and CHANGELOG agree; worktree skills route a pull-request vault around integrate"
 fi
 exit "$fail"

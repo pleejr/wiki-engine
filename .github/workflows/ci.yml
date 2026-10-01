@@ -518,6 +518,39 @@ jobs:
             || { echo "  FAIL the finding does not say which path"; fail=1; }
           exit "$fail"
 
+      - name: A worktree-taking skill routes a pull-request vault around integrate
+        run: |
+          # REGRESSION (checkpoint-integrate-step-diverges-a-pr-bound-vault): checkpoint §0
+          # prescribed `integrate` unconditionally. In a vault that ships by branch -> PR ->
+          # squash-merge, integrate fast-forwards canonical main to the unsquashed commit, the
+          # squash lands a different SHA with the same tree, and the post-merge fast-forward
+          # fails: `ahead 1, behind 1`. skill-candidates copied the same step. The gate: every
+          # line in a worktree-taking skill that prescribes integrate also names the
+          # pull-request route.
+          fail=0
+          T="$RUNNER_TEMP/prroute"; rm -rf "$T"; mkdir -p "$T"
+          cp -R bin scaffold skills adopt.d USAGE.md "$T/"
+          "$T/bin/lint-docs.sh" >/dev/null 2>&1 \
+            && echo "  ok   the shipped skills pass" \
+            || { echo "  FAIL the shipped skills do not pass their own gate"; fail=1; }
+          for s in checkpoint skill-candidates; do
+            printf '%s\n' '- When the writes are committed, run `vault-worktree.sh integrate`, then `gc`.' \
+              >> "$T/skills/$s/SKILL.md"
+            rc=0; out="$("$T/bin/lint-docs.sh" 2>&1)" || rc=$?
+            if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "skills/$s/SKILL.md"; then
+              echo "  ok   an unconditional integrate in $s fails the gate, naming the file"
+            else
+              echo "  FAIL an unconditional integrate in $s passed (rc=$rc)"; fail=1
+            fi
+            cp "skills/$s/SKILL.md" "$T/skills/$s/SKILL.md"
+          done
+          # NEAR-MISS: a step that says what NOT to do with integrate is not a prescription.
+          printf '%s\n' '- The buffer is untracked: no commit and no integrate.' >> "$T/skills/checkpoint/SKILL.md"
+          "$T/bin/lint-docs.sh" >/dev/null 2>&1 \
+            && echo "  ok   a negated integrate is left alone" \
+            || { echo "  FAIL the gate rejected a line telling the reader NOT to integrate"; fail=1; }
+          exit "$fail"
+
       - name: Crossover fail-closed smoke test
         run: |
           # crossover's safety property is that a LOSSY PASTE CAN NEVER AUTHORIZE A DELETE:

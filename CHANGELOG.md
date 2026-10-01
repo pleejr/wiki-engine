@@ -4,6 +4,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.6.1] — 2026-10-01
+
+Patch — `checkpoint` no longer integrates a change that ships by pull request.
+
+### Fixed
+- **A pull-request vault skips `integrate`.** `checkpoint` §0 told every vault to run `vault-worktree.sh integrate` once its writes were committed. In a vault that ships by branch → pull request → squash-merge, integrate fast-forwards canonical `main` to the session's commit, the squash lands a different commit with the same tree, and the post-merge `pull --ff-only` fails with `ahead 1, behind 1`. §0 now routes by how the vault publishes: straight to `main` integrates as before; by pull request, push the branch, let the merge move `main`, fast-forward canonical, then `gc`. §5's `rag-build` waits for the commit to be on canonical `main` by either route. `skill-candidates` copied the same step in two places and takes the same route.
+- **`lint-docs.sh` check 12.** Every line in a worktree-taking skill that prescribes integrate must name the pull-request route on the same line. A line saying *not* to integrate passes. The header now lists all twelve checks; 10 and 11 were missing from it.
+
+CI asserts an unconditional integrate step in `checkpoint` or `skill-candidates` fails the gate and names the file, and a negated one passes. The first assertions are red against 2.6.0.
+
+Proposal: checkpoint-integrate-step-diverges-a-pr-bound-vault
+
 ## [2.6.0] — 2026-09-22
 
 Minor — the session-start banner is silent when nothing is wrong.

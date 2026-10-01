@@ -1,6 +1,7 @@
 ---
 slug: checkpoint-integrate-step-diverges-a-pr-bound-vault
-outcome: open
+outcome: accepted
+reason: "accepted as suggested. Reproduced at v2.6.0 with a bare remote and a squash-merge from a second clone: ahead 1, behind 1, ff refused, trees identical. Skipping integrate (push, squash-merge, pull --ff-only, gc) left main even with origin and gc retired the branch as squash-merged. checkpoint §0 now routes by how the vault publishes, and §5 waits for the commit to reach canonical main by either route. The sibling sweep found skill-candidates prescribing the same unconditional integrate in two places; both fixed. The class is now mechanical: lint-docs check 12 fails any line in a worktree-taking skill that prescribes integrate without naming the pull-request route. DECLINED for now: the alternative of integrate refusing or warning when the session branch has a remote upstream. Pushing before integrate is also normal in a direct-to-main vault that backs branches up, so the signal does not separate the two flows; the written route closes all three reported occurrences"
 received: 2026-09-30
 ---
 
