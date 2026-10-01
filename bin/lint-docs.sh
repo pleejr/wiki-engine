@@ -427,7 +427,7 @@ for f in "$ROOT"/skills/*/SKILL.md; do
   while IFS= read -r hit; do
     [ -n "$hit" ] || continue
     case "$hit" in *'pull request'*) continue ;; esac
-    printf '%s' "$hit" | grep -qiE '(\bno|\bnot|never)[^.]{0,20}\bintegrate' && continue
+    grep -qiE '(\bno|\bnot|never)[^.]{0,20}\bintegrate' <<< "$hit" && continue
     echo "lint-docs: skills/$(basename "$(dirname "$f")")/SKILL.md:${hit%%:*} prescribes integrate without the pull-request route" >&2
     echo "lint-docs:   in a vault that squash-merges pull requests, integrate moves canonical main to a" >&2
     echo "lint-docs:   commit the merge then replaces — say on the same line that a PR-bound change" >&2
