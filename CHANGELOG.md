@@ -4,6 +4,11 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Fixed
+- **README described the preflight as asking the remote.** Since 2.5.0 `session-preflight.sh` is network-free and the newer-release lookup belongs to `plugin-updates`; the README still said "vs the newest release tag on the remote (a once-a-day lookup". Found by the vault verify pass at v2.8.0.
+
 ## [2.8.0] — 2026-10-02
 
 Minor — the SessionEnd capture no longer holds session exit.
