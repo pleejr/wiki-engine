@@ -1,6 +1,7 @@
 ---
 slug: rag-capture-sessionend-should-not-hold-exit
-outcome: open
+outcome: accepted
+reason: "accepted as suggested. Reproduced at v2.7.0: 5.8s synchronous at a 90-repo fixture root; with the fix the wired hook returns in 0.05s and all 90 blocks land. The hook reads its payload and checks the vault in the foreground, then re-runs itself once in a new session (setsid, or python3/perl setsid(2) on macOS) and exits 0; RAG_CAPTURE_DETACHED=1 prevents a second hop and nothing invokes claude. The log lives at ${XDG_CACHE_HOME:-~/.cache}/wiki-engine/capture/rag-capture.log rather than under the vault, since raw/ only ignores *.md and a log there would show as an untracked vault file. A per-buffer mkdir lock serializes read-compare-append, which also stops the same-repo duplicate the repeat filter used to miss. Direct CLI stays synchronous. The faster-scan alternative was not taken: it shrinks the stall without removing it. Shipped in 2.8.0"
 received: 2026-10-02
 ---
 

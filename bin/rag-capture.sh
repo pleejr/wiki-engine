@@ -129,8 +129,96 @@ BOUND="$("$VB" --wiki "$WIKI" 2>/dev/null || true)"
 
 SESS_DIR="$WIKI/raw/sessions"
 mkdir -p "$SESS_DIR"
+
+# ── DETACH (RAG_CAPTURE_DETACH=1, set by the plugin's SessionEnd hook) ──────────────
+# The host WAITS on a SessionEnd hook, and the workspace-root scan below runs git in every
+# child repo — ~10s at ~90 repos, measured, on every exit from that directory. A stalled
+# exit invites a second interrupt, and the host then cancels EVERY SessionEnd hook still
+# running; because the append happens in one block at the end, the cancel lost the whole
+# capture. The `timeout` in hooks.json kept the scan alive through the host's grace window
+# but could not stop the host waiting on it.
+#
+# So the hook does the cheap, payload-dependent half here — stdin read, vault and
+# boundary checks — and re-runs THIS script for the scan in a new session (setsid), with
+# stdin from /dev/null and output to a per-machine log, then exits 0. The child carries
+# RAG_CAPTURE_DETACHED=1, so it can never detach again: one hop, no recursion, and it
+# still never invokes `claude` (Hard safety rule). The log lives outside the vault (the
+# cache dir statusline.sh already uses) so it never shows up as an untracked vault file.
+#
+# Off by default: a direct CLI run stays synchronous, so its stdout and exit status still
+# report what happened to the person who ran it.
+CAP_STATE="${XDG_CACHE_HOME:-$HOME/.cache}/wiki-engine/capture"
+CAP_LOG="$CAP_STATE/rag-capture.log"
+if [ "${RAG_CAPTURE_DETACH:-0}" = "1" ] && [ "${RAG_CAPTURE_DETACHED:-0}" != "1" ]; then
+  mkdir -p "$CAP_STATE"
+  # bounded: keep the tail once it passes ~256 KB
+  if [ -f "$CAP_LOG" ] && [ "$(wc -c < "$CAP_LOG")" -gt 262144 ]; then
+    tail -n 1000 "$CAP_LOG" > "$CAP_LOG.tmp" && mv "$CAP_LOG.tmp" "$CAP_LOG"
+  fi
+  child=("${BASH_SOURCE[0]}" --wiki "$WIKI" --repo "$REPO")
+  [ -n "$NOTE" ] && child+=(--note "$NOTE")
+  [ -n "$TRANSCRIPT" ] && child+=(--transcript "$TRANSCRIPT")
+  # setsid(1) is util-linux, absent on macOS; python3 and perl both reach setsid(2).
+  if command -v setsid >/dev/null 2>&1; then
+    detach=(setsid)
+  elif command -v python3 >/dev/null 2>&1; then
+    detach=(python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])')
+  elif command -v perl >/dev/null 2>&1; then
+    detach=(perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec: $!"')
+  else
+    detach=(nohup)   # survives the hook's exit; not a host signal to its process group
+  fi
+  RAG_CAPTURE_DETACHED=1 "${detach[@]}" "${child[@]}" </dev/null >>"$CAP_LOG" 2>&1 &
+  echo "rag-capture: capturing in the background (pid $!) — log: $CAP_LOG"
+  exit 0
+fi
+
 FILE="$SESS_DIR/$(date +%Y-%m).md"
 TS="$(date +%Y-%m-%dT%H:%M:%S%z)"
+
+# One EXIT handler for everything this run holds. In a detached run nobody reads the exit
+# status, so a failure is written into the log by name — "the hook is broken" must not look
+# like a quiet session.
+WINDOW_REF=""
+LOCK=""
+on_exit() {
+  local rc=$?
+  [ -n "$WINDOW_REF" ] && rm -f "$WINDOW_REF"
+  [ -n "$LOCK" ] && rm -rf "$LOCK"
+  if [ "${RAG_CAPTURE_DETACHED:-0}" = "1" ] && [ "$rc" -ne 0 ]; then
+    echo "rag-capture: FAILED (exit $rc) at $TS — repo $REPO, vault $WIKI"
+  fi
+}
+trap on_exit EXIT
+[ "${RAG_CAPTURE_DETACHED:-0}" = "1" ] && echo "rag-capture: [$TS] pid $$ — repo $REPO"
+
+# ── SERIALIZE: read-compare-append is one critical section per buffer ───────────────
+# Two sessions ending together each read the buffer, compare against the newest block,
+# and append. Unserialized, both read before either writes and the repeat filter cannot
+# see the twin — and a detached hook makes "ending together" the normal case for a fan-out
+# of one-shots. mkdir is the lock (atomic everywhere; flock(1) is absent on macOS), keyed
+# on the buffer path, held until exit, and stolen from a holder whose pid is gone.
+#
+# A lock that cannot be had within RAG_CAPTURE_LOCK_WAIT seconds (default 60) is passed
+# WITHOUT the lock, with a warning: the worst case is then the duplicate block this used
+# to produce routinely, never a lost one — over-capture is noise, under-capture loses the
+# session the user just had.
+mkdir -p "$CAP_STATE"
+lock_path="$CAP_STATE/lock-$(printf '%s' "$FILE" | cksum | cut -d' ' -f1)"
+waited=0; got=0
+while :; do
+  if mkdir "$lock_path" 2>/dev/null; then got=1; break; fi
+  holder="$(cat "$lock_path/pid" 2>/dev/null || true)"
+  if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+    rm -rf "$lock_path"; continue                 # holder died without releasing
+  fi
+  if [ "$waited" -ge $(( ${RAG_CAPTURE_LOCK_WAIT:-60} * 5 )) ]; then
+    echo "rag-capture: warning — $lock_path still held; capturing without it (a duplicate block is possible)" >&2
+    break
+  fi
+  sleep 0.2; waited=$((waited + 1))
+done
+if [ "$got" = 1 ]; then LOCK="$lock_path"; echo $$ > "$LOCK/pid"; fi
 
 # The buffer file is created LAZILY, immediately before the first append (see
 # ensure_file below). Creating it here made a fully-suppressed run leave a header behind
@@ -229,7 +317,6 @@ previous_stamp() {  # previous_stamp NAME — timestamp of that newest recorded 
 # platform's date(1) does neither arithmetic form; the age test is then skipped and any
 # dirt counts, i.e. the old behaviour. That fallback direction is deliberate: over-capture
 # is noise, under-capture loses the session the user just had.
-WINDOW_REF=""
 WINDOW_TRIED=""
 window_ref() {
   if [ -z "$WINDOW_TRIED" ]; then
@@ -239,7 +326,7 @@ window_ref() {
     if [ -n "$stamp" ]; then
       f="${TMPDIR:-/tmp}/rag-capture-window.$$"
       if touch -t "$stamp" "$f" 2>/dev/null; then
-        WINDOW_REF="$f"; trap 'rm -f "$WINDOW_REF"' EXIT
+        WINDOW_REF="$f"            # removed by on_exit
       fi
     fi
   fi

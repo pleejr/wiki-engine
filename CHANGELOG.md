@@ -4,6 +4,24 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [2.8.0] — 2026-10-02
+
+Minor — the SessionEnd capture no longer holds session exit.
+
+### Changed
+- **The capture hook returns at once; the scan runs detached.** The host waits on a SessionEnd hook, and `rag-capture.sh` at a workspace root runs git in every child repo: ~10 s per exit at ~90 repos (5.8 s on a 90-repo fixture). A stalled exit invites a second interrupt, which cancels every SessionEnd hook still running, so the capture was lost anyway. The hook now sets `RAG_CAPTURE_DETACH=1`. It reads the payload and checks the vault in the foreground, then re-runs itself once in a new session (`setsid`, or python3/perl `setsid(2)` where the binary is absent) and exits 0. On the same fixture the hook returns in 0.05 s and all 90 blocks land. `RAG_CAPTURE_DETACHED=1` stops a second hop. Nothing in the path invokes `claude`. A direct CLI run without the variable stays synchronous and keeps its stdout.
+- **Failures in the detached run are logged by name.** Output goes to `${XDG_CACHE_HOME:-~/.cache}/wiki-engine/capture/rag-capture.log`, outside the vault, trimmed past ~256 KB. A non-zero exit writes `rag-capture: FAILED (exit N)`.
+
+### Fixed
+- **Concurrent captures are serialized per buffer.** Two sessions ending together both read the buffer before either wrote, so the repeat filter missed the twin and filed a duplicate. A per-buffer `mkdir` lock now covers read-compare-append. A stale holder is stolen; after `RAG_CAPTURE_LOCK_WAIT` seconds (default 60) the run proceeds unlocked with a warning, so the worst case stays a duplicate block, never a lost one.
+
+### Declined
+- Speeding up the scan instead: cost still scales with repo count, so it shrinks the stall rather than removing it.
+
+CI runs the hook's own command from `hooks/hooks.json` against a slow-`git` fixture. It asserts the hook returns within 3 s, that a process-group kill after it returns loses no block, and that the transcript pointer survives the detach. It also asserts two concurrent same-repo captures file one block, a failed detached run names itself in the log, and the direct CLI stays synchronous. Five assertions are red against 2.7.0.
+
+Proposal: rag-capture-sessionend-should-not-hold-exit
+
 ## [2.7.0] — 2026-10-01
 
 Minor — semantic recall runs on every prompt, and ranks better when it does.
