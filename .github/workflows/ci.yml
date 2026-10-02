@@ -5699,6 +5699,112 @@ jobs:
 
           exit "$fail"
 
+      - name: The capture hook returns at once and loses nothing to a cancelled exit
+        run: |
+          # REGRESSION: the SessionEnd hook ran the whole capture before returning, and the
+          # host WAITS on a SessionEnd hook. At a workspace root the scan runs git in every
+          # child repo, so exit stalled ~10s at ~90 repos; a stalled exit invites a second
+          # interrupt, and the host then cancels every SessionEnd hook still running. The
+          # capture appends in one block at its END, so the cancel lost it whole.
+          #
+          # The wired hook must therefore hand the scan to a detached child and return. This
+          # step runs the hook's OWN command from hooks/hooks.json — a test that called the
+          # script with a hand-written env would pass while the wiring stayed synchronous.
+          #
+          # A slow `git log` shim stands in for a large workspace: a runner is fast enough
+          # that a real 90-repo fixture can finish inside any bound worth asserting.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-ragdetach"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          T="$RUNNER_TEMP/ragdetach"; rm -rf "$T"; mkdir -p "$T/bin"; fail=0
+          export XDG_CACHE_HOME="$T/cache"
+          LOG="$XDG_CACHE_HOME/wiki-engine/capture/rag-capture.log"
+          REALGIT="$(command -v git)"
+          printf '#!/bin/sh\nfor a; do [ "$a" = log ] && { sleep %s; break; }; done\nexec "%s" "$@"\n' 0.5 "$REALGIT" > "$T/bin/git"
+          chmod +x "$T/bin/git"
+          HOOK="$(python3 -c 'import json; print(json.load(open("hooks/hooks.json"))["hooks"]["SessionEnd"][0]["hooks"][0]["command"])')"
+          newvault() { mkdir -p "$1/raw/sessions"; printf -- '---\nboundary: personal\n---\n\n# v\n' > "$1/CLAUDE.md"; }
+          newrepo() { mkdir -p "$1"; git -C "$1" init -q .; git -C "$1" commit -q --allow-empty -m "seed $(basename "$1")"; }
+          # hook PAYLOAD-CWD VAULT — run the wired command the way the host does, in its own
+          # process group so the "host cancel" below can signal the whole group
+          hook() {
+            printf '{"cwd":"%s","transcript_path":"/t.jsonl"}' "$1" \
+              | ( cd "$T" && PATH="$T/bin:$PATH" WIKI_PATH="$2" CLAUDE_PLUGIN_ROOT="$GITHUB_WORKSPACE" sh -c "$HOOK" ) >/dev/null 2>&1
+          }
+          # landed VAULT N — wait (bounded) until N repo blocks are in the buffer
+          landed() {
+            local i=0
+            while [ "$i" -lt 120 ]; do
+              [ "$(cat "$1"/raw/sessions/*.md 2>/dev/null | grep -c '^## .* — r[0-9]*@')" -ge "$2" ] && return 0
+              sleep 0.5; i=$((i + 1))
+            done
+            return 1
+          }
+
+          # 1. the hook returns at once, and a host cancel after it returns loses nothing
+          V="$T/v1"; newvault "$V"; W="$T/ws"
+          for i in 1 2 3 4 5 6 7 8; do newrepo "$W/r$i"; done
+          set -m
+          start=$(date +%s); hook "$W" "$V" & hp=$!
+          i=0; while kill -0 "$hp" 2>/dev/null && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
+          elapsed=$(( $(date +%s) - start ))
+          if kill -0 "$hp" 2>/dev/null; then
+            echo "  FAIL the wired hook still holds exit (>3s at an 8-repo root, ~12s of scan)"; fail=1
+          else
+            echo "  ok   the wired hook returned in ${elapsed}s"
+          fi
+          kill -TERM -- "-$hp" 2>/dev/null || true; wait "$hp" 2>/dev/null || true   # the host's cancel
+          set +m
+          if landed "$V" 8; then
+            echo "  ok   ...and all 8 repo blocks landed after the cancel"
+          else
+            echo "  FAIL the cancel lost the capture ($(cat "$V"/raw/sessions/*.md 2>/dev/null | grep -c '^## ') blocks)"; fail=1
+          fi
+          grep -q 'Transcript (' "$V"/raw/sessions/*.md 2>/dev/null \
+            && echo "  ok   ...carrying the payload's transcript pointer through the detach" \
+            || { echo "  FAIL the detached run dropped the transcript pointer"; fail=1; }
+
+          # 2. two sessions ending together: serialized, not interleaved or duplicated
+          V="$T/v2"; newvault "$V"; R="$T/one/r1"; newrepo "$R"; R2="$T/two/r2"; newrepo "$R2"
+          hook "$R" "$V" & a=$!; hook "$R" "$V" & b=$!; hook "$R2" "$V" & c=$!
+          wait "$a" "$b" "$c" 2>/dev/null || true
+          landed "$V" 2 || true; sleep 4       # let a second same-repo writer finish, if one exists
+          n1="$(grep -c '^## .* — r1@' "$V"/raw/sessions/*.md || true)"
+          n2="$(grep -c '^## .* — r2@' "$V"/raw/sessions/*.md || true)"
+          [ "$n1" = 1 ] && [ "$n2" = 1 ] \
+            && echo "  ok   concurrent captures filed one block per repo" \
+            || { echo "  FAIL concurrent captures filed r1=$n1 r2=$n2 blocks (want 1 each)"; fail=1; }
+          bad="$(awk '/^## /{ if (open) b++; open=0 } /^```/{ open=!open } END{ print b+0 + (open?1:0) }' "$V"/raw/sessions/*.md)"
+          [ "$bad" = 0 ] \
+            && echo "  ok   ...every block intact (no header inside an open fence)" \
+            || { echo "  FAIL interleaved appends ($bad broken block(s))"; fail=1; }
+
+          # 3. a detached failure is visible in the log, not silent
+          V="$T/v3"; newvault "$V"; R3="$T/three/r3"; newrepo "$R3"
+          mkdir -p "$V/raw/sessions/$(date +%Y-%m).md"     # a directory where the buffer goes: append must fail
+          rm -f "$LOG"; hook "$R3" "$V" || true
+          i=0; until grep -q 'FAILED' "$LOG" 2>/dev/null || [ "$i" -ge 60 ]; do sleep 0.5; i=$((i + 1)); done
+          grep -q 'FAILED' "$LOG" 2>/dev/null \
+            && echo "  ok   a failed detached capture is recorded in $LOG" \
+            || { echo "  FAIL a failed detached capture left no trace in the log"; fail=1; }
+
+          # 4. direct CLI keeps synchronous behaviour and its stdout
+          V="$T/v4"; newvault "$V"; R4="$T/four/r4"; newrepo "$R4"
+          out="$( cd "$R4" && WIKI_PATH="$V" "$GITHUB_WORKSPACE/bin/rag-capture.sh" </dev/null 2>&1 )" || true
+          printf '%s' "$out" | grep -q 'appended session entry' && grep -q '— r4@' "$V"/raw/sessions/*.md \
+            && echo "  ok   direct CLI still captures synchronously and says so" \
+            || { echo "  FAIL direct CLI changed behaviour: $out"; fail=1; }
+
+          # 5. the detach re-runs THIS script, never `claude` (Hard safety rule)
+          if grep -v '^[[:space:]]*#' "$GITHUB_WORKSPACE/bin/rag-capture.sh" | grep -Eq '(^|[^-_./a-z])claude([[:space:]]|$)'; then
+            echo "  FAIL rag-capture.sh invokes claude"; fail=1
+          else
+            echo "  ok   no claude invocation in rag-capture.sh"
+          fi
+
+          exit "$fail"
+
       - name: Workspace capture selects repos on session activity, not on being dirty
         run: |
           # REGRESSION: the workspace-root scan selected a child repo on a PERSISTENT

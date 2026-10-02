@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "RAG_CAPTURE_TRANSCRIPT_PATH=1 \"${CLAUDE_PLUGIN_ROOT}/bin/rag-capture.sh\"",
+            "command": "RAG_CAPTURE_DETACH=1 RAG_CAPTURE_TRANSCRIPT_PATH=1 \"${CLAUDE_PLUGIN_ROOT}/bin/rag-capture.sh\"",
             "timeout": 30
           }
         ]
