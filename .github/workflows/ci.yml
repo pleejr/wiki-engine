@@ -74,6 +74,64 @@ jobs:
             || { echo "  FAIL the plugin pointer was mistaken for the installed copy"; fail=1; }
           exit "$fail"
 
+      - name: A pinned release the stack cannot install is held back, not actionable
+        run: |
+          # REGRESSION: `pip list --outdated` names the newest release on the index whether or
+          # not the rest of the stack accepts it. fastembed 0.8.x requires huggingface-hub<2.0,
+          # so hub 2.x made doctor and the freshness cron report an "actionable" pinned bump
+          # that no pin set could install — an alarm with no remedy, which rots into the
+          # steady-state noise the pinned/transitive split exists to prevent.
+          #
+          # The fixture is two fake distributions on PYTHONPATH: aaa requires bbb<2.0, and a
+          # marker-gated requirement on ccc that does not apply here (the near-miss). `pip` and
+          # the index are stubbed; `packaging` comes from a throwaway venv, as it does from the
+          # RAG venv in the field.
+          T="$RUNNER_TEMP/heldback"; rm -rf "$T"; mkdir -p "$T/site"; fail=0
+          python3 -m venv "$T/venv"; "$T/venv/bin/pip" install -q packaging
+          for spec in "aaa 1.0 bbb<2.0,>=0.5|ccc>=9; python_version < \"3.0\"" "bbb 1.0 " "ccc 1.0 "; do
+            set -- ${spec%%|*}; extra="${spec#*|}"; [ "$extra" = "$spec" ] && extra=""
+            d="$T/site/$1-$2.dist-info"; mkdir -p "$d"
+            { printf 'Metadata-Version: 2.1\nName: %s\nVersion: %s\n' "$1" "$2"
+              [ -n "${3:-}" ] && printf 'Requires-Dist: %s\n' "$3"
+              [ -n "$extra" ] && printf 'Requires-Dist: %s\n' "$extra"; } > "$d/METADATA"
+          done
+          printf 'bbb==1.0\nccc==1.0\n' > "$T/req.txt"
+          PYTHONPATH="$T/site:$GITHUB_WORKSPACE/bin" "$T/venv/bin/python" - "$T/req.txt" <<'PY' || fail=1
+          import io, sys, contextlib, types
+          import rag_deps_check as r
+          req = sys.argv[1]; fail = 0
+          def check(ok, msg):
+              global fail
+              print(("  ok   " if ok else "  FAIL ") + msg); fail |= not ok
+          check(r.held_back("bbb", "2.1") == [("aaa", "<2.0,>=0.5")], "aaa's <2.0 holds bbb 2.1 back")
+          check(r.held_back("bbb", "1.5") == [], "a release inside the range is not held back")
+          check(r.held_back("ccc", "10") == [], "a requirement whose marker does not apply holds nothing back")
+          real_run = r.subprocess.run
+          r.subprocess.run = lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="bbb (2.1)\nAvailable versions: 2.1, 1.9, 1.9rc1, 1.0\n")
+          check(r.newest_allowed("bbb", [("aaa", "<2.0,>=0.5")]) == "1.9", "the newest allowed release skips the blocked one and prereleases")
+          r.subprocess.run = real_run
+          def report(latest, allowed):
+              r.pip_outdated = lambda: [{"name": "bbb", "version": "1.0", "latest_version": latest}]
+              r.newest_allowed = lambda n, b: allowed
+              r.run_audit = lambda q: (True, [])
+              sys.argv = ["x", "--requirements", req]
+              buf = io.StringIO()
+              with contextlib.redirect_stdout(buf):
+                  rc = r.main()
+              return rc, buf.getvalue()
+          rc, out = report("2.1", "1.9")
+          check(rc == 1 and "bbb: 1.0 -> 1.9 (newest allowed; 2.1 is held back: aaa requires bbb<2.0,>=0.5)" in out,
+                "a held-back pin with an allowed bump reports the bump it can take")
+          rc, out = report("2.1", None)
+          check(rc == 0 and "bbb: 2.1 held back (aaa requires bbb<2.0,>=0.5)" in out and "cannot take yet" in out,
+                "a held-back pin with nothing allowed is informational, exit 0")
+          rc, out = report("1.5", None)
+          check(rc == 1 and "bbb: 1.0 -> 1.5" in out and "held back" not in out,
+                "an installable newer release stays actionable")
+          sys.exit(fail)
+          PY
+          exit "$fail"
+
       - name: Workflow steps must not write the real global git config
         run: |
           # These `run` blocks get extracted and executed locally to verify them — that is

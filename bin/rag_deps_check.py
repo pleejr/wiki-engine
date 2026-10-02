@@ -76,6 +76,56 @@ def pip_outdated():
         return None
 
 
+def held_back(name, latest):
+    """Who forbids `latest` of `name`? Returns [(dist, specifier)] for every installed
+    distribution whose own requirements exclude it — empty when it is installable.
+
+    `pip list --outdated` reports the newest release on the index, whether or not the rest
+    of the stack can take it. fastembed 0.8.x requires huggingface-hub<2.0, so a hub 2.x
+    release made this report "actionable" while no pin set could install it — a standing
+    alarm with no remedy, which is the noise this file's split exists to prevent.
+    Without `packaging` (a transitive of the stack, so normally present) nothing is judged
+    held back and the old report stands: a spurious alert over a silently dropped one."""
+    try:
+        from importlib.metadata import distributions
+        from packaging.requirements import Requirement
+        from packaging.version import Version
+    except ImportError:
+        return []
+    out = []
+    for d in distributions():
+        for r in d.requires or []:
+            try:
+                req = Requirement(r)
+            except Exception:
+                continue
+            if norm(req.name) != norm(name):
+                continue
+            if req.marker and not req.marker.evaluate({"extra": ""}):
+                continue
+            if req.specifier and not req.specifier.contains(Version(latest), prereleases=True):
+                out.append((d.metadata["Name"], str(req.specifier)))
+    return out
+
+
+def newest_allowed(name, blockers):
+    """Newest final release of `name` that every blocker's specifier admits, or None."""
+    try:
+        from packaging.specifiers import SpecifierSet
+        from packaging.version import Version
+    except ImportError:
+        return None
+    r = subprocess.run([sys.executable, "-m", "pip", "index", "versions", name],
+                       capture_output=True, text=True)
+    m = re.search(r"Available versions:\s*(.+)", r.stdout or "")
+    if not m:
+        return None
+    spec = SpecifierSet(",".join(s for _, s in blockers))
+    ok = [Version(v.strip()) for v in m.group(1).split(",")
+          if v.strip() and not Version(v.strip()).is_prerelease and Version(v.strip()) in spec]
+    return str(max(ok)) if ok else None
+
+
 def run_audit(req):
     """Return (available, [vuln strings]). Audits the requirements closure (the RAG
     stack), not the whole environment — so it never reports vulns in the audit tool's
@@ -125,10 +175,23 @@ def main():
     if data is None:
         print("could not reach PyPI (offline?) — skipped the newer-release check")
         return 2 if not actionable else 1
-    mine, other = [], []
+    mine, other, held = [], [], []
     for p in data:
         line = "  %s: %s -> %s" % (p["name"], p["version"], p["latest_version"])
-        (mine if norm(p["name"]) in pins else other).append(line)
+        if norm(p["name"]) not in pins:
+            other.append(line)
+            continue
+        blockers = held_back(p["name"], p["latest_version"])
+        if not blockers:
+            mine.append(line)
+            continue
+        why = ", ".join("%s requires %s%s" % (d, p["name"], s) for d, s in blockers)
+        best = newest_allowed(p["name"], blockers)
+        if best and best != p["version"]:
+            mine.append("  %s: %s -> %s (newest allowed; %s is held back: %s)"
+                        % (p["name"], p["version"], best, p["latest_version"], why))
+        else:
+            held.append("  %s: %s held back (%s)" % (p["name"], p["latest_version"], why))
     if mine:
         actionable = True
         if installed_copy(args.requirements):
@@ -143,6 +206,9 @@ def main():
             print("\n".join(mine))
     else:
         print("pinned deps: current (no newer releases)")
+    if held:
+        print("pinned deps with newer releases the stack cannot take yet (informational):")
+        print("\n".join(held))
     if other:
         print("transitive newer releases (informational — not pinned, no action needed):")
         print("\n".join(other))
