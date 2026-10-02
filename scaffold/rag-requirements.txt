@@ -22,9 +22,14 @@
 # was built under, not from the previous pin. At ~1e-04 per step no reindex is implied,
 # and nothing has reordered retrieval; the point is to measure it each time rather than
 # to assume dimension is the whole contract. The other pins here are numerically inert:
-# with only numpy or only huggingface_hub moved the vectors are bit-identical.
-fastembed==0.8.0
+# with only numpy or only huggingface_hub moved the vectors are bit-identical, and
+# fastembed 0.8.0 -> 0.8.1 with huggingface_hub 1.32.0 -> 1.33.0 is bit-identical too
+# (cosine 1.0, max delta 0.0 on 3.12/3.13/3.14, measured 2026-10-02).
+#
+# huggingface_hub stays on 1.x: fastembed 0.8.x and tokenizers both require
+# huggingface-hub<2.0, so a 2.x pin cannot resolve. doctor.sh reports it as held back.
+fastembed==0.8.1
 onnxruntime==1.30.0
 numpy==2.5.3
 tokenizers==0.23.2
-huggingface_hub==1.32.0
+huggingface_hub==1.33.0

@@ -4,10 +4,18 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
-## [Unreleased]
+## [2.8.1] — 2026-10-02
+
+Patch — fastembed 0.8.1 and huggingface_hub 1.33.0, and `doctor.sh` stops recommending a release the stack cannot install.
+
+### Changed
+- **Pins:** `fastembed` 0.8.0 → 0.8.1, `huggingface_hub` 1.32.0 → 1.33.0. Measured against the old pins in six `uv` venvs on cpython 3.12.13, 3.13.14 and 3.14.6: install clean, 28 packages, 768-dim embeddings bit-identical (cosine 1.0, max component delta 0.0) on every interpreter. No reindex.
 
 ### Fixed
+- **A pinned release the stack cannot take is held back, not actionable.** `rag_deps_check.py` took the newest release from `pip list --outdated`, which ignores what other packages allow. fastembed 0.8.x and tokenizers both require `huggingface-hub<2.0`, so `doctor.sh` and the freshness cron flagged hub 2.1.1 as an actionable bump no pin set could install. The checker now reads every installed distribution's requirements. A blocked release is reported as held back, naming who holds it, and stays informational. The newest release the stack *does* allow stays actionable (`1.32.0 -> 1.33.0 (newest allowed; 2.1.1 is held back: …)`). Without `packaging` the old report stands.
 - **README described the preflight as asking the remote.** Since 2.5.0 `session-preflight.sh` is network-free and the newer-release lookup belongs to `plugin-updates`; the README still said "vs the newest release tag on the remote (a once-a-day lookup". Found by the vault verify pass at v2.8.0.
+
+CI asserts the hold, its marker-gated near-miss, prerelease skipping, and all three report shapes against a fake two-distribution fixture. The step is red against 2.8.0.
 
 ## [2.8.0] — 2026-10-02
 
