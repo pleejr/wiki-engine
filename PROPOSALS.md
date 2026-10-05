@@ -53,6 +53,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `bump-pinned-tokenizers-0-23-2` | shipped | derived |
 | `canonical-commit-refusal-strands-staged-work-and-names-no-way-to-carry-it` | shipped | v1.73.2 |
 | `capture-scales-with-harness-fanout` | shipped | v1.65.0 |
+| `checkpoint-buffer-backlog-counts-headers-not-live-blocks` | open | received 2026-10-05 |
 | `checkpoint-integrate-step-diverges-a-pr-bound-vault` | shipped | derived |
 | `checkpoint-mining-offer-can-use-native-agent` | shipped | derived |
 | `checkpoint-prune-confirm-scope` | shipped | derived |
