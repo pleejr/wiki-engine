@@ -666,6 +666,47 @@ jobs:
           if [ -n "$(offers "$T/d.md")" ]; then echo "  ok   the old offer section is caught"; else echo "  FAIL the old offer section passed"; fail=1; fi
           exit "$fail"
 
+      - name: lint-links and lint-memory launch a fixed number of processes at any vault size
+        run: |
+          # Both lints used to fork per note and per link — a grep over the whole slug list for
+          # every link, eight frontmatter reads per note — so a vault three times larger linted
+          # six to nine times slower. Wall-clock ratios do not separate the two shapes on a CI
+          # fixture (process start-up dominates there), so this counts the processes launched,
+          # through PATH shims, at 20 and at 60 notes: the count must not grow. Measured against
+          # v3.1.0: lint-links 160 -> 440, lint-memory 390 -> 1150.
+          fail=0; T="$RUNNER_TEMP/procs"; rm -rf "$T"; mkdir -p "$T"
+          genvault() {
+            d="$1"; n="$2"; mkdir -p "$d/memory"
+            printf -- '---\ntitle: Index\n---\n\n# Index\n\n' > "$d/index.md"
+            i=1; while [ "$i" -le "$n" ]; do
+              a=$(( (i % n) + 1 )); b=$(( ((i + 7) % n) + 1 ))
+              stub=""; [ "$i" -le 5 ] && stub=" See [[missing-page-$i]]."
+              printf -- '---\ntitle: Note %s\ntype: lesson\nboundary: personal\ncreated: 2026-01-01\nupdated: 2026-01-01\n---\n\n# Note %s\n\nRelated: [[lesson-note-%s]] and [[lesson-note-%s]].%s\n' \
+                "$i" "$i" "$a" "$b" "$stub" > "$d/memory/lesson-note-$i.md"
+              printf -- '- [[lesson-note-%s]] — note %s\n' "$i" "$i" >> "$d/index.md"
+              i=$((i+1))
+            done
+          }
+          countprocs() {
+            sd="$(mktemp -d)"; log="$sd/log"; : > "$log"
+            for c in awk grep sed sort tr xargs head tail cut wc basename dirname mktemp cat find comm join uniq; do
+              real="$(command -v "$c")" || continue
+              printf '#!/bin/sh\necho %s >> "%s"\nexec "%s" "$@"\n' "$c" "$log" "$real" > "$sd/$c"; chmod +x "$sd/$c"
+            done
+            PATH="$sd:$PATH" timeout 300 "$@" >/dev/null 2>&1
+            wc -l < "$log" | tr -d ' '
+          }
+          genvault "$T/small" 20; genvault "$T/large" 60
+          # CONTROL: the counter sees growth when a command does fork per note.
+          a="$(countprocs sh -c 'for f in "$0"/memory/*.md; do grep -c . "$f"; done' "$T/small")"
+          b="$(countprocs sh -c 'for f in "$0"/memory/*.md; do grep -c . "$f"; done' "$T/large")"
+          if [ "$a" -gt 0 ] && [ "$b" -gt "$a" ]; then echo "  ok   the counter sees per-note processes ($a -> $b)"; else echo "  FAIL the counter cannot see per-note growth ($a -> $b)"; fail=1; fi
+          for s in lint-links lint-memory; do
+            a="$(countprocs ./bin/$s.sh --wiki "$T/small")"; b="$(countprocs ./bin/$s.sh --wiki "$T/large")"
+            if [ "$a" -gt 0 ] && [ "$b" -le "$a" ]; then echo "  ok   $s launches $a processes at 20 notes and $b at 60"; else echo "  FAIL $s process count grows with the vault: $a -> $b"; fail=1; fi
+          done
+          exit "$fail"
+
       - name: Crossover fail-closed smoke test
         run: |
           # crossover's safety property is that a LOSSY PASTE CAN NEVER AUTHORIZE A DELETE:

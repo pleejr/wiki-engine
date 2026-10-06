@@ -178,30 +178,110 @@ is_external() { grep -qxF -- "$1" <<<"$EXTERNAL"; }
 has_slug()    { grep -qxF -- "$1" <<<"$SLUGS"; }
 
 errors=0 warnings=0 pages=0
+# ONE pass over every page, then ONE join against the slug set. The per-link form ran a
+# `grep` over the whole slug list for every link, so cost grew as links x pages: a vault
+# three times larger linted about nine times slower. Order and output are unchanged:
+# pages in NODE_DIRS then glob order, each page's links unique and C-sorted, and
+# near_miss still runs per unresolved link — which is rare, so it stays out of the hot path.
+LL_TMP="$(mktemp -d)"; trap 'rm -rf "$LL_TMP"' EXIT
+: > "$LL_TMP/files"
 for d in "${NODE_DIRS[@]}"; do
   [ -d "$WIKI/$d" ] || continue
   for f in "$WIKI/$d"/*.md; do
     [ -f "$f" ] || continue
     pages=$((pages+1))
-    slug="$(basename "$f" .md)"
-    header_shown=0
-    while IFS= read -r lk; do
-      [ -n "$lk" ] || continue
-      [ "$lk" = "$slug" ] && continue
-      has_slug "$lk" && continue
-      is_external "$lk" && continue
-      if hit="$(near_miss "$lk")"; then
-        [ "$header_shown" -eq 0 ] && { printf '%s\n' "${f#$WIKI/}"; header_shown=1; }
-        printf '  ✗ [[%s]] does not resolve, but [[%s]] does — typo or a slug left behind by a rename\n' "$lk" "$hit"
-        errors=$((errors+1))
-      else
-        [ "$header_shown" -eq 0 ] && { printf '%s\n' "${f#$WIKI/}"; header_shown=1; }
-        printf '  ! [[%s]] is a stub (no such page — intended per SCHEMA, or add it to %s)\n' "$lk" "$EXT_FILE"
-        warnings=$((warnings+1))
-      fi
-    done < <(prose_links "$f")
+    printf '%s\n' "$f" >> "$LL_TMP/files"
   done
 done
+printf '%s\n' "$SLUGS" > "$LL_TMP/slugs"
+printf '%s\n' "$EXTERNAL" > "$LL_TMP/external"
+if [ "$pages" -gt 0 ]; then
+  # Same extraction as prose_links: fenced blocks and code spans (longest backtick runs
+  # first) are not links; then [[target|alias#anchor]] -> target.
+  tr '\n' '\0' < "$LL_TMP/files" | xargs -0 awk '
+    FNR == 1 { idx++; fence = 0 }
+    /^[ \t]*```/ { fence = !fence; next }
+    fence { next }
+    {
+      line = $0
+      gsub(/```[^`]*```/, "", line)
+      gsub(/``[^`]*``/,   "", line)
+      gsub(/`[^`]*`/,     "", line)
+      while (match(line, /\[\[[^]]+\]\]/)) {
+        lk = substr(line, RSTART + 2, RLENGTH - 4)
+        sub(/[|#].*/, "", lk)
+        if (lk != "") print idx "\t" lk
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }' | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2 -u > "$LL_TMP/links"
+  # Keep only what does not resolve: not the page itself, not a slug, not external.
+  awk -F '\t' -v files="$LL_TMP/files" -v slugs="$LL_TMP/slugs" -v ext="$LL_TMP/external" '
+    BEGIN {
+      while ((getline l < slugs) > 0) if (l != "") S[l] = 1
+      while ((getline l < ext) > 0)   if (l != "") X[l] = 1
+      while ((getline l < files) > 0) { n++; p = l; sub(/.*\//, "", p); sub(/\.md$/, "", p); SELF[n] = p }
+    }
+    { if ($2 == SELF[$1] || ($2 in S) || ($2 in X)) next; print }
+  ' "$LL_TMP/links" > "$LL_TMP/unresolved"
+  # near_miss for every unresolved link in ONE process, same tests in the same order, first
+  # slug wins. Edit distance is skipped when lengths differ by more than 2, because the
+  # distance can then not be <= 2 — the result is identical and the hot path stays linear.
+  cut -f2 "$LL_TMP/unresolved" | awk -v slugs="$LL_TMP/slugs" '
+    function min3(a,b,c) { return (a<b ? (a<c?a:c) : (b<c?b:c)) }
+    function lev(s, tt,   m,n,i,j,prev,cur,cost) {
+      m=length(s); n=length(tt)
+      if (m==0) return n; if (n==0) return m
+      for (j=0; j<=n; j++) prev[j]=j
+      for (i=1; i<=m; i++) {
+        cur[0]=i
+        for (j=1; j<=n; j++) {
+          cost = (substr(s,i,1)==substr(tt,j,1)) ? 0 : 1
+          cur[j] = min3(cur[j-1]+1, prev[j]+1, prev[j-1]+cost)
+        }
+        for (j=0; j<=n; j++) prev[j]=cur[j]
+      }
+      return prev[n]
+    }
+    function norm(x) { x=tolower(x); gsub(/[^a-z0-9]/,"",x); return x }
+    function run_match(a, b,   ac,bc,an,bn,i,k,ok) {
+      an=split(a, ac, "-"); bn=split(b, bc, "-")
+      if (an > bn) return 0
+      if (an/bn < 0.6) return 0
+      for (i=1; i<=bn-an+1; i++) {
+        ok=1
+        for (k=0; k<an; k++) if (ac[k+1] != bc[i+k]) { ok=0; break }
+        if (ok) return 1
+      }
+      return 0
+    }
+    BEGIN { while ((getline l < slugs) > 0) { ns++; SL[ns]=l; NM[ns]=norm(l); LN[ns]=length(l); LW[ns]=tolower(l); CP[ns]="-" l "-"; F1[ns]=l; sub(/-.*/, "", F1[ns]) } }
+    {
+      t=$0; nt=norm(t); lt=length(t); tw=tolower(t); hit=""; tc="-" t "-"; t1=t; sub(/-.*/, "", t1)
+      for (k=1; k<=ns; k++) {
+        s=SL[k]
+        if (s == t) continue
+        if (NM[k] == nt) { hit=s; break }
+        d = LN[k] - lt; if (d < 0) d = -d
+        if (lt >= 5 && LN[k] >= 5 && d <= 2 && lev(LW[k], tw) <= 2) { hit=s; break }
+        # A contiguous component run must contain the FIRST component of the shorter side, so a
+        # slug that does not hold it as a whole component cannot match: skip the split.
+        if ((index(CP[k], "-" t1 "-") && run_match(t, s)) || (index(tc, "-" F1[k] "-") && run_match(s, t))) { hit=s; break }
+      }
+      print hit
+    }' > "$LL_TMP/hits"
+  last=""
+  while IFS="$(printf '\t')" read -r idx lk <&3 && IFS= read -r hit <&4; do
+    f="$(sed -n "${idx}p" "$LL_TMP/files")"
+    if [ "$idx" != "$last" ]; then printf '%s\n' "${f#$WIKI/}"; last="$idx"; fi
+    if [ -n "$hit" ]; then
+      printf '  ✗ [[%s]] does not resolve, but [[%s]] does — typo or a slug left behind by a rename\n' "$lk" "$hit"
+      errors=$((errors+1))
+    else
+      printf '  ! [[%s]] is a stub (no such page — intended per SCHEMA, or add it to %s)\n' "$lk" "$EXT_FILE"
+      warnings=$((warnings+1))
+    fi
+  done 3< "$LL_TMP/unresolved" 4< "$LL_TMP/hits"
+fi
 
 echo
 echo "link lint: $pages content-node page(s), $errors error(s), $warnings stub warning(s)"
