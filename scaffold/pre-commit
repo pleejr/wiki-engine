@@ -52,8 +52,23 @@ fi
 # every commit made on a lagging pointer would be a worse failure than the one it prevents.
 # Nothing in this block may change the exit status.
 SKEW=""
-if [ "$VIA_POINTER" = "1" ] && [ -f "$CANON/.engine-version" ]; then
-  want="$(tr -d '[:space:]' < "$CANON/.engine-version" 2>/dev/null || true)"
+want=""
+if [ "$VIA_POINTER" = "1" ]; then
+  # The record judged is the one THIS COMMIT carries: the staged .engine-version, then the
+  # committing tree's, and canonical's only as a last resort. A MAJOR migration is committed
+  # from a session worktree that stages the new release while canonical still records the
+  # old one, and reading canonical first printed a skew NOTE on exactly that commit, advising
+  # it be gated by the release being migrated away from. update.sh resolves the caller's tree
+  # before reading the record for the same reason.
+  want="$(git -C "$ROOT" show :.engine-version 2>/dev/null | tr -d '[:space:]')" || want=""
+  if [ -z "$want" ] && [ -f "$ROOT/.engine-version" ]; then
+    want="$(tr -d '[:space:]' < "$ROOT/.engine-version" 2>/dev/null || true)"
+  fi
+  if [ -z "$want" ] && [ -f "$CANON/.engine-version" ]; then
+    want="$(tr -d '[:space:]' < "$CANON/.engine-version" 2>/dev/null || true)"
+  fi
+fi
+if [ "$VIA_POINTER" = "1" ] && [ -n "$want" ]; then
   # FAIL-OPEN, and pipefail-safe. An engine with no manifest (a checkout laid out by hand, a
   # stand-in) must leave the gate exactly as it was: `sed missing-file | head -1` returns
   # sed's exit 2 under `pipefail` and `set -e` then kills the hook BEFORE the lint runs — a

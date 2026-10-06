@@ -2,12 +2,21 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = a backwards-compatible fix to a consumed component. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
-**What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
+**What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [3.1.0] — 2026-10-06
 
-## [Unreleased]
+## [3.1.0] — 2026-10-06
+
+Minor — `distill` no longer offers the mining pass; the pre-commit skew note reads the record the commit carries.
+
+### Changed
+- **`distill` neither offers nor starts `mine`.** Its last section ended every wrap-up by offering the mining pass and, on accept, starting it in a subagent, which made mining a step of every session. Mining is now strictly operator-invoked: the section, the subagent prompt and the `spawn-session.sh` path are gone from `distill`, and `mine`'s description no longer says it is offered. `spawn-session.sh` itself is unchanged. CI fails if `distill` again offers, starts, forks or spawns `mine`, proven red against the 3.0.0 text. This is step 7 of the open `checkpoint-becomes-distill` proposal, shipped ahead of the rest.
+
+### Fixed
+- **The pre-commit release-skew note compared against canonical's `.engine-version`, not the record the commit carries.** A MAJOR migration committed from a session worktree stages the new release while canonical still records the old one, so the note fired on exactly that commit and advised gating it with the release being left behind. The template now reads the staged record, then the committing tree's, then canonical's. A real skew in the staged record is still reported (near-miss in CI). Report only, as before: the exit status never changes.
+- **Vaults keep the hook they adopted, so adoption now says when it predates this fix.** `adopt.d/30` prints a NOTE when the installed pre-commit reads canonical's record without the staged one, naming the template to refresh from. Adoption still never edits the hook.
 
 ### Added
-- **`lint-docs.sh` check 13: a skill's name starts with an approved verb.** The house rule for new skills is `<verb>` or `<verb>-<object>`; the verbs are `bin/skill-verbs.txt` and the names kept on purpose are `bin/skill-name-exempt.txt` (closed to new skills; `wiki-context` is the one engine entry). A new skill whose first word is not on the list fails the gate, naming the file and the word. CI proves it with a non-verb name, a verb glued to its object, a verb-led name, and a negative control that removes a verb and expects the skill using it to fail. Engine CI only; nothing a consumer runs changes, so there is no release.
+- **`lint-docs.sh` check 13: a skill's name starts with an approved verb.** The house rule for new skills is `<verb>` or `<verb>-<object>`; the verbs are `bin/skill-verbs.txt` and the names kept on purpose are `bin/skill-name-exempt.txt` (closed to new skills; `wiki-context` is the one engine entry). A new skill whose first word is not on the list fails the gate, naming the file and the word. CI proves it with a non-verb name, a verb glued to its object, a verb-led name, and a negative control that removes a verb and expects the skill using it to fail.
 
 ## [3.0.0] — 2026-10-06
 
