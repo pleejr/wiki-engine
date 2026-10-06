@@ -69,10 +69,15 @@ if [ -n "$(git -C "$WORK" status --porcelain)" ]; then
 fi
 
 # --- route ------------------------------------------------------------------------------
+# The route is read from the tree being LANDED first, then canonical: a vault that declares
+# its route in the same commit (its first distill) would otherwise be refused for a setting
+# it is in the act of landing — the pre-commit skew note had the same canonical-first shape.
 route=""
-if [ -f "$CANON/.wiki-gates.conf" ]; then
-  route="$(awk -F= '/^[ \t]*#/{next} {k=$1; gsub(/[ \t]/,"",k); if (k=="publish") {v=$2; gsub(/[ \t]/,"",v); print v; exit}}' "$CANON/.wiki-gates.conf")"
-fi
+for conf in "$WORK/.wiki-gates.conf" "$CANON/.wiki-gates.conf"; do
+  [ -f "$conf" ] || continue
+  route="$(awk -F= '/^[ \t]*#/{next} {k=$1; gsub(/[ \t]/,"",k); if (k=="publish") {v=$2; gsub(/[ \t]/,"",v); print v; exit}}' "$conf")"
+  [ -n "$route" ] && break
+done
 case "$route" in
   direct|pr) ;;
   *) echo "distill-finish: refusing — the vault declares no publish route." >&2

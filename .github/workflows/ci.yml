@@ -716,13 +716,6 @@ jobs:
           # capture lock and the current one never does; other repositories are reported,
           # never changed; and two sessions finishing at once both land without touching each
           # other's tree.
-          # A: no declared route -> refused, naming the setting, nothing landed
-          # B: direct route -> integrated, pushed, worktree retired, VAULT DONE
-          # D (same vault): an old month file ages out, the current month's stays
-          # C: uncommitted work -> refused, rc 1
-          # E: pull-request route -> pushes the branch, never integrates, reports the open PR
-          # F: a repository the session touched is reported, not acted on
-          # G: two sessions finish at the same moment -> both land, neither touches the other's tree
           fail=0
           # `bash -e` safe: every assertion runs inside `if`, every expected failure is captured with `|| rc=$?`.
           chk() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1"; fail=1; fi; }
@@ -740,6 +733,13 @@ jobs:
           mkvault a; export WIKI_PATH="$V"; W="$("$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "route test" "$W"
           rc=0; out="$(cd "$W" && "$E/distill-finish.sh" 2>&1)" || rc=$?
           chk "no publish route: refused with rc 2, naming the setting" '[ "$rc" = 2 ] && printf '"'"'%s'"'"' "$out" | grep -q '"'"'publish = direct'"'"''
+          # A2: the route declared only in the commit being landed is honoured (dogfood regression:
+          # the first adoption declared it in its own commit and was refused, reading canonical).
+          printf 'publish = direct\n' > "$W/.wiki-gates.conf"; git -C "$W" add .wiki-gates.conf; git -C "$W" commit -qm "declare route" >/dev/null 2>&1
+          rc=0; out="$(cd "$W" && "$E/distill-finish.sh" --no-push 2>&1)" || rc=$?
+          chk "a route declared only in the landing commit is honoured" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^VAULT DONE"'
+          W="$("$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "direct landing" "$W"   # distinct text: an identical entry is dropped by the rebase as already applied
+          # D (same vault): an old month file ages out, the current month's stays
 
           # B: direct route -> integrated, pushed, worktree retired, VAULT DONE
           printf 'publish = direct\n' > "$V/.wiki-gates.conf"
@@ -748,7 +748,7 @@ jobs:
           cur="$V/raw/sessions/$(date +%Y-%m).md"; printf '# x\n\n## %sT10:00:00-0500 — r@main (abc)\n' "$(date +%Y-%m-%d)" > "$cur"
           rc=0; out="$(cd "$W" && "$E/distill-finish.sh" 2>&1)" || rc=$?
           chk "direct route: VAULT DONE, rc 0" '[ "$rc" = 0 ] && printf '"'"'%s'"'"' "$out" | grep -q '"'"'^VAULT DONE'"'"''
-          chk "direct route: the commit is on origin main" '[ "$(git -C "$T/a.git" log -1 --format=%s main)" = "route test" ]'
+          chk "direct route: the commit is on origin main" '[ "$(git -C "$T/a.git" log -1 --format=%s main)" = "direct landing" ]'
           chk "direct route: the session worktree is retired" '[ ! -d "$W" ]'
           chk "age-out: a month file older than the window is deleted" '[ ! -f "$V/raw/sessions/2020-01.md" ]'
           chk "age-out: the current month's file is never deleted" '[ -f "$cur" ]'
@@ -787,6 +787,26 @@ jobs:
           subjects="$(git -C "$T/g.git" log --format=%s main)"
           chk "concurrent finishes: origin main holds both sessions' commits" 'printf '"'"'%s'"'"' "$subjects" | grep -q '"'"'session one'"'"' && printf '"'"'%s'"'"' "$subjects" | grep -q '"'"'session two'"'"''
           chk "concurrent finishes: each retired only its own worktree" '[ ! -d "$W1" ] && [ ! -d "$W2" ]'
+          # H: two sessions that BOTH append to log.md land together — union keeps both lines
+          # instead of a conflict at integrate (every session appends there).
+          mkvault h; export WIKI_PATH="$V"; printf 'publish = direct\n' > "$V/.wiki-gates.conf"
+          H1="$(WIKI_WT_SESSION=h1 "$E/vault-worktree.sh" ensure 2>/dev/null)"; H2="$(WIKI_WT_SESSION=h2 "$E/vault-worktree.sh" ensure 2>/dev/null)"
+          entry "first session's line" "$H1"; entry "second session's line" "$H2"
+          (r=0; cd "$H1" && WIKI_WT_SESSION=h1 "$E/distill-finish.sh" > "$T/h1.out" 2>&1 || r=$?; echo "$r" > "$T/h1.rc") &
+          (r=0; cd "$H2" && WIKI_WT_SESSION=h2 "$E/distill-finish.sh" > "$T/h2.out" 2>&1 || r=$?; echo "$r" > "$T/h2.rc") &
+          wait
+          chk "two sessions appending to log.md both land" '[ "$(cat "$T/h1.rc")" = 0 ] && [ "$(cat "$T/h2.rc")" = 0 ]'
+          chk "...and log.md on origin main holds both lines" 'git -C "$T/h.git" show main:log.md | grep -q "first session" && git -C "$T/h.git" show main:log.md | grep -q "second session"'
+          # The adoption step brings the same attribute to a vault scaffolded before it, once.
+          # A vault from before this has the file in neither the tree nor the index (git falls
+          # back to the index's copy when the tree's is missing, so a plain rm is no fixture).
+          git -C "$V" rm -q .gitattributes && git -C "$V" commit -qm "pre-union vault" --no-verify
+          chk "fixture: log.md has no merge attribute" '[ "$(git -C "$V" check-attr merge -- log.md | sed "s/.*: //")" = unspecified ]'
+          WIKI="$V" ENGINE="$GITHUB_WORKSPACE" ADOPT_LIB="$GITHUB_WORKSPACE/bin/adopt-lib.sh" ADOPT_CHECK=1 bash "$GITHUB_WORKSPACE/adopt.d/45-vault-log-union.sh" >/dev/null
+          chk "adoption in check mode writes nothing" '[ ! -f "$V/.gitattributes" ]'
+          WIKI="$V" ENGINE="$GITHUB_WORKSPACE" ADOPT_LIB="$GITHUB_WORKSPACE/bin/adopt-lib.sh" ADOPT_CHECK="" bash "$GITHUB_WORKSPACE/adopt.d/45-vault-log-union.sh" >/dev/null
+          WIKI="$V" ENGINE="$GITHUB_WORKSPACE" ADOPT_LIB="$GITHUB_WORKSPACE/bin/adopt-lib.sh" ADOPT_CHECK="" bash "$GITHUB_WORKSPACE/adopt.d/45-vault-log-union.sh" >/dev/null
+          chk "adoption adds log.md merge=union once" '[ "$(git -C "$V" check-attr merge -- log.md | sed "s/.*: //")" = union ] && [ "$(grep -c "merge=union" "$V/.gitattributes")" = 1 ]'
           exit "$fail"
 
       - name: Crossover fail-closed smoke test

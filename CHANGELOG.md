@@ -4,6 +4,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.2.1] — 2026-10-06
+
+Patch — two defects in 3.2.0's `distill-finish.sh`, both found by landing this release's own adoption with it.
+
+### Fixed
+- **A publish route declared in the commit being landed was refused.** The route was read from canonical's `.wiki-gates.conf`, so a vault's first `distill` — the one that adds `publish = direct` — was told it declares no route. It is now read from the session's tree first, then canonical: the same canonical-first shape as the pre-commit skew note fixed in 3.1.0.
+- **Two sessions that both appended to `log.md` conflicted at integrate.** Every session appends there, so parallel `distill` runs tripped on a conflict with no real disagreement in it. `log.md` now merges with git's `union` driver, which keeps both sides' lines: new vaults get it from `new-wiki.sh`, and existing vaults from a new add-only adoption step, `adopt.d/45-vault-log-union.sh`, which appends `log.md merge=union` to `.gitattributes` once (commit it with the adoption).
+
+### Tests
+- The finish step now covers a route declared only in the landing commit (red against 3.2.0), two sessions each appending a log line and landing at once (both lines on `main`), and the adoption step in check mode, then twice (written once). Its first fixture deleted `.gitattributes` from the work tree only, which git answers from the index, so it was not a pre-union vault; the fixture now removes it from the index and asserts the attribute is gone before testing.
+
 ## [3.2.0] — 2026-10-06
 
 Minor — `distill` keeps the judgement and hands every mechanical step to `bin/distill-finish.sh`, then says whether the session is safe to close.
