@@ -4,6 +4,22 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.2.0] — 2026-10-06
+
+Minor — `distill` keeps the judgement and hands every mechanical step to `bin/distill-finish.sh`, then says whether the session is safe to close.
+
+### Added
+- **`bin/distill-finish.sh`.** Run from the session worktree after the commit: refuses an uncommitted tree, regenerates the projects catalog, lints, lands the branch by the vault's **declared** route, rebuilds recall, ages out the capture buffer, retires the worktree, and prints `VAULT DONE` or `VAULT OUTSTANDING` with the command that clears each item. `--repo DIR` adds `REVIEW` lines for other repositories the session touched (uncommitted paths, unpushed branches, extra worktrees, open pull requests); only the session can attribute those, so it reads them.
+- **The publish route is declared in `.wiki-gates.conf`** — `publish = direct` (integrate, then push `main`) or `publish = pr` (push the branch, open its pull request, never integrate). A vault without it is refused with exit 2, naming the setting: the route used to be inferred from the vault's `CLAUDE.md`, and a wrong inference is how a pull-request vault once diverged its own `main`.
+
+### Changed
+- **`distill` is the judgement only**, under 700 words (was ~2,200): project state, durable notes, a log line only when no other skill already logged the work, the commit, then `distill-finish.sh`. It ends with `SAFE TO CLOSE` or `NOT SAFE TO CLOSE` and one line per outstanding item, from three sources: the script's `VAULT` line, the `REVIEW` lines the session recognises as its own, and the session's own running shells, monitors and subagents, which no script can see.
+- **The capture buffer ages out instead of being pruned block by block.** A `raw/sessions/YYYY-MM.md` whose newest block is older than 60 days (`--window-days`) is deleted in canonical under `rag-capture.sh`'s lock; the current month's file never is. A block held only repo, HEAD and commit subjects, all recoverable from git and the transcript, so the per-block judgement and its marker lines are gone. This resolves `checkpoint-buffer-backlog-counts-headers-not-live-blocks`.
+- **Native-memory pruning left the default path.** It is scratch the operator manages; `distill` no longer walks it.
+
+### Tests
+- CI runs `distill-finish.sh` on scaffolded vaults with bare origins: an undeclared route is refused; a direct vault integrates, pushes and retires its worktree; an uncommitted tree is refused; an old buffer month is deleted and the current one kept; a pull-request vault pushes its branch and never moves `main`; a touched repository's uncommitted file is reported and left alone; and two sessions finishing at the same moment both land, each retiring only its own worktree. Every assertion is `bash -e` safe, and the checker is shown to fail on a false condition.
+
 ## [3.1.1] — 2026-10-06
 
 Patch — `lint-links.sh` and `lint-memory.sh` cost grows with the vault, not with its square. Output is unchanged byte for byte.

@@ -707,6 +707,88 @@ jobs:
           done
           exit "$fail"
 
+      - name: distill-finish lands by the declared route, ages out the buffer, and touches only its own session
+        run: |
+          # distill's mechanical half. Every recorded checkpoint defect was a mechanic run by
+          # hand in the wrong tree or by the wrong route, so these are the properties pinned:
+          # an undeclared route is refused (never guessed); a direct vault integrates and
+          # pushes; a pull-request vault never integrates; old buffer months age out under the
+          # capture lock and the current one never does; other repositories are reported,
+          # never changed; and two sessions finishing at once both land without touching each
+          # other's tree.
+          # A: no declared route -> refused, naming the setting, nothing landed
+          # B: direct route -> integrated, pushed, worktree retired, VAULT DONE
+          # D (same vault): an old month file ages out, the current month's stays
+          # C: uncommitted work -> refused, rc 1
+          # E: pull-request route -> pushes the branch, never integrates, reports the open PR
+          # F: a repository the session touched is reported, not acted on
+          # G: two sessions finish at the same moment -> both land, neither touches the other's tree
+          fail=0
+          # `bash -e` safe: every assertion runs inside `if`, every expected failure is captured with `|| rc=$?`.
+          chk() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1"; fail=1; fi; }
+          T="$RUNNER_TEMP/finish"; rm -rf "$T"; mkdir -p "$T"
+          export GIT_CONFIG_GLOBAL="$T/gitconfig"; git config --global user.email ci@example.invalid; git config --global user.name CI; git config --global init.defaultBranch main
+          export WIKI_ENGINE="$GITHUB_WORKSPACE" CLAUDE_SETTINGS="$T/settings.json" WIKI_WT_SESSION=finishtest XDG_CACHE_HOME="$T/cache"
+          E="$GITHUB_WORKSPACE/bin"
+          mkvault() {  # mkvault NAME — a scaffolded vault with a bare origin
+            V="$T/$1"; "$E/new-wiki.sh" --path "$V" --boundary personal --email ci@example.invalid --git-name CI --no-rag >/dev/null 2>&1
+            git init -q --bare "$T/$1.git"; git -C "$V" remote add origin "$T/$1.git"; git -C "$V" push -q -u origin main 2>/dev/null
+          }
+          entry() { printf -- '- **2026-10-06 (test)** — %s\n' "$1" >> "$2/log.md"; git -C "$2" add log.md; git -C "$2" commit -qm "$1" >/dev/null 2>&1; }
+
+          # A: no declared route -> refused, naming the setting, nothing landed
+          mkvault a; export WIKI_PATH="$V"; W="$("$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "route test" "$W"
+          rc=0; out="$(cd "$W" && "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "no publish route: refused with rc 2, naming the setting" '[ "$rc" = 2 ] && printf '"'"'%s'"'"' "$out" | grep -q '"'"'publish = direct'"'"''
+
+          # B: direct route -> integrated, pushed, worktree retired, VAULT DONE
+          printf 'publish = direct\n' > "$V/.wiki-gates.conf"
+          # D (same vault): an old month file ages out, the current month's stays
+          mkdir -p "$V/raw/sessions"; printf '# x\n\n## 2020-01-15T10:00:00-0500 — r@main (abc)\n' > "$V/raw/sessions/2020-01.md"
+          cur="$V/raw/sessions/$(date +%Y-%m).md"; printf '# x\n\n## %sT10:00:00-0500 — r@main (abc)\n' "$(date +%Y-%m-%d)" > "$cur"
+          rc=0; out="$(cd "$W" && "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "direct route: VAULT DONE, rc 0" '[ "$rc" = 0 ] && printf '"'"'%s'"'"' "$out" | grep -q '"'"'^VAULT DONE'"'"''
+          chk "direct route: the commit is on origin main" '[ "$(git -C "$T/a.git" log -1 --format=%s main)" = "route test" ]'
+          chk "direct route: the session worktree is retired" '[ ! -d "$W" ]'
+          chk "age-out: a month file older than the window is deleted" '[ ! -f "$V/raw/sessions/2020-01.md" ]'
+          chk "age-out: the current month's file is never deleted" '[ -f "$cur" ]'
+
+          # C: uncommitted work -> refused, rc 1
+          W="$("$E/vault-worktree.sh" ensure 2>/dev/null)"; echo x >> "$W/log.md"
+          rc=0; out="$(cd "$W" && "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "uncommitted work: refused, rc 1" '[ "$rc" = 1 ] && printf '"'"'%s'"'"' "$out" | grep -q '"'"'uncommitted'"'"''
+          git -C "$W" checkout -q -- log.md || true
+
+          # E: pull-request route -> pushes the branch, never integrates, reports the open PR
+          mkvault e; export WIKI_PATH="$V"; printf 'publish = pr\n' > "$V/.wiki-gates.conf"
+          mkdir -p "$T/ghbin"; printf '#!/bin/sh\ncase "$1 $2" in "pr list") exit 0;; "pr create") echo https://example.invalid/o/r/pull/77;; esac\n' > "$T/ghbin/gh"; chmod +x "$T/ghbin/gh"
+          W="$("$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "pr test" "$W"; before="$(git -C "$V" rev-parse main)"
+          rc=0; out="$(cd "$W" && PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: reports the unmerged pull request, rc 1" '[ "$rc" = 1 ] && printf '"'"'%s'"'"' "$out" | grep -q '"'"'pull request #77 is not merged'"'"''
+          chk "pr route: canonical main is not moved by integrate" '[ "$(git -C "$V" rev-parse main)" = "$before" ]'
+          chk "pr route: the session branch is pushed" 'git -C "$T/e.git" rev-parse -q --verify "refs/heads/wt/finishtest" >/dev/null'
+          chk "pr route: the worktree stays until the merge" '[ -d "$W" ]'
+
+          # F: a repository the session touched is reported, not acted on
+          R="$T/side"; git init -q "$R"; echo a > "$R/f"
+          out="$(cd "$W" && PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" --repo "$R" 2>&1)" || true
+          chk "a touched repository's uncommitted file is a REVIEW line" 'printf '"'"'%s'"'"' "$out" | grep -q "^REVIEW $R: 1 uncommitted path"'
+          chk "...and is left alone" '[ -f "$R/f" ]'
+
+          # G: two sessions finish at the same moment -> both land, neither touches the other's tree
+          mkvault g; export WIKI_PATH="$V"; printf 'publish = direct\n' > "$V/.wiki-gates.conf"
+          W1="$(WIKI_WT_SESSION=s1 "$E/vault-worktree.sh" ensure 2>/dev/null)"; W2="$(WIKI_WT_SESSION=s2 "$E/vault-worktree.sh" ensure 2>/dev/null)"
+          printf '\nOne.\n' >> "$W1/README.md"; git -C "$W1" commit -qam "session one" >/dev/null 2>&1
+          entry "session two" "$W2"
+          (r=0; cd "$W1" && WIKI_WT_SESSION=s1 "$E/distill-finish.sh" > "$T/g1.out" 2>&1 || r=$?; echo "$r" > "$T/g1.rc") &
+          (r=0; cd "$W2" && WIKI_WT_SESSION=s2 "$E/distill-finish.sh" > "$T/g2.out" 2>&1 || r=$?; echo "$r" > "$T/g2.rc") &
+          wait
+          chk "concurrent finishes: both report VAULT DONE" '[ "$(cat "$T/g1.rc")" = 0 ] && [ "$(cat "$T/g2.rc")" = 0 ]'
+          subjects="$(git -C "$T/g.git" log --format=%s main)"
+          chk "concurrent finishes: origin main holds both sessions' commits" 'printf '"'"'%s'"'"' "$subjects" | grep -q '"'"'session one'"'"' && printf '"'"'%s'"'"' "$subjects" | grep -q '"'"'session two'"'"''
+          chk "concurrent finishes: each retired only its own worktree" '[ ! -d "$W1" ] && [ ! -d "$W2" ]'
+          exit "$fail"
+
       - name: Crossover fail-closed smoke test
         run: |
           # crossover's safety property is that a LOSSY PASTE CAN NEVER AUTHORIZE A DELETE:
