@@ -137,6 +137,10 @@ render "$ENGINE_ROOT/scaffold/index.md.tmpl"   > "$VAULT_PATH/index.md"
 render "$ENGINE_ROOT/scaffold/log.md.tmpl"     > "$VAULT_PATH/log.md"
 render "$ENGINE_ROOT/scaffold/README.md.tmpl"  > "$VAULT_PATH/README.md"
 render "$ENGINE_ROOT/scaffold/gitignore.tmpl"  > "$VAULT_PATH/.gitignore"
+# log.md is append-only and every session appends to it, so two sessions landing at once
+# would conflict on it for no reason; union keeps both lines (adopt.d/45 does the same for
+# a vault scaffolded before this).
+printf '# log.md is append-only: concurrent sessions each add a line, and union keeps both.\nlog.md merge=union\n' > "$VAULT_PATH/.gitattributes"
 # CI checks out the release .engine-version names into engine/ and lints the vault with it.
 mkdir -p "$VAULT_PATH/.github/workflows"
 cp "$ENGINE_ROOT/scaffold/vault-gate.yml" "$VAULT_PATH/.github/workflows/gate.yml"
