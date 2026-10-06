@@ -86,3 +86,29 @@ Acceptance criteria:
   - Scan clean; no consumer identifiers.
 
 Instruction to engine-dev: create the project in the engine-dev vault, build it, ship it in the engine so consumer vaults receive it on their next update. This flips defaults (renamed skill, prune → age-out, offer removed) and adds a frontmatter field, so run the design pass at intake.
+
+---
+
+AMENDMENT 2026-10-06 — scope after the 3.0.0 rename, plus measured scaling requirements
+
+Status: the rename in "Proposed shape" step 1 shipped as v3.0.0, and the proposal's remaining scope is the `distill` redesign.
+
+Corrections to the filed text:
+  - Step 1: no deprecation alias. v3.0.0 removed `checkpoint` outright. An alias is a second description competing for the same prompts, and trigger evals measured routing loss on exactly that kind of overlap. Delete "one-release alias" from the plan and from the first acceptance criterion; `distill` is already the name.
+  - Step 7 and the last two acceptance criteria say `skill-candidates`; the skill is now `mine`. Its triggers and disambiguation read `distill` where they read `checkpoint`.
+  - Step 3 names `lint.sh` as the first finish step. Read it with the next section: it must not be the full-vault form.
+
+Scaling requirements (added). The finish script and the pre-commit gate are the two places a session pays for vault size, and both run the full-vault lint today. Measured on one consumer vault of 187 memory notes and 82 projects, the full lint takes 17.6 s, of which `lint-links.sh` is 9.2 s and `lint-memory.sh` 6.8 s. On a synthetic copy three times the size, `lint-links.sh` took 81.9 s (about 9x) and `lint-memory.sh` 42.7 s (about 6x), so cost grows faster than the vault. A larger vault is where the speedup the redesign promises is wanted most.
+
+  a. Changed-file lint. `distill-finish.sh` and the pre-commit gate lint only the files the session's branch changed against its base (`git diff --name-only <base>...HEAD`) and run the per-file gates on that set. Gates that are inherently whole-vault (link resolution of changed files' targets, catalog drift) read only what they need. The full-vault lint stays as `lint.sh` with no file list, and runs in CI and on the freshness schedule.
+  b. `lint-links.sh` resolves each link against a page-name set built once, by sorting and joining, not by one `grep` over the name list per link. It must not need bash 4 features (associative arrays); the machines this runs on ship bash 3.2.
+  c. `lint-memory.sh` makes one pass per note (or per vault) instead of spawning a subprocess for each frontmatter field it reads.
+  d. The memory entries in `index.md` are generated from frontmatter, like the Projects and skills catalogs, from a one-line field each note carries (`summary:` if memory notes already have it, else added by `lint-memory.sh`'s rules). `distill` then stops hand-editing a file that reached 90 KB, and a drift check covers it like the other catalogs.
+
+Acceptance criteria (added):
+  - A fixture vault three times the baseline fixture's size lints in at most 4x the baseline's time, for `lint-links.sh` and for `lint-memory.sh` separately, taking the median of three runs of each. The measured ratios against v3.0.0 are about 9x and 6x, so the gap to the bound is wide enough to survive CI noise, and the test must be shown red against v3.0.0 before the fix. Do not assert on subprocess counts: `lint-links.sh` spawns a number of `grep` processes that grows only 3x here, and the 9x comes from each one scanning the whole name list, so a count passes against the defect.
+  - Changed-file lint of a one-note branch on the 3x fixture takes at most 1.5x the time it takes on the baseline fixture.
+  - The memory section of `index.md` regenerates byte-identically from frontmatter, and a hand edit to it fails the drift check.
+  - Full-vault lint output is unchanged byte for byte on the baseline fixture.
+
+Out of scope here, to be proposed separately: a check that new skills' names start with a verb (an engine `lint-docs.sh` rule, and the same rule for skills authored outside the engine).
