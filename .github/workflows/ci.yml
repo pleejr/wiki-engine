@@ -836,6 +836,63 @@ jobs:
           chk "...and leaves canonical clean (no untracked file behind the session)" '[ -z "$(git -C "$V" status --porcelain)" ]'
           exit "$fail"
 
+      - name: lint.sh --changed and --staged lint what changed, and widen on a deletion
+        run: |
+          # lint.sh --changed / --staged: the commit path pays for what changed, not for the vault.
+          # Pinned: an untouched page's existing problem is not this change's; a NEW problem in the
+          # change is caught; a deletion falls back to the whole vault (another page may link to it);
+          # and the default stays whole-vault.
+          fail=0; chk() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1"; fail=1; fi; }
+          T="$(cd "$RUNNER_TEMP" && pwd -P)/scope"; rm -rf "$T"; mkdir -p "$T"
+          export GIT_CONFIG_GLOBAL="$T/gitconfig"; git config --global user.email ci@example.invalid; git config --global user.name CI; git config --global init.defaultBranch main
+          export CLAUDE_SETTINGS="$T/settings.json" WIKI_ENGINE="$GITHUB_WORKSPACE" WIKI_WORKTREE=0
+          L="$GITHUB_WORKSPACE/bin/lint.sh"
+          V="$T/v"; "$GITHUB_WORKSPACE/bin/new-wiki.sh" --path "$V" --boundary personal --email ci@example.invalid --git-name CI --no-rag >/dev/null 2>&1
+          # An existing problem on main, outside what the branch will touch: a concept page with an
+          # inline wikilink property (the frontmatter-properties check).
+          mkdir -p "$V/concepts"; printf -- '---\ntitle: Old\nboundary: personal\nrelated: [[x]]\n---\n\n# Old\n' > "$V/concepts/old.md"
+          printf -- '---\ntitle: Keep\nboundary: personal\n---\n\n# Keep\n' > "$V/concepts/keep.md"
+          git -C "$V" add -A; git -C "$V" commit -qm "existing problem" --no-verify
+          rc=0; "$L" --wiki "$V" >/dev/null 2>&1 || rc=$?
+          chk "fixture: the whole-vault lint sees the existing problem" '[ "$rc" != 0 ]'
+          git -C "$V" checkout -q -b work
+          mkdir -p "$V/entities"; printf -- '---\ntitle: Fine\nboundary: personal\n---\n\n# Fine\n' > "$V/entities/fine.md"; git -C "$V" add -A; git -C "$V" commit -qm fine --no-verify
+          rc=0; out="$("$L" --wiki "$V" --changed main 2>&1)" || rc=$?
+          chk "a clean change passes, the untouched page's problem is not its own" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^scope: 1 changed path"'
+          printf -- '---\ntitle: New\nboundary: personal\nrelated: [[y]]\n---\n\n# New\n' > "$V/entities/new.md"; git -C "$V" add -A; git -C "$V" commit -qm new --no-verify
+          rc=0; out="$("$L" --wiki "$V" --changed main 2>&1)" || rc=$?
+          chk "a new problem in the change is caught, naming the page" '[ "$rc" != 0 ] && printf "%s" "$out" | grep -q "entities/new.md"'
+          fpsec() { printf '%s\n' "$1" | awk '/^=== frontmatter properties ===/{f=1; next} /^=== /{f=0} f'; }
+          chk "...and the untouched page is not reported by the per-file check" '! fpsec "$out" | grep -q "concepts/old.md"'
+          git -C "$V" rm -q concepts/keep.md; git -C "$V" commit -qm "remove a page that main has" --no-verify
+          rc=0; out="$("$L" --wiki "$V" --changed main 2>&1)" || rc=$?
+          chk "a deletion falls back to the whole vault" 'printf "%s" "$out" | grep -q "^scope: whole vault" && fpsec "$out" | grep -q "concepts/old.md"'
+          git -C "$V" checkout -q main; printf -- '---\ntitle: Staged\nboundary: personal\n---\n\n# Staged\n' > "$V/entities/staged.md"; git -C "$V" add entities/staged.md
+          rc=0; out="$("$L" --wiki "$V" --staged 2>&1)" || rc=$?
+          chk "--staged lints the staged set only" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^scope: 1 changed path(s) staged"'
+          exit "$fail"
+
+      - name: procedure keys are validated and counted
+        run: |
+          # procedure: keys — lint-memory rejects a malformed or non-verb key, accepts a good one,
+          # and procedures.sh counts notes per key by created:, honouring --min and --span-days.
+          fail=0; chk() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1"; fail=1; fi; }
+          T="$RUNNER_TEMP/procs-key"; rm -rf "$T"; mkdir -p "$T/memory"; touch "$T/index.md"
+          note() { printf -- '---\ntitle: %s\ntype: lesson\nboundary: personal\ncreated: %s\nupdated: %s\nprocedure: %s\n---\n\n[[a]] [[b]]\n' "$1" "$2" "$2" "$3" > "$T/memory/$1.md"; }
+          note good 2026-08-01 review-plan; note good2 2026-08-20 review-plan; note good3 2026-09-10 review-plan
+          note spaced 2026-09-11 "Review Plan"; note noverb 2026-09-12 frobnicate-things; note bare 2026-09-13 review
+          out="$("$GITHUB_WORKSPACE/bin/lint-memory.sh" --wiki "$T" 2>&1 || true)"
+          chk "a key with spaces is rejected" 'printf "%s" "$out" | grep -q "procedure: .Review Plan. must be ONE kebab-case"'
+          chk "a key without an approved verb is rejected" 'printf "%s" "$out" | grep -q "procedure: .frobnicate-things. does not start with an approved verb"'
+          chk "a bare verb is not a <verb>-<object> key" 'printf "%s" "$out" | grep -q "procedure: .review. must be ONE kebab-case"'
+          chk "a good key raises no procedure finding" '! printf "%s" "$out" | grep -A3 "^good$" | grep -q "procedure:"'
+          rm -f "$T/memory/spaced.md" "$T/memory/noverb.md" "$T/memory/bare.md"
+          out="$("$GITHUB_WORKSPACE/bin/procedures.sh" --wiki "$T" --min 3 --span-days 14)"
+          chk "procedures.sh counts three notes across 40 days" '[ "$out" = "3 review-plan 2026-08-01 2026-09-10 40 good good2 good3" ]'
+          out="$("$GITHUB_WORKSPACE/bin/procedures.sh" --wiki "$T" --min 3 --span-days 60)"
+          chk "...and drops the key when the span is too short" '[ -z "$out" ]'
+          exit "$fail"
+
       - name: Crossover fail-closed smoke test
         run: |
           # crossover's safety property is that a LOSSY PASTE CAN NEVER AUTHORIZE A DELETE:

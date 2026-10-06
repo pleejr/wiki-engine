@@ -138,6 +138,20 @@ The SessionStart banner reports engine freshness. A machine can fold in **its ow
 - **The capture buffer ages out.** A `raw/sessions/YYYY-MM.md` whose newest block is older than `--window-days` (default 60) is deleted in canonical, under `rag-capture.sh`'s own lock; the current month's file never is. Nothing is pruned block by block.
 - **Exit 0** `VAULT DONE`, **1** `VAULT OUTSTANDING` (each item names the command that clears it), **2** refused. Each `--repo` adds `REVIEW` lines — uncommitted paths, unpushed branches, extra worktrees, open pull requests — that only the session can attribute, so the verdict on closing the session stays with `distill`.
 
+## Linting what changed (`lint.sh --changed` / `--staged`)
+
+`lint.sh` lints the whole vault by default. `--changed REF` (what the tree changed since its merge-base with REF) and `--staged` (the staged set, as the pre-commit template uses it) narrow the per-file checks to the changed pages and run a sub-linter only when one of its inputs changed; link resolution and the skills and projects catalogs always run. A deleted or renamed page widens the run to the whole vault, because another page may link to it. The first output line says which scope ran.
+
+## Recorded procedures (`procedures.sh`)
+
+A memory note that records a procedure carried out — steps done, not only a conclusion — may carry `procedure: <verb>-<object>`, one kebab-case key whose verb is in `bin/skill-verbs.txt`; `lint-memory.sh` rejects any other shape. `distill` reuses an existing key when the steps match, and `mine` counts them:
+
+```
+<engine>/bin/procedures.sh [--wiki DIR] [--min N] [--span-days D]
+```
+
+prints `<count> <key> <first-created> <last-created> <span-days> <notes...>`, counting occurrences by `created:`.
+
 ## Spawning a session (`spawn-session`)
 
 No engine skill starts a session through this adapter since v3.1.0: `distill`'s mining offer, its one caller, was removed because mining is operator-invoked. The tool stays for a skill that needs to hand work to a separate session.

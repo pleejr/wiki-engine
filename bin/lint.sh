@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # lint.sh — umbrella lint for a wiki vault. Runs every deterministic check and
 # aggregates the result, so `distill` (or a pre-commit) can call one command:
+#   lint.sh [--wiki DIR] [--strict] [--changed REF | --staged]
+#     --changed/--staged lint only what changed (see the scope block); default: whole vault
 #   1. memory notes         — lint-memory.sh (frontmatter, type, >=2 wikilinks, drift)
 #   2. frontmatter props     — wikilink-valued properties must be a quoted YAML block
 #                              list; catches Obsidian's "invalid properties"
@@ -66,11 +68,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/wiki-root-lib.sh" || exit 1
 WIKI=""   # explicit --wiki only; the default is resolved below, not here
 STRICT=""
+CHANGED_REF="" STAGED=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --wiki)   WIKI="$2"; shift 2;;
     --strict) STRICT="--strict"; shift;;
+    --changed) CHANGED_REF="$2"; shift 2;;
+    --staged)  STAGED=1; shift;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 1;;
   esac
@@ -99,6 +104,37 @@ PAGES=()
 while IFS= read -r p; do PAGES+=("$p"); done < <(vault_pages "$WIKI")
 [ "${#PAGES[@]}" -gt 0 ] || { echo "error: no pages under $WIKI" >&2; exit 1; }
 
+# --- scope: --changed REF / --staged lint only what the change touched -----------------
+# Per-file checks look at the changed pages only; a sub-linter runs when any of its inputs
+# changed; link resolution and the two catalogs are whole-vault and cheap, so they always
+# run. A deleted or renamed page can break a check about some OTHER page (a link to it, an
+# index entry), so either one falls back to the whole vault. Full lint stays the default.
+SCOPED=0 SCOPE=""
+if [ "$STAGED" = 1 ] || [ -n "$CHANGED_REF" ]; then
+  if [ "$STAGED" = 1 ]; then
+    st="$(git -C "$WIKI" diff --cached --name-status 2>/dev/null)"; label="staged"
+  else
+    base="$(git -C "$WIKI" merge-base HEAD "$CHANGED_REF" 2>/dev/null || printf '%s' "$CHANGED_REF")"
+    st="$(git -C "$WIKI" diff --name-status "$base" 2>/dev/null)"; label="since $CHANGED_REF"
+  fi
+  if grep -qE '^(D|R)' <<<"$st"; then
+    echo "scope: whole vault — a page was deleted or renamed ($label)"
+  else
+    SCOPED=1
+    SCOPE="$(awk -v w="$WIKI" 'NF{print w "/" $NF}' <<<"$st")"
+    echo "scope: $(grep -c . <<<"$SCOPE" || true) changed path(s) $label"
+  fi
+fi
+in_scope() {
+  [ "$SCOPED" = 0 ] && return 0
+  grep -qxF -- "$1" <<<"$SCOPE"
+}
+touches() {   # touches PREFIX... — any scoped path under/equal to one of them
+  [ "$SCOPED" = 0 ] && return 0
+  local p; for p in "$@"; do grep -q "^$WIKI/$p" <<<"$SCOPE" && return 0; done; return 1
+}
+skip() { echo "ok: unchanged in this scope"; }
+
 rc=0
 CUR=""; FAILED=()
 section() { CUR="$1"; printf '\n=== %s ===\n' "$1"; }
@@ -112,7 +148,7 @@ fail() {
 
 # 1. memory ---------------------------------------------------------------------
 section "memory notes"
-"$SCRIPT_DIR/lint-memory.sh" --wiki "$WIKI" $STRICT || fail
+if touches memory/ index.md; then "$SCRIPT_DIR/lint-memory.sh" --wiki "$WIKI" $STRICT || fail; else skip; fi
 
 # 2. frontmatter properties -----------------------------------------------------
 # A wikilink in frontmatter is valid only as a quoted block-list item
@@ -123,6 +159,7 @@ section "memory notes"
 section "frontmatter properties"
 fp=0
 for f in "${PAGES[@]}"; do
+  in_scope "$f" || continue
   bad="$(awk '
     NR==1 && $0=="---" { infm=1; next }
     infm && $0=="---"  { exit }
@@ -149,7 +186,7 @@ done
 # rule for prose the vault authored; raw/ is verbatim capture with no rendering contract.
 section "soft-wrap"
 PROSE_PAGES=()
-while IFS= read -r p; do PROSE_PAGES+=("$p"); done < <(vault_pages "$WIKI" raw)
+while IFS= read -r p; do in_scope "$p" && PROSE_PAGES+=("$p"); done < <(vault_pages "$WIKI" raw)
 if [ "${#PROSE_PAGES[@]}" -eq 0 ]; then
   echo "ok: no curated pages to check"
 elif out="$("$SCRIPT_DIR/reflow.sh" --check "${PROSE_PAGES[@]}")"; then
@@ -194,7 +231,7 @@ section "boundary present"
 bp=0
 for d in "${NODE_DIRS[@]}"; do
   for f in "$WIKI/$d"/*.md; do
-    [ -f "$f" ] || continue
+    [ -f "$f" ] || continue; in_scope "$f" || continue
     if ! fm_has "boundary:" "$f"; then
       printf '  ✗ %s — no boundary: in frontmatter\n' "${f#$WIKI/}"; bp=1; fail
     fi
@@ -221,7 +258,7 @@ else
   bm=0
   for d in "${NODE_DIRS[@]}"; do
     for f in "$WIKI/$d"/*.md; do
-      [ -f "$f" ] || continue
+      [ -f "$f" ] || continue; in_scope "$f" || continue
       pb="$(awk 'NR==1&&$0!~/^---/{exit} NR>1&&/^---/{exit} /^boundary:/{sub(/^boundary:[[:space:]]*/,""); gsub(/[[:space:]"'"'"'`]/,""); print; exit}' "$f")"
       [ -n "$pb" ] || continue          # absent is gate 6's error, not this one's
       if [ "$pb" != "$vb" ]; then
@@ -241,7 +278,7 @@ section "provenance present"
 pp=0
 if [ -d "$WIKI/repos" ]; then
   for f in "$WIKI/repos"/*.md; do
-    [ -f "$f" ] || continue
+    [ -f "$f" ] || continue; in_scope "$f" || continue
     miss=""
     fm_has "sources:" "$f" || miss="sources:"
     fm_has "ref:"     "$f" || miss="$miss ref:"
@@ -270,7 +307,7 @@ section "repo ref is a clean tag"
 rt=0
 if [ -d "$WIKI/repos" ]; then
   for f in "$WIKI/repos"/*.md; do
-    [ -f "$f" ] || continue
+    [ -f "$f" ] || continue; in_scope "$f" || continue
     r="$(awk '/^[[:space:]]*-?[[:space:]]*ref:/{sub(/^[^:]*:[[:space:]]*/,""); gsub(/[[:space:]"'"'"'`]/,""); print; exit}' "$f")"
     [ -n "$r" ] || continue
     if grep -qE -- '-[0-9]+-g[0-9a-f]{7,}$' <<<"$r"; then
@@ -291,7 +328,7 @@ fi
 # warning: lint.sh is the pre-commit gate, and a warn on pre-existing offenders is
 # standing noise on every commit forever.
 section "summary volatility"
-"$SCRIPT_DIR/lint-summary-volatility.sh" --wiki "$WIKI" $STRICT || fail
+if touches projects/ index.md .wiki-gates.conf; then "$SCRIPT_DIR/lint-summary-volatility.sh" --wiki "$WIKI" $STRICT || fail; else skip; fi
 
 # 9. link integrity -------------------------------------------------------------
 section "link integrity"
@@ -340,7 +377,7 @@ else
   else
     for d in "${NODE_DIRS[@]}"; do
       for f in "$WIKI/$d"/*.md; do
-        [ -f "$f" ] || continue
+        [ -f "$f" ] || continue; in_scope "$f" || continue
         while IFS= read -r pat; do
           [ -n "$pat" ] || continue
           if hits="$(grep -inE "$pat" "$f" 2>/dev/null)"; then
@@ -368,15 +405,15 @@ fi
 # nothing measured, while every derived and per-page surface had a check. Both warn-first:
 # the engine cannot know a vault's backlog, and a gate red on arrival teaches the bypass.
 section "index hooks"
-"$SCRIPT_DIR/lint-index-hooks.sh" --wiki "$WIKI" $STRICT || fail
+if touches index.md; then "$SCRIPT_DIR/lint-index-hooks.sh" --wiki "$WIKI" $STRICT || fail; else skip; fi
 
 # 12. always-on budget -----------------------------------------------------------
 section "always-on budget"
-"$SCRIPT_DIR/lint-always-on.sh" --wiki "$WIKI" || fail
+if touches CLAUDE.md .wiki-gates.conf; then "$SCRIPT_DIR/lint-always-on.sh" --wiki "$WIKI" || fail; else skip; fi
 
 # 13. log entries -----------------------------------------------------------------
 section "log entries"
-"$SCRIPT_DIR/lint-log.sh" --wiki "$WIKI" $STRICT || fail
+if touches log.md log/; then "$SCRIPT_DIR/lint-log.sh" --wiki "$WIKI" $STRICT || fail; else skip; fi
 
 echo
 if [ "$rc" -eq 0 ]; then

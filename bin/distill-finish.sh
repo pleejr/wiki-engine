@@ -93,7 +93,9 @@ if [ -n "$(git -C "$WORK" status --porcelain)" ]; then
   echo "distill-finish: the projects catalog was stale and is now regenerated in $WORK — commit index.md, then rerun." >&2
   exit 1
 fi
-if ! "$SCRIPT_DIR/lint.sh" --wiki "$WORK" > "${TMPDIR:-/tmp}/distill-finish-lint.$$" 2>&1; then
+# Lint what this session changed against canonical's main; lint.sh widens to the whole vault
+# itself when a page was deleted or renamed.
+if ! "$SCRIPT_DIR/lint.sh" --wiki "$WORK" --changed "$(git -C "$CANON" rev-parse --abbrev-ref HEAD)" > "${TMPDIR:-/tmp}/distill-finish-lint.$$" 2>&1; then
   tail -25 "${TMPDIR:-/tmp}/distill-finish-lint.$$" >&2; rm -f "${TMPDIR:-/tmp}/distill-finish-lint.$$"
   echo "distill-finish: lint failed in $WORK — fix it, commit, rerun. Nothing was landed." >&2
   exit 1

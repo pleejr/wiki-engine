@@ -140,6 +140,7 @@ trap on_exit EXIT
 # list per link, and a grep of index.md per note. Those two greps made cost grow with
 # (notes x vault), so a vault three times larger linted about six times slower. The loop
 # keeps every message, in the same order; it only reads the answers from here.
+PROC_VERBS="$(sed 's/#.*//' "$SCRIPT_DIR/skill-verbs.txt" 2>/dev/null | awk 'NF{print $1}')"
 LM_TMP="$(mktemp -d)"
 printf '%s\n' "$SLUGS" > "$LM_TMP/slugs"
 printf '%s\0' "${notes[@]}" | xargs -0 awk -v slugs="$LM_TMP/slugs" -v index_file="$INDEX" \
@@ -150,7 +151,7 @@ printf '%s\0' "${notes[@]}" | xargs -0 awk -v slugs="$LM_TMP/slugs" -v index_fil
     for (k in L) if (k != "" && k != self && !(k in S)) print idx "\t" k > dead
     # \037 (unit separator), not a tab: `read` collapses runs of whitespace separators, so
     # an empty field would shift every field after it.
-    print idx US hasfm US V["title"] US V["type"] US V["boundary"] US V["updated"] US V["created"] US V["status"] US V["superseded_by"] US n US ((("[[" self "]]") in IX) ? 1 : 0) > table
+    print idx US hasfm US V["title"] US V["type"] US V["boundary"] US V["updated"] US V["created"] US V["status"] US V["superseded_by"] US V["procedure"] US n US ((("[[" self "]]") in IX) ? 1 : 0) > table
   }
   BEGIN {
     US = "\037"
@@ -171,8 +172,8 @@ printf '%s\0' "${notes[@]}" | xargs -0 awk -v slugs="$LM_TMP/slugs" -v index_fil
   }
   infm && $0 == "---" { infm = 0; fmdone = 1 }
   infm {
-    split("title type boundary updated created status superseded_by", K, " ")
-    for (q = 1; q <= 7; q++) if (!(K[q] in V) && $0 ~ ("^" K[q] ":")) {
+    split("title type boundary updated created status superseded_by procedure", K, " ")
+    for (q = 1; q <= 8; q++) if (!(K[q] in V) && $0 ~ ("^" K[q] ":")) {
       v = $0; sub(/^[^:]*:[ \t]*/, "", v); sub(/^"/, "", v); sub(/"$/, "", v); V[K[q]] = v
     }
   }
@@ -192,7 +193,7 @@ read_dead() { if IFS="$(printf '\t')" read -r pend_idx pend_lk <&4; then :; else
 read_dead
 
 for f in "${notes[@]}"; do
-  IFS="$(printf '\037')" read -r t_idx t_hasfm t_title t_type t_boundary t_updated t_created t_status t_sby t_nlinks t_inindex <&3
+  IFS="$(printf '\037')" read -r t_idx t_hasfm t_title t_type t_boundary t_updated t_created t_status t_sby t_proc t_nlinks t_inindex <&3
   checked=$((checked+1))
   slug="${f##*/}"; slug="${slug%.md}"   # parameter expansion: no process per note
   last_note="$slug"
@@ -231,6 +232,16 @@ for f in "${notes[@]}"; do
     warn "dead link [[$pend_lk]] (no such page — stub or stale)"
     read_dead
   done
+
+  # procedure: one <verb>-<object> key naming a procedure this note records as DONE; `mine`
+  # counts notes per key, so a malformed or free-text value is a count that never adds up.
+  if [ -n "$t_proc" ]; then
+    if ! [[ "$t_proc" =~ ^[a-z0-9]+(-[a-z0-9]+)+$ ]]; then
+      err "procedure: '$t_proc' must be ONE kebab-case <verb>-<object> key (e.g. adopt-engine-release)"
+    elif ! grep -qxF -- "${t_proc%%-*}" <<<"$PROC_VERBS"; then
+      err "procedure: '$t_proc' does not start with an approved verb ('${t_proc%%-*}' is not in bin/skill-verbs.txt)"
+    fi
+  fi
 
   # lifecycle: status + superseded_by pairing (SCHEMA: memory status is current|superseded)
   status="$t_status"

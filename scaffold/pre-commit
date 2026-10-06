@@ -105,7 +105,13 @@ if [ -x "$ENGINE/vault-worktree.sh" ]; then
   WIKI_PATH="$CANON" "$ENGINE/vault-worktree.sh" guard || exit 1
 fi
 
-if ! "$ENGINE/lint.sh" --wiki "$ROOT"; then
+# Lint the staged set when the engine can (it widens to the whole vault on a deletion or
+# rename); an older engine behind a lagging pointer has no --staged, and gets the full lint
+# rather than a refusal over an unknown argument.
+SCOPE_ARGS=()
+lint_help="$("$ENGINE/lint.sh" --help 2>/dev/null || true)"   # captured, not piped: a pipe into grep can SIGPIPE under pipefail
+if grep -q -- '--staged' <<<"$lint_help"; then SCOPE_ARGS=(--staged); fi
+if ! "$ENGINE/lint.sh" --wiki "$ROOT" ${SCOPE_ARGS[@]+"${SCOPE_ARGS[@]}"}; then
   echo >&2
   # A refusal produced by the wrong release is the case this whole block exists for, so the
   # skew is repeated HERE, next to the failure, where the reader is deciding what to bypass.
