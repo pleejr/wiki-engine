@@ -24,7 +24,7 @@
 #              against the clone's latest tag — so a clone sitting a commit past the
 #              release tag isn't a false positive; an untagged page (ref == sha)
 #              compares sha vs the clone HEAD. A clone itself behind upstream can
-#              still yield a false-negative — `wiki-repo` re-ingest resolves both.
+#              still yield a false-negative — `ingest` re-ingest resolves both.
 #              SELF-PAGE: a vault that documents itself has one page whose clone IS
 #              this vault. Its sha-vs-HEAD test is structurally unsatisfiable —
 #              recording the new sha is itself a commit, which advances HEAD and

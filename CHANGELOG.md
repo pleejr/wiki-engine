@@ -4,6 +4,22 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.0.0] — 2026-10-06
+
+Major — seven skills are renamed to start with a verb. Nothing else changes.
+
+### Changed
+- **Renamed skills.** `checkpoint` → `distill`, `skill-candidates` → `mine`, `wiki-repo` → `ingest`, `engine-proposal` → `propose`, `wiki-adopt` → `adopt`, `wiki-onboard` → `onboard`, `crossover` → `export`. The skills' behavior and bodies are unchanged; only the directory, `name:` and references move.
+- **The four skills Claude invokes on its own were scored against their old names** with `trigger_eval.py --as-name` (2 runs per query, sonnet) and shipped only because they held: `checkpoint` 12/13 → 12/13, `skill-candidates` 12/12 → 12/12, `wiki-repo` 11/11 → 11/11, `engine-proposal` 9/12 → 10/12. `adopt`, `onboard` and `export` are run by hand and were not scored. Raw results are in the skills repository under `write-skill/references/trigger-eval-results/rename-2026-10`.
+- **Kept on purpose:** `wiki-context` (its control prompt does not trigger even under the current name, so no rename could be validated), `prove-the-test-can-fail`, `drain`, `update` and `verify`. Across the rename trial, names that echo the words people type routed better than a shorter verb: five skills lost routing when they were shortened, which is why the verb-led names were left alone.
+- **No alias is kept.** An alias is a second description competing for the same prompts, so the old names stop resolving.
+- **The context-window nudge reads `distill soon` / `distill now`** in the status line, and CI asserts the new text.
+
+### Migration
+- **A vault's `[[checkpoint]]`, `[[skill-candidates]]`, `[[wiki-repo]]`, `[[engine-proposal]]`, `[[wiki-adopt]]`, `[[wiki-onboard]]` and `[[crossover]]` links stop resolving** once the old skill directories are gone, so `lint-links.sh` fails until they are rewritten to the new names. Rewrite the links only; dated prose in `log.md`, `proposals/` and `raw/` describes what happened under the old name and stays as written.
+- **Live instructions that name a renamed skill** (an always-on `CLAUDE.md`, a preferences note, an output style) need the new name by hand: Claude will not map the old one.
+- **Each machine needs `claude plugin update wiki-engine` and a restart** before the new names load.
+
 ## [2.8.1] — 2026-10-02
 
 Patch — fastembed 0.8.1 and huggingface_hub 1.33.0, and `doctor.sh` stops recommending a release the stack cannot install.

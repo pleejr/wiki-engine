@@ -1,22 +1,22 @@
 ---
-name: engine-proposal
-description: Hand a wiki-engine improvement or DEFECT from a consumer vault upstream to the engine-dev queue, and intake it on the other end. Consumer side: genericize and boundary-scrub the idea (strip vault/org/repo names, users, emails, paths, secrets), run the fail-closed `engine-proposal.sh scan`, then `submit` + `push` it as a file in the engine's `proposals/` queue by pull request — never a local edit inside `engine/`, which the next update discards, and never a node in the consumer vault. A defect block separates Observed from Suggested fix, names the failure shape (fail-closed / fail-open / data-loss), and confirms the bug is live at the pinned tag. Engine-dev side: reproduce first, design-review the arrival, record outcome + reason in the proposal frontmatter, cite `Proposal: <slug>` on the fix. `status` answers "did it ship". Triggers: "engine-proposal", "propose this upstream", "this should live in the engine", "I found a bug in the engine", "report this defect upstream", "should I fix this in engine/", "intake this proposal", "did my proposal ship", "check my outbox against the engine". Distinct from `crossover` (MOVES an existing page between vaults with integrity + soft-delete) — this originates a forward-only idea that never was a node; distinct from `checkpoint` (curates INTO this vault). NOT for recording a decision or lesson here.
+name: propose
+description: Hand a wiki-engine improvement or DEFECT from a consumer vault upstream to the engine-dev queue, and intake it on the other end. Consumer side: genericize and boundary-scrub the idea (strip vault/org/repo names, users, emails, paths, secrets), run the fail-closed `engine-proposal.sh scan`, then `submit` + `push` it as a file in the engine's `proposals/` queue by pull request — never a local edit inside `engine/`, which the next update discards, and never a node in the consumer vault. A defect block separates Observed from Suggested fix, names the failure shape (fail-closed / fail-open / data-loss), and confirms the bug is live at the pinned tag. Engine-dev side: reproduce first, design-review the arrival, record outcome + reason in the proposal frontmatter, cite `Proposal: <slug>` on the fix. `status` answers "did it ship". Triggers: "engine-proposal", "propose this upstream", "this should live in the engine", "I found a bug in the engine", "report this defect upstream", "should I fix this in engine/", "intake this proposal", "did my proposal ship", "check my outbox against the engine". Distinct from `export` (MOVES an existing page between vaults with integrity + soft-delete) — this originates a forward-only idea that never was a node; distinct from `distill` (curates INTO this vault). NOT for recording a decision or lesson here.
 status: active
 summary: "genericize + boundary-scrub a consumer vault's engine improvement OR defect report into a self-contained, scan-verified handoff block for the engine-dev vault (creates no consumer node); on the engine-dev end, reproduce/design-review before building."
 updated: 2026-09-03
 ---
 
-# engine-proposal — hand a scrubbed engine improvement *or defect* upstream
+# propose — hand a scrubbed engine improvement *or defect* upstream
 
 A consumer vault (one that only *runs* the engine) discovers engine ideas and defects mid-work, each soaked in private context. This skill makes the handoff repeatable and boundary-safe: genericize, gate through a mechanical scan, submit as a file in the engine's `proposals/` queue — **without writing anything into the consumer vault.** On the engine-dev end it drives intake (§6).
 
 **Vault**: `$WIKI_PATH` — the consumer vault on *this* machine; must be set. The deterministic gate is `${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh`; this skill owns the genericization and the judgement.
 
-## Routing — this vs crossover vs checkpoint
+## Routing — this vs export vs distill
 
-- **engine-proposal** — a *new, forward-only* idea or defect report that never was a consumer node; the engine-dev end owns the result.
-- **crossover** — *moves* an existing page to a vault on another machine, with integrity and soft-delete.
-- **checkpoint** — writes a curated node *into this vault*, when the idea belongs here.
+- **propose** — a *new, forward-only* idea or defect report that never was a consumer node; the engine-dev end owns the result.
+- **export** — *moves* an existing page to a vault on another machine, with integrity and soft-delete.
+- **distill** — writes a curated node *into this vault*, when the idea belongs here.
 
 ## 1. Capture the idea + its raw context
 
@@ -131,7 +131,7 @@ ${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh submit --vault "$WIKI_PATH" --s
 ${CLAUDE_SKILL_DIR}/../../bin/engine-proposal.sh push   --vault "$WIKI_PATH" --slug <slug>
 ```
 
-**`submit` and `push` are two verbs on purpose.** The engine repository is **public**, so a pushed proposal is permanently public. `submit` runs the fail-closed scan first, prepares the branch locally, and prints the exact text that will become public; `push` performs the irreversible act (forking on demand — the fork is public too). **Read the printed block before pushing**: the scan matches identifiers it can derive; it cannot judge whether the prose discloses something private, and there is no bypass flag. Engine CI is a backstop, not the gate. `stash` is retired and warns; the block is now the file content of `proposals/<slug>.md`. Do **not** run `checkpoint` and do **not** create a node here — the engine-dev vault owns the result.
+**`submit` and `push` are two verbs on purpose.** The engine repository is **public**, so a pushed proposal is permanently public. `submit` runs the fail-closed scan first, prepares the branch locally, and prints the exact text that will become public; `push` performs the irreversible act (forking on demand — the fork is public too). **Read the printed block before pushing**: the scan matches identifiers it can derive; it cannot judge whether the prose discloses something private, and there is no bypass flag. Engine CI is a backstop, not the gate. `stash` is retired and warns; the block is now the file content of `proposals/<slug>.md`. Do **not** run `distill` and do **not** create a node here — the engine-dev vault owns the result.
 
 ## 5b. Ask what happened to it — `status`, not a grep
 

@@ -1,14 +1,14 @@
 ---
-name: wiki-adopt
+name: adopt
 description: Idempotent adoption of the wiki-engine on a machine — bring up a vault whether or not one exists yet. No vault present → scaffold it (new-wiki.sh, recording this engine's release) then wire + seed; vault already cloned (a second/Nth machine) → just wire the machine. Either path converges through wire-machine.sh (WIKI_PATH in settings + always-on CLAUDE.md import + status line + recall runtime + vault adoption), and is safe to re-run. Runs from the installed wiki-engine plugin; the human starts the session, so there is no `claude` spawn. One-time and interactive — in-session, not a hook.
 status: active
 summary: idempotent: scaffold a new vault OR wire an already-cloned one, then seed — safe to re-run.
 updated: 2026-09-19
 ---
 
-# wiki-adopt — stand up a vault on a new machine in one session
+# adopt — stand up a vault on a new machine in one session
 
-The front door for adopting **the wiki-engine loop** on a machine. It **converges** the machine to a working vault from whatever state it's in: scaffold a brand-new vault, or wire an already-cloned one (a second/Nth machine). **Safe to re-run** — the wiring step (`wire-machine.sh`) is add-only and reports "already converged" when there's nothing to do. `checkpoint` keeps the vault's *content* current thereafter.
+The front door for adopting **the wiki-engine loop** on a machine. It **converges** the machine to a working vault from whatever state it's in: scaffold a brand-new vault, or wire an already-cloned one (a second/Nth machine). **Safe to re-run** — the wiring step (`wire-machine.sh`) is add-only and reports "already converged" when there's nothing to do. `distill` keeps the vault's *content* current thereafter.
 
 **Bootstrap:** if you can invoke this skill, the `wiki-engine` plugin is installed. On a cold machine that is the one manual prerequisite, two commands and a restart:
 ```sh
@@ -48,12 +48,12 @@ The plugin carries the engine's hooks and skills; nothing is linked or hooked by
 
 4b. **Offer other plugins.** The engine ships only its own skills. If the user has other skill plugins (e.g. their own marketplace), they add and install them the same way as the engine; there is nothing to clone or link.
 
-5. **Seed it — run `wiki-onboard`.** Invoke the `wiki-onboard` skill now (same session) to distill existing native memories, ingest the repos you work in, and stub in-flight project pages against the chosen boundary. That skill owns the curation; don't duplicate it here.
+5. **Seed it — run `onboard`.** Invoke the `onboard` skill now (same session) to distill existing native memories, ingest the repos you work in, and stub in-flight project pages against the chosen boundary. That skill owns the curation; don't duplicate it here.
 
 6. **Report.** Summarize what was created and wired, and tell the user the vault is live from the next session (settings `env` supplies `WIKI_PATH`; the always-on import loads the router).
 
 ## Rules
 - **In-session, on demand; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule). Adoption is a one-time interactive bring-up, so there is nothing here worth automating.
-- **Idempotent — safe to re-run.** Scaffolding is create-new (`new-wiki.sh` refuses over an existing vault); wiring converges via `wire-machine.sh` (add-only, `--check`-able). For ongoing *content* curation use `checkpoint`/`wiki-repo`.
+- **Idempotent — safe to re-run.** Scaffolding is create-new (`new-wiki.sh` refuses over an existing vault); wiring converges via `wire-machine.sh` (add-only, `--check`-able). For ongoing *content* curation use `distill`/`ingest`.
 - The `--wire-*` flags assume a single-vault machine; never run them where the other boundary's vault also lives.
 - Respect the boundary and the no-secrets rule at every step.

@@ -165,7 +165,7 @@ fi
 # --- machine wiring (delegated to the idempotent converge verb) ------------------
 # wire-machine.sh is the single source of wiring truth — WIKI_PATH, the always-on
 # CLAUDE.md import, the status line, the .rag recall runtime, and vault adoption.
-# It is re-run-safe, so `wiki-adopt` reuses it to bring a second machine up from a clone.
+# It is re-run-safe, so `adopt` reuses it to bring a second machine up from a clone.
 WIRE_ARGS=(--wiki "$VAULT_PATH")
 [ "$RAG" -eq 1 ] || WIRE_ARGS+=(--no-rag)
 if [ "$WIRE_SHELL" -eq 1 ]; then WIRE_ARGS+=(--wire-shell "$SHELL_RC"); fi
@@ -191,4 +191,4 @@ if [ -z "$REMOTE_DONE" ]; then
   echo "       git -C \"$VAULT_PATH\" push -u origin main"; n=$((n+1))
 fi
 echo "  $n. Seed the vault from your existing environment (memories, repos, projects):"
-echo "       run the 'wiki-onboard' skill in a Claude Code session with WIKI_PATH set."
+echo "       run the 'onboard' skill in a Claude Code session with WIKI_PATH set."

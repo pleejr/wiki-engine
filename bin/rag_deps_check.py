@@ -199,7 +199,7 @@ def main():
             print("\n".join(mine))
             print("  rag-requirements.txt here is the wiki-engine plugin's installed copy, so editing it")
             print("  has no durable home: the next plugin update replaces it and no other machine gets it.")
-            print("  Route it upstream instead (the engine-proposal skill), or bump it in an engine")
+            print("  Route it upstream instead (the propose skill), or bump it in an engine")
             print("  checkout and cut a release; the plugin update then brings it here.")
         else:
             print("pinned deps with newer releases (bump rag-requirements.txt):")

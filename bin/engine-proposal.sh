@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # engine-proposal.sh — deterministic boundary gate + transient outbox for the
-# `engine-proposal` skill.
+# `propose` skill.
 #
 # The skill (an LLM session) genericizes a consumer vault's engine-improvement
 # idea and drafts a kickoff block for the engine-dev vault. This script does the

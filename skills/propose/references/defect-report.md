@@ -1,4 +1,4 @@
-# engine-proposal — worked examples for a defect report
+# propose — worked examples for a defect report
 
 Read from `SKILL.md` §1b when the two rules there need their history. Everything below is the reasoning that produced those rules, kept here so the body carries the rules and this file carries why.
 

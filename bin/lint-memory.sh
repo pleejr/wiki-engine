@@ -14,7 +14,7 @@
 #   ERROR   — superseded_by: is a list. ONE slug: a note superseded by three has no
 #             unambiguous forward target; a fan-out points at a hub page instead.
 #   WARN    — missing updated:
-#   WARN    — missing created: (v1.78.0) — `skill-candidates` reads it to decide whether
+#   WARN    — missing created: (v1.78.0) — `mine` reads it to decide whether
 #             a procedure recurred, so a note without it is invisible to that pass
 #   WARN    — status: superseded with no superseded_by: AND no successor the record can
 #             identify (v1.78.0, refined v1.79.1). Before warning, the lint SEARCHES for a
@@ -151,7 +151,7 @@ for f in "${notes[@]}"; do
     [ -n "$(fm_get "$f" "$k")" ] || err "missing frontmatter: $k"
   done
   [ -n "$(fm_get "$f" updated)" ] || warn "missing frontmatter: updated"
-  [ -n "$(fm_get "$f" created)" ] || warn "missing frontmatter: created (skill-candidates counts recurrence by it)"
+  [ -n "$(fm_get "$f" created)" ] || warn "missing frontmatter: created (mine counts recurrence by it)"
 
   # valid type
   typ="$(fm_get "$f" type)"

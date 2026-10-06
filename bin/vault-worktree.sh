@@ -2,7 +2,7 @@
 # vault-worktree.sh — give a vault-writing session its own git worktree so two concurrent
 # Claude Code sessions can never clobber each other's edits or HEAD in the single shared
 # $WIKI_PATH working tree. Deterministic (plain git, no LLM, no claude) — the isolation
-# mechanism the `checkpoint` skill uses before it writes.
+# mechanism the `distill` skill uses before it writes.
 #
 # Why: two sessions sharing one working dir also share one HEAD and one set of files on
 # disk. `git checkout -b` in one moves HEAD under the other; simultaneous writes to the
@@ -732,7 +732,7 @@ case "$CMD" in
     removed=0
     if [ "$#" -gt 0 ]; then
       # Explicit targets: retire exactly these, regardless of age — this is how a skill
-      # retires the worktree it just finished with (checkpoint §0), which the age-gated
+      # retires the worktree it just finished with (distill §0), which the age-gated
       # sweep below can never do (a just-created worktree is always < stale threshold).
       for target in "$@"; do
         wt="$(cd "$target" 2>/dev/null && pwd)" || { log "vault-worktree: gc target not found: $target"; continue; }

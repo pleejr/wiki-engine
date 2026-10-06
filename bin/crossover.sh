@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# crossover.sh — deterministic transport for the `crossover` skill.
+# crossover.sh — deterministic transport for the `export` skill.
 #
 # Moves vault items (markdown pages) between two vaults that never share a
 # machine, over a copy-paste text channel, with end-to-end integrity so a

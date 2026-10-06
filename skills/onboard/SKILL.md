@@ -1,14 +1,14 @@
 ---
-name: wiki-onboard
-description: Seed a freshly-scaffolded (or newly-adopted) wiki vault from what already exists in the environment — distill Claude Code native memories into curated memory/ notes, ingest the repos you work in as repo pages, stub project pages for in-flight work, and regenerate the skills catalog. One-time bootstrap; the inverse of checkpoint. In-session, on demand — not a hook.
+name: onboard
+description: Seed a freshly-scaffolded (or newly-adopted) wiki vault from what already exists in the environment — distill Claude Code native memories into curated memory/ notes, ingest the repos you work in as repo pages, stub project pages for in-flight work, and regenerate the skills catalog. One-time bootstrap; the inverse of `distill`. In-session, on demand — not a hook.
 status: active
 summary: seed a freshly-scaffolded vault from existing memories, repos, and skills.
 updated: 2026-09-03
 ---
 
-# wiki-onboard — seed an empty vault from what already exists
+# onboard — seed an empty vault from what already exists
 
-Run **once**, right after `new-wiki.sh` (or after adopting the engine in an existing setup), to fill the empty node folders from the environment instead of starting cold. `checkpoint` keeps a vault current session-to-session; **this is the initial bulk seed**. Curation, not a dump — prefer a few high-signal pages over importing everything.
+Run **once**, right after `new-wiki.sh` (or after adopting the engine in an existing setup), to fill the empty node folders from the environment instead of starting cold. `distill` keeps a vault current session-to-session; **this is the initial bulk seed**. Curation, not a dump — prefer a few high-signal pages over importing everything.
 
 **Vault**: `$WIKI_PATH` — the vault root; must be set (scaffolded, with its `.engine-version` recorded).
 
@@ -20,10 +20,10 @@ Run **once**, right after `new-wiki.sh` (or after adopting the engine in an exis
 
 1. **Inventory, then confirm.** Survey the sources below and present a short proposed manifest (memories to distill, repos to ingest, projects to stub). **Ask before creating many pages.**
 
-2. **Memories → `memory/`.** Read Claude Code native memory (`~/.claude/projects/*/memory/*.md` and its `MEMORY.md` index) plus any preferences in `~/.claude/CLAUDE.md`. Distill **durable** facts into curated notes with the right `type` (`preference` · `decision` · `lesson` · `memory`), each with frontmatter (`title, created, updated, type, status, tags, sources, boundary`) and **≥2 `[[wikilinks]]`**. Native memory is raw scratch — promote the keepers, drop the transient. Same distillation as `checkpoint`, done in bulk.
+2. **Memories → `memory/`.** Read Claude Code native memory (`~/.claude/projects/*/memory/*.md` and its `MEMORY.md` index) plus any preferences in `~/.claude/CLAUDE.md`. Distill **durable** facts into curated notes with the right `type` (`preference` · `decision` · `lesson` · `memory`), each with frontmatter (`title, created, updated, type, status, tags, sources, boundary`) and **≥2 `[[wikilinks]]`**. Native memory is raw scratch — promote the keepers, drop the transient. Same distillation as `distill`, done in bulk.
    - **Then prune the raw source.** Once a native note's durable content is in the vault, remove it from native memory and drop its `MEMORY.md` index line, so the vault is the single authority. **Never delete native content you haven't first captured.** Anything that must load *every* session (core behavioral guidance) belongs in `CLAUDE.md`, not left in native — move it there, then prune. Deletion is a guided in-session action; confirm before removing — it needs a human judgement, which no recursion guard supplies.
 
-3. **Repos → `repos/`.** For each repo you actively work in, invoke **`wiki-repo`** (one per run) to create its page with git-ref provenance. Don't hand-write repo pages here.
+3. **Repos → `repos/`.** For each repo you actively work in, invoke **`ingest`** (one per run) to create its page with git-ref provenance. Don't hand-write repo pages here.
 
 4. **Projects → `projects/`.** For in-flight work, stub `projects/<slug>.md` (`type: project`, `status: active|paused`, `repos: [[...]]`) with Goal · Linked repos · Key decisions · Current state · Next steps. Link each to its repo pages.
 
@@ -33,5 +33,5 @@ Run **once**, right after `new-wiki.sh` (or after adopting the engine in an exis
 
 ## Rules
 - **In-session, on demand; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule). A one-time bootstrap has nothing to automate.
-- One-time bootstrap: if the vault already has substantial content, prefer `checkpoint`/`wiki-repo` for incremental updates instead of re-onboarding.
+- One-time bootstrap: if the vault already has substantial content, prefer `distill`/`ingest` for incremental updates instead of re-onboarding.
 - Respect the boundary and the no-secrets rule above at every step.
