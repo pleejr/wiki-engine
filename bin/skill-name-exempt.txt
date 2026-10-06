@@ -1,0 +1,4 @@
+# Engine skill names that do not start with an approved verb and are kept on purpose.
+# Closed to new skills: a new skill gets a verb-led name (bin/skill-verbs.txt).
+# Format: name  # reason
+wiki-context   # a verb-led name could not be validated: its trigger-eval control prompt fails even under this name

@@ -609,6 +609,49 @@ jobs:
             || { echo "  FAIL the gate rejected a line telling the reader NOT to integrate"; fail=1; }
           exit "$fail"
 
+      - name: Every skill name starts with an approved verb
+        run: |
+          # The verb-led naming rule for new skills, held mechanically (lint-docs check 13) so
+          # it binds even where no authoring-time hook is installed. The two ways a gate like
+          # this goes quiet are a list that decides nothing and a pattern that matches nothing,
+          # so both are broken on purpose below.
+          fail=0
+          T="$RUNNER_TEMP/verbname"; rm -rf "$T"; mkdir -p "$T"
+          cp -R bin scaffold skills adopt.d USAGE.md "$T/"
+          "$T/bin/lint-docs.sh" >/dev/null 2>&1 \
+            && echo "  ok   the shipped skills pass" \
+            || { echo "  FAIL the shipped skills do not pass their own gate"; fail=1; }
+          msg="does not start with an approved verb"
+          # A NEW skill with a non-verb name must fail, naming the file and the word.
+          mkdir "$T/skills/frobnicate-things"
+          printf -- '---\nname: frobnicate-things\ndescription: x\n---\n' > "$T/skills/frobnicate-things/SKILL.md"
+          out="$("$T/bin/lint-docs.sh" 2>&1 || true)"
+          printf '%s' "$out" | grep -q "skills/frobnicate-things/SKILL.md names 'frobnicate-things'.*'frobnicate'" \
+            && echo "  ok   a non-verb name fails, naming the file and the word" \
+            || { echo "  FAIL a non-verb name was not caught"; fail=1; }
+          # NEAR-MISS: a verb glued to its object is not a verb-led name.
+          mkdir "$T/skills/reviewplan"
+          printf -- '---\nname: reviewplan\ndescription: x\n---\n' > "$T/skills/reviewplan/SKILL.md"
+          out="$("$T/bin/lint-docs.sh" 2>&1 || true)"
+          printf '%s' "$out" | grep -q "skills/reviewplan/SKILL.md names 'reviewplan'" \
+            && echo "  ok   'reviewplan' is not read as the verb 'review'" \
+            || { echo "  FAIL a glued verb passed"; fail=1; }
+          # A verb-led name on the list raises no naming finding.
+          mkdir "$T/skills/review-plan"
+          printf -- '---\nname: review-plan\ndescription: x\n---\n' > "$T/skills/review-plan/SKILL.md"
+          out="$("$T/bin/lint-docs.sh" 2>&1 || true)"
+          printf '%s' "$out" | grep -q "skills/review-plan/SKILL.md names" \
+            && { echo "  FAIL a verb-led name was flagged"; fail=1; } \
+            || echo "  ok   a verb-led name raises no naming finding"
+          rm -rf "$T/skills/frobnicate-things" "$T/skills/reviewplan" "$T/skills/review-plan"
+          # NEGATIVE CONTROL: the list decides. Drop a verb and the shipped skill that uses it fails.
+          grep -v '^drain$' "$T/bin/skill-verbs.txt" > "$T/v.txt" && mv "$T/v.txt" "$T/bin/skill-verbs.txt"
+          out="$("$T/bin/lint-docs.sh" 2>&1 || true)"
+          printf '%s' "$out" | grep -q "skills/drain/SKILL.md names 'drain'" \
+            && echo "  ok   removing a verb from the list fails the skill that uses it" \
+            || { echo "  FAIL the verb list does not decide the verdict"; fail=1; }
+          exit "$fail"
+
       - name: Crossover fail-closed smoke test
         run: |
           # crossover's safety property is that a LOSSY PASTE CAN NEVER AUTHORIZE A DELETE:
@@ -2612,20 +2655,20 @@ jobs:
           # a check that cannot distinguish its subject from a coincidence.
           fail=0
           tmp="$RUNNER_TEMP/skillcov"; rm -rf "$tmp"; mkdir -p "$tmp"
-          probe="$GITHUB_WORKSPACE/skills/zzprobeskill"
+          probe="$GITHUB_WORKSPACE/skills/probe-zzskill"
           mkdir -p "$probe"
-          printf -- '---\nname: zzprobeskill\ndescription: probe\n---\n# probe\n' > "$probe/SKILL.md"
+          printf -- '---\nname: probe-zzskill\ndescription: probe\n---\n# probe\n' > "$probe/SKILL.md"
 
           # an incidental mention of the bare word must NOT satisfy coverage
           cp "$GITHUB_WORKSPACE/USAGE.md" "$tmp/USAGE.bak"
-          printf '\nA sentence mentioning zzprobeskill in passing.\n' >> "$GITHUB_WORKSPACE/USAGE.md"
+          printf '\nA sentence mentioning probe-zzskill in passing.\n' >> "$GITHUB_WORKSPACE/USAGE.md"
           "$GITHUB_WORKSPACE/bin/lint-docs.sh" >/dev/null 2>&1 \
             && { echo "  FAIL an incidental mention counted as documentation"; fail=1; } \
             || echo "  ok   an incidental mention does not count as documentation"
 
           # the documented form does
           cp "$tmp/USAGE.bak" "$GITHUB_WORKSPACE/USAGE.md"
-          printf '\n- **`zzprobeskill`** — documented properly.\n' >> "$GITHUB_WORKSPACE/USAGE.md"
+          printf '\n- **`probe-zzskill`** — documented properly.\n' >> "$GITHUB_WORKSPACE/USAGE.md"
           "$GITHUB_WORKSPACE/bin/lint-docs.sh" >/dev/null 2>&1 \
             && echo "  ok   ...and the backticked name does" \
             || { echo "  FAIL a properly documented skill still failed"; fail=1; }

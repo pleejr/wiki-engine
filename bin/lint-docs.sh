@@ -26,6 +26,7 @@
 #      — see the section comments below; the count above and this list have both been wrong
 #      before, so keep all three in step: this header, the numbered sections, and the
 #      success line at the bottom that names each check to the reader.
+#  13. every skill's name starts with an approved verb (bin/skill-verbs.txt) or is a listed exemption
 # Run in CI (engine-ci) and before cutting a release. Exit 1 on any gap.
 set -uo pipefail
 
@@ -436,7 +437,25 @@ for f in "$ROOT"/skills/*/SKILL.md; do
   done < <(grep -nwE 'integrate|integrated|integrating' "$f" || true)
 done
 
+# 13. every skill's name starts with an approved verb or is a listed exemption ------------
+# A skill's name is routing surface, and the verb-led pattern (<verb> or <verb>-<object>) is
+# the house rule for new skills. The verbs are bin/skill-verbs.txt; the exemptions in
+# bin/skill-name-exempt.txt are names kept on purpose and closed to new skills. A new skill
+# whose first word is not on the list fails here, naming the file and the word, so the rule
+# holds even where no authoring-time hook is installed.
+listed() { grep -qxF -- "$1" <<< "$(sed 's/#.*//' "$2" | awk 'NF{print $1}')"; }
+for f in "$ROOT"/skills/*/SKILL.md; do
+  [ -f "$f" ] || continue
+  nm="$(sed -n 's/^name:[[:space:]]*//p' "$f" | head -1)"
+  [ -n "$nm" ] || continue
+  listed "${nm%%-*}" "$SCRIPT_DIR/skill-verbs.txt" && continue
+  listed "$nm" "$SCRIPT_DIR/skill-name-exempt.txt" && continue
+  echo "lint-docs: skills/$(basename "$(dirname "$f")")/SKILL.md names '$nm', which does not start with an approved verb ('${nm%%-*}')" >&2
+  echo "lint-docs:   name it <verb> or <verb>-<object>; verbs are in bin/skill-verbs.txt (add one as its own change)" >&2
+  fail=1
+done
+
 if [ "$fail" -eq 0 ]; then
-  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces; every skill description fits the router's cut; every references/ file is linked from its skill; skill bodies reach bin/ through their own directory; plugin pins, hooks and CHANGELOG agree; worktree skills route a pull-request vault around integrate"
+  echo "lint-docs: all skills documented; no stale doc references in USAGE/SCHEMA/README, bare or path-shaped; no hardcoded boundary values; worktree skills name canonical for ignored state; every vault walk uses the shared exclusion; every documented hook states a timeout; every defect-report template relates Expected to the fix on both surfaces; every skill description fits the router's cut; every references/ file is linked from its skill; skill bodies reach bin/ through their own directory; plugin pins, hooks and CHANGELOG agree; worktree skills route a pull-request vault around integrate; every skill name starts with an approved verb"
 fi
 exit "$fail"

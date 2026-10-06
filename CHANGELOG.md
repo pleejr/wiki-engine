@@ -4,6 +4,11 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [Unreleased]
+
+### Added
+- **`lint-docs.sh` check 13: a skill's name starts with an approved verb.** The house rule for new skills is `<verb>` or `<verb>-<object>`; the verbs are `bin/skill-verbs.txt` and the names kept on purpose are `bin/skill-name-exempt.txt` (closed to new skills; `wiki-context` is the one engine entry). A new skill whose first word is not on the list fails the gate, naming the file and the word. CI proves it with a non-verb name, a verb glued to its object, a verb-led name, and a negative control that removes a verb and expects the skill using it to fail. Engine CI only; nothing a consumer runs changes, so there is no release.
+
 ## [3.0.0] — 2026-10-06
 
 Major — seven skills are renamed to start with a verb. Nothing else changes.
