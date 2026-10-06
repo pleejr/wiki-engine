@@ -1,9 +1,9 @@
 ---
 name: distill
-description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, distills durable facts from this session into memory/ notes, then ends by OFFERING the `mine` mining pass rather than running it inline — deferring writes nothing, and accepting starts it as a separate session instead of printing instructions for starting one. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session, on demand — never from a session-lifecycle hook.
+description: End-of-session wrap-up ritual. Updates the active project's page (Current state + Next steps) and appends a log.md entry, distills durable facts from this session into memory/ notes — it neither runs nor offers the `mine` pass, which is strictly operator-invoked. Use when finishing or pausing work on a project, or when a keeper fact/decision/lesson emerged. In-session, on demand — never from a session-lifecycle hook.
 status: active
-summary: "end-of-session: update project page + `log.md`, distill memory, then offer the skill-mining pass — declined it writes nothing, accepted it starts elsewhere. In-session only."
-updated: 2026-09-03
+summary: "end-of-session: update project page + `log.md`, distill memory. Never offers or runs the skill-mining pass — `mine` is invoked by hand. In-session only."
+updated: 2026-10-06
 ---
 
 # distill — capture where I left off + distill memory
@@ -34,7 +34,7 @@ Two sessions otherwise share one working tree, where simultaneous writes are sil
 - Promote **durable** facts into `$WIKI_PATH/memory/` notes with the right `type`: `preference` (how I work) · `decision` (a chosen path + why) · `lesson` (a hard-won rule).
 - Give each ≥2 `[[wikilinks]]`; mark any note it supersedes as `status: superseded`.
 - Add/refresh the `$WIKI_PATH/index.md` memory entry. For **project** pages, don't hand-edit the index Projects buckets — regenerate them from frontmatter: `${CLAUDE_SKILL_DIR}/../../bin/gen-projects-index.sh --wiki "$WORK"` (splices between the `<!-- projects:start/end -->` sentinels, same pattern as the skills catalog).
-- **The notes this step writes are the evidence base for `mine`** (§6), which reads them back out to find procedures repeated often enough to deserve a skill. Nothing here needs to anticipate that — just date the notes and keep them specific about what was *done*, since a note recording only a conclusion cannot later be counted as an occurrence.
+- **The notes this step writes are the evidence base for `mine`**, the operator-invoked mining skill, which reads them back out to find procedures repeated often enough to deserve a skill. Nothing here needs to anticipate that — just date the notes and keep them specific about what was *done*, since a note recording only a conclusion cannot later be counted as an occurrence.
 
 ## 3. Prune the raw source (keep the vault authoritative)
 - **Only after** a native note's durable content is captured in the vault, remove it from native memory (`~/.claude/projects/*/memory/*.md`) and drop its line from that dir's `MEMORY.md` index.
@@ -51,16 +51,8 @@ Two sessions otherwise share one working tree, where simultaneous writes are sil
 ## 5. Refresh semantic recall (if enabled)
 - If the vault has a `.rag` index (`$WIKI_PATH/.rag/index.jsonl` exists), run `${CLAUDE_SKILL_DIR}/../../bin/rag-build.sh` **against canonical `$WIKI_PATH` once §0's commit is on canonical `main`** (integrated, or merged by pull request and fast-forwarded) — the `.rag/` index is untracked and lives only in the canonical checkout — so this session's notes are recallable next session (incremental; only changed files re-embed). Skip if there is no index or the embedder is down; recall is optional. `rag-build.sh` is deterministic and hook-safe on its own; it is `distill` that must stay in-session.
 
-## 6. Offer the mining pass — do not run it
-
-`mine` reads the notes §2 just wrote and reports procedures repeated often enough to deserve a skill. **End the distill by offering it, and stop there.**
-
-- **Defer** — the default; writes nothing.
-- **Accept** — start the host's native subagent (fresh, or a fork of this session) with: *"Run the `mine` mining pass read-only over `$WIKI_PATH`: return the ranked candidate report with dated evidence and the catalog-overlap check. Ask no questions; write nothing."* When its report returns, run `mine` §6a–§7 here — the questions need the operator, the verdicts a worktree. No native subagent tool → `${CLAUDE_SKILL_DIR}/../../bin/spawn-session.sh --cwd "$WIKI_PATH" --what 'the skill-mining pass' --prompt '<same prompt>'`; relay what it prints and stop.
-
-Why here: mining reads the notes this pass just committed, and §0's worktree is retired. Never from a lifecycle hook (engine `CLAUDE.md`).
-
 ## Rules
+- **Never offer or start the `mine` pass.** Mining is invoked by the operator, on their own schedule; ending a wrap-up with an offer made it a step of every session.
 - **In-session, on demand; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule).
 - `boundary:` **must match what the vault declares in its own `CLAUDE.md`** — the engine names no value. No secrets; commit under the vault's declared git identity. `lint.sh` errors on a mismatch, because a mis-stamped page is dropped from semantic recall.
 - Prefer few high-signal notes over many; this is curation, not logging.

@@ -71,6 +71,15 @@ else
     echo "adopt:   leaves this gate running the previous release, and its refusal names the wrong"
     echo "adopt:   cause. Compare it with the vault's .engine-version as $TMPL does."
   fi
+  if grep -q 'CANON/\.engine-version' <<<"$code" && ! grep -q 'show :\.engine-version' <<<"$code"; then
+    # The comparison exists but reads CANONICAL's record, so a migration committed from a
+    # session worktree (which stages the new release while canonical still records the old)
+    # gets a false skew NOTE that advises gating it with the release being left behind.
+    # The template now reads the record the commit carries. Reported, not edited.
+    echo "adopt: NOTE — $HOOK compares the engine against canonical's .engine-version, not the"
+    echo "adopt:   record the commit carries, so a release migration committed from a worktree is"
+    echo "adopt:   reported as a skew. Refresh its RELEASE SKEW block from $TMPL."
+  fi
   if grep -q 'engine/bin' "$HOOK" 2>/dev/null && ! grep -q 'plugins/data' "$HOOK" 2>/dev/null \
      && ! grep -q 'WIKI_ENGINE' "$HOOK" 2>/dev/null; then
     # A 1.x hook finds the engine only in the vault's engine/ submodule. Once the vault drops

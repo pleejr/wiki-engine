@@ -1,6 +1,7 @@
 ---
 slug: pre-commit-skew-note-reads-canonical-engine-version
-outcome: open
+outcome: accepted
+reason: "accepted as suggested. Reproduced at HEAD with a fixture that commits a staged release from a worktree while canonical records the old one: the NOTE fired and named canonical. The template now reads `git show :.engine-version`, then the committing tree, then canonical; a near-miss pins that a staged record disagreeing with the running release is still reported. The fixture first passed for the wrong reason (a relative hooksPath meant no hook ran in the worktree), so it now asserts the hook ran. Class sweep: no other script reads canonical's record where the caller's tree is meant; update.sh already resolved the caller's tree. Added: vault hooks are adopted add-only and never overwritten, so the fix alone reaches no existing vault; adopt.d/30 now NOTEs a hook that reads canonical without the staged record."
 received: 2026-10-06
 ---
 

@@ -652,6 +652,20 @@ jobs:
             || { echo "  FAIL the verb list does not decide the verdict"; fail=1; }
           exit "$fail"
 
+      - name: distill never offers or starts the mining pass
+        run: |
+          # Mining is operator-invoked only. checkpoint (now distill) used to END by offering the
+          # pass and, on accept, starting it in a subagent — which made mining a step of every
+          # wrap-up. A line that NEGATES it ("never offers") passes; any other line that offers,
+          # starts, forks or spawns it fails, as does a mention of the spawn adapter.
+          offers() { grep -niE '(offer|start|fork|spawn|subagent)[^.]*`?mine`?|spawn-session' "$1" | grep -viE '\b(never|neither|nor|not)\b[^.]{0,25}(offer|start|run)' || true; }
+          fail=0
+          if [ -z "$(offers skills/distill/SKILL.md)" ]; then echo "  ok   distill neither offers nor starts mine"; else echo "  FAIL distill offers mine:"; offers skills/distill/SKILL.md; fail=1; fi
+          T="$RUNNER_TEMP/nooffer"; mkdir -p "$T"; cp skills/distill/SKILL.md "$T/d.md"
+          printf '%s\n' '## 6. Offer the mining pass' '- **Accept** — start the host'"'"'s native subagent with: run the `mine` pass.' >> "$T/d.md"
+          if [ -n "$(offers "$T/d.md")" ]; then echo "  ok   the old offer section is caught"; else echo "  FAIL the old offer section passed"; fail=1; fi
+          exit "$fail"
+
       - name: Crossover fail-closed smoke test
         run: |
           # crossover's safety property is that a LOSSY PASTE CAN NEVER AUTHORIZE A DELETE:
@@ -1860,6 +1874,19 @@ jobs:
           cp scaffold/pre-commit "$V/.githooks/pre-commit"; chmod +x "$V/.githooks/pre-commit"
           [ "$(skewnote)" -eq 0 ] || { echo "FAIL: the current template was reported as missing the comparison"; exit 1; }
           echo "ok: the current template is not reported"
+          # REGRESSION (pre-commit-skew-note-reads-canonical-engine-version): a hook installed
+          # before the fix compares against canonical's record. Adoption never overwrites a
+          # vault's hook, so the fix reaches existing vaults only if this says so.
+          canonnote() { WIKI="$V" ENGINE="$PWD" ADOPT_LIB="$PWD/bin/adopt-lib.sh" ADOPT_CHECK="" \
+            bash adopt.d/30-vault-git-hooks.sh 2>&1 | grep -c "compares the engine against canonical" || true; }
+          [ "$(canonnote)" -eq 0 ] || { echo "FAIL: the current template was reported as reading canonical"; exit 1; }
+          echo "ok: the current template is not reported as reading canonical"
+          # The pre-fix shape: the template with its staged-record read removed, leaving only
+          # the canonical read (no git history needed, so a shallow CI checkout runs it too).
+          sed 's/show :\.engine-version/show :.NOT-engine-version/' scaffold/pre-commit > "$V/.githooks/pre-commit"
+          [ "$(canonnote)" -ge 1 ] || { echo "FAIL: a hook reading canonical's record got no NOTE"; exit 1; }
+          echo "ok: a hook that reads canonical's record is told to refresh"
+          cp scaffold/pre-commit "$V/.githooks/pre-commit"
 
       - name: Adoption writes only the vault, never the machine's config
         run: |
@@ -2186,6 +2213,28 @@ jobs:
           printf 'v1.0.0\n' > "$V/.engine-version"
           out="$(commit)" && rc=0 || rc=$?
           if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'LINT-FROM-bare'; then ck 0 "an engine with no manifest still reaches the lint, unreported"; else ck 1 "the version probe disarmed the gate (rc=$rc): $out"; fi
+
+          # REGRESSION (pre-commit-skew-note-reads-canonical-engine-version): the record judged
+          # is the one the COMMIT carries. A MAJOR migration is committed from a session
+          # worktree that stages the new release while canonical still records the old one;
+          # reading canonical printed a skew NOTE on exactly that commit and advised gating it
+          # with the release being migrated away from.
+          ln -sfn "$C/9.9.0" "$G/plugins/data/wiki-engine-wiki-engine/engine"
+          printf 'v1.0.0\n' > "$V/.engine-version"; git -C "$V" add .engine-version
+          git -C "$V" commit -qm record >/dev/null 2>&1 || true
+          # Absolute hooks path: a relative one resolves inside the worktree's own checkout,
+          # which has no committed hook, and nothing would run at all.
+          git -C "$V" config core.hooksPath "$V/.githooks"
+          W="$T/wt"; git -C "$V" worktree add -q "$W" -b wt-migrate 2>/dev/null
+          printf 'v9.9.0\n' > "$W/.engine-version"; git -C "$W" add .engine-version
+          out="$(git -C "$W" commit -qm migrate 2>&1)" && rc=0 || rc=$?
+          if printf '%s' "$out" | grep -q 'LINT-FROM-9.9.0'; then ck 0 "fixture: the hook runs for a commit made in the worktree"; else ck 1 "fixture: no hook ran in the worktree: $out"; fi
+          if [ "$rc" -eq 0 ] && ! printf '%s' "$out" | grep -qi 'records'; then ck 0 "a worktree commit that stages the running release raises no NOTE"; else ck 1 "the migration commit was judged against canonical's record: $out"; fi
+          # NEAR-MISS — reading the staged record must not hide a real skew: a worktree commit
+          # that stages a release OTHER than the running one is still reported.
+          printf 'v1.0.0\n' > "$W/.engine-version"; git -C "$W" add .engine-version
+          out="$(git -C "$W" commit -qm back 2>&1)" || true
+          if printf '%s' "$out" | grep -q 'records v1.0.0'; then ck 0 "a staged record that disagrees with the running release is still reported"; else ck 1 "the staged record hid a real skew: $out"; fi
           exit "$fail"
 
 
