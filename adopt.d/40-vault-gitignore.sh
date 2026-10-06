@@ -33,8 +33,12 @@ set -uo pipefail
 # shellcheck source=bin/adopt-lib.sh
 . "${ADOPT_LIB:?}" || exit 3
 
+# Tracked content is written to the tree the caller commits from ($TREE, exported by adopt.sh
+# --tree; canonical when unset), never to canonical behind a session worktree's back.
+W="${TREE:-$WIKI}"
+
 TMPL="$ENGINE/scaffold/gitignore.tmpl"
-GI="$WIKI/.gitignore"
+GI="$W/.gitignore"
 CHECK="${ADOPT_CHECK:-}"
 
 # ENGINE ASSET — unconditional, above every consumer-state guard (see adopt-lib.sh).

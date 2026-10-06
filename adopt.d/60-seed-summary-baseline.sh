@@ -20,22 +20,26 @@ set -uo pipefail
 # shellcheck source=bin/adopt-lib.sh
 . "${ADOPT_LIB:?}" || exit 3
 
+# Tracked content is written to the tree the caller commits from ($TREE, exported by adopt.sh
+# --tree; canonical when unset), never to canonical behind a session worktree's back.
+W="${TREE:-$WIKI}"
+
 # ENGINE ASSETS — unconditional, above every consumer-state guard (see adopt-lib.sh).
 require_engine_asset "$ENGINE/bin/lint-summary-volatility.sh" file "the summary-volatility gate"
 require_engine_asset "$ENGINE/scaffold/summary-volatility-markers.txt" file "the volatility marker list"
 
 # CONSUMER STATE — nothing to baseline without a projects/ dir.
-[ -d "$WIKI/projects" ] || exit 0
+[ -d "$W/projects" ] || exit 0
 
 # Honour the vault's configured baseline path if it declares one.
-BASE_FILE="$(awk -F= '/^[ \t]*#/{next} { k=$1; gsub(/^[ \t]+|[ \t]+$/,"",k); if (k=="summary_baseline") { sub(/^[^=]*=/,""); gsub(/^[ \t]+|[ \t]+$/,"",$0); print; exit } }' "$WIKI/.wiki-gates.conf" 2>/dev/null)"
+BASE_FILE="$(awk -F= '/^[ \t]*#/{next} { k=$1; gsub(/^[ \t]+|[ \t]+$/,"",k); if (k=="summary_baseline") { sub(/^[^=]*=/,""); gsub(/^[ \t]+|[ \t]+$/,"",$0); print; exit } }' "$W/.wiki-gates.conf" 2>/dev/null)"
 [ -n "$BASE_FILE" ] || BASE_FILE=".wiki-gates-summary-baseline"
 
 # Already seeded — never re-seed (see above).
-[ -f "$WIKI/$BASE_FILE" ] && exit 0
+[ -f "$W/$BASE_FILE" ] && exit 0
 
 if [ -n "${ADOPT_CHECK:-}" ]; then
-  if "$ENGINE/bin/lint-summary-volatility.sh" --wiki "$WIKI" --quiet >/dev/null 2>&1; then
+  if "$ENGINE/bin/lint-summary-volatility.sh" --wiki "$W" --quiet >/dev/null 2>&1; then
     exit 0     # already clean; seeding would create an empty file for nothing
   fi
   echo "PENDING: adopt: would seed $BASE_FILE to grandfather existing project summaries"
@@ -45,7 +49,7 @@ fi
 # Whether a clean vault gets a file is decided ONCE, inside --seed-baseline (it writes
 # nothing when there is nothing to grandfather). This step deliberately does not re-test
 # it: a second copy of the same rule is how the two drift apart.
-out="$("$ENGINE/bin/lint-summary-volatility.sh" --wiki "$WIKI" --seed-baseline 2>&1)" || {
+out="$("$ENGINE/bin/lint-summary-volatility.sh" --wiki "$W" --seed-baseline 2>&1)" || {
   echo "FAILED: adopt: could not seed $BASE_FILE — $out" >&2; exit 1; }
-[ -f "$WIKI/$BASE_FILE" ] || exit 0     # nothing to grandfather; stay silent
+[ -f "$W/$BASE_FILE" ] || exit 0     # nothing to grandfather; stay silent
 echo "ADOPTED: adopt: seeded $BASE_FILE — existing project summaries grandfathered; new ones are enforced"

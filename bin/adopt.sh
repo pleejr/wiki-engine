@@ -7,6 +7,9 @@
 # Usage:
 #   adopt.sh                lint/create against $WIKI_PATH
 #   adopt.sh --wiki DIR     target DIR
+#   adopt.sh --tree DIR     write tracked content (node folders, .gitignore, .gitattributes,
+#                           repo refs, the summary baseline) into DIR — the caller's worktree —
+#                           while wiring stays on --wiki
 #   adopt.sh --check        report missing folders and exit 1 (no changes)
 set -euo pipefail
 
@@ -15,10 +18,12 @@ ENGINE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIRS_FILE="$ENGINE_ROOT/scaffold/node-dirs.txt"
 
 WIKI="${WIKI_PATH:-}"
+TREE=""
 CHECK=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --wiki)  WIKI="$2"; shift 2;;
+    --tree)  TREE="$2"; shift 2;;
     --check) CHECK=1; shift;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 1;;
@@ -28,16 +33,17 @@ done
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
 [ -f "$DIRS_FILE" ] || { echo "error: missing $DIRS_FILE" >&2; exit 1; }
+TREE="${TREE:-$WIKI}"; export TREE
 
 missing=0
 while IFS= read -r d; do
   case "$d" in ''|'#'*) continue;; esac
-  if [ -d "$WIKI/$d" ]; then continue; fi
+  if [ -d "$TREE/$d" ]; then continue; fi
   missing=$((missing+1))
   if [ "$CHECK" -eq 1 ]; then
     echo "missing: $d"
   else
-    mkdir -p "$WIKI/$d"; touch "$WIKI/$d/.gitkeep"
+    mkdir -p "$TREE/$d"; touch "$TREE/$d/.gitkeep"
     echo "+ created $d/"
   fi
 done < "$DIRS_FILE"

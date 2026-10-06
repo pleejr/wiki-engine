@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.2.2] — 2026-10-06
+
+Patch — adoption run by `update.sh` from a session worktree writes its tracked files into that worktree.
+
+### Fixed
+- **Adoption wrote tracked content into canonical behind a session's back.** `update.sh` writes its own changes in the caller's worktree, but it ran the adoption steps against canonical, so a step that writes a tracked file — the `.gitattributes` from 3.2.1's `log.md` union, and equally `.gitignore` entries, new node folders, repo-ref normalisation and the summary baseline — left an untracked file in canonical while the session committed from its worktree. Found landing 3.2.1 into a vault. `adopt.sh` takes `--tree DIR`, the steps that write tracked content write there (`${TREE:-$WIKI}`, so a step run without a tree behaves as before), hook wiring stays on canonical, and `update.sh` passes its own tree.
+
+### Tests
+- CI runs `update.sh` from a session worktree on a vault that predates the union attribute and asserts the attribute lands in the worktree and canonical stays clean; red against 3.2.1. The five existing adoption steps pass unchanged. The fixture resolves its temporary path physically, because on macOS `/var` is a symlink and `update.sh` matches the working directory to the vault by path.
+
 ## [3.2.1] — 2026-10-06
 
 Patch — two defects in 3.2.0's `distill-finish.sh`, both found by landing this release's own adoption with it.
