@@ -1,6 +1,7 @@
 ---
 slug: checkpoint-buffer-backlog-counts-headers-not-live-blocks
-outcome: open
+outcome: partially-accepted
+reason: "the defect is real and is resolved by a different mechanism: v3.2.0 replaces the per-block prune with age-out of whole month files (distill-finish.sh, under rag-capture.sh's lock, never the current month), so there is no live-block definition to get wrong, no backlog count to inflate and no marker line to lose. DECLINED: the proposed bin/buffer.sh status/prune tool, which would maintain the per-block mechanism this release removes. The overcount and the lost markers were both produced by hand-written parsers over an untracked file; nothing now parses the buffer except to read its newest block date."
 received: 2026-10-05
 ---
 
