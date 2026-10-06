@@ -56,7 +56,13 @@ State the count and the dates for every candidate you report. A candidate whose 
 
 ## 2. Gather the evidence
 
-Run these against canonical `$WIKI_PATH`; start with the clusters, then read the notes behind the interesting ones.
+Run these against canonical `$WIKI_PATH`. **Start with the recorded procedures**: notes that record a procedure carried out carry `procedure: <verb>-<object>`, so a key on three or more notes created across two weeks or more is a candidate by count, not by guess:
+
+```sh
+"${CLAUDE_SKILL_DIR}"/../../bin/procedures.sh --wiki "$WIKI_PATH" --min 3 --span-days 14
+```
+
+Then the clusters, for history recorded before the key existed; read the notes behind the interesting ones.
 
 ```sh
 # Tag clusters — a tag carried by many notes is a subject you keep returning to.

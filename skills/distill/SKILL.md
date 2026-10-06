@@ -19,8 +19,8 @@ In `projects/<slug>.md`: **overwrite** Current state, update Next steps, **appen
 ## 2. Durable notes
 - Promote what will still matter in a month into `memory/` as `preference` (how the operator works), `decision` (a path chosen, and why) or `lesson` (a rule learned the hard way). Few, specific notes.
 - Each note gets ≥2 `[[wikilinks]]`, `created:` and `updated:`; mark a note it replaces `status: superseded` with `superseded_by:`; add its line to `index.md`.
-- Record what was *done*, not only the conclusion — `mine`, the operator-invoked mining skill, can count a done procedure as an occurrence and cannot count a conclusion.
-- Inputs: this conversation, and the capture buffer `raw/sessions/` in **canonical** `$WIKI_PATH` (git-ignored, so absent from `$WORK`). The buffer is never pruned by hand; step 4 ages it out.
+- A note recording a procedure carried out gets `procedure: <verb>-<object>`; reuse a key from `${CLAUDE_SKILL_DIR}/../../bin/procedures.sh` when the steps match, so `mine` can count it.
+- Inputs: this conversation, and the capture buffer `raw/sessions/` in **canonical** `$WIKI_PATH` (git-ignored, so absent from `$WORK`); step 4 ages it out.
 
 ## 3. Log line — only if nothing else logged this work
 Append one dated line to `log.md` (`- **YYYY-MM-DD (tag)** — …`, linking the notes from step 2) **only** when no other skill (`drain`, `update`, `verify`, `ingest`) already logged this session's work. The project page and notes are the record; the log is the index to them.

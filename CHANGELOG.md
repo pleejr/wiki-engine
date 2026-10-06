@@ -4,6 +4,20 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.3.0] — 2026-10-06
+
+Minor — the commit path lints what changed, and `mine` counts recorded procedures instead of guessing. Completes `checkpoint-becomes-distill`.
+
+### Added
+- **`lint.sh --changed REF` and `--staged`.** Per-file checks look at the changed pages only, a sub-linter runs when one of its inputs changed, and link resolution and the two catalogs always run. A deleted or renamed page widens to the whole vault, since another page may link to it. The first line says which scope ran. Whole-vault stays the default. `distill-finish.sh` lints `--changed` against canonical's main; the pre-commit template uses `--staged` when the engine it finds supports it, and the full lint otherwise, so an older engine behind a lagging pointer is never refused over an unknown argument. A vault keeps the hook it adopted; refresh `.githooks/pre-commit` from the template to get it.
+- **`procedure: <verb>-<object>` on memory notes, and `bin/procedures.sh`.** A note that records a procedure carried out names it with one kebab-case key whose verb is in `bin/skill-verbs.txt`; `lint-memory.sh` rejects any other shape. `procedures.sh` lists keys with their note count, first and last `created:` and span, filtered by `--min` and `--span-days`. `distill` reuses an existing key when the steps match; `mine` starts from `procedures.sh --min 3 --span-days 14` and falls back to tag clusters for history recorded before the key existed.
+
+### Declined
+- **A generated memory section in `index.md`.** It would have meant backfilling a `summary:` into ~180 notes and replacing a hand-ordered section with a mechanical one; the operator kept it hand-written. `lint-memory.sh` already warns when a note is missing from the index.
+
+### Tests
+- CI covers the scoped lint (a clean change passes past an untouched page's existing problem; a new problem in the change is caught; a deletion widens to the whole vault; `--staged` sees only the staged set) and the procedure key (three malformed shapes rejected, a good one accepted, counts and span filters exact). Whole-vault `lint.sh` output is byte-identical to 3.2.2 on a 187-note vault.
+
 ## [3.2.2] — 2026-10-06
 
 Patch — adoption run by `update.sh` from a session worktree writes its tracked files into that worktree.
