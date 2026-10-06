@@ -28,24 +28,28 @@ set -uo pipefail
 # shellcheck source=bin/adopt-lib.sh
 . "${ADOPT_LIB:?}" || exit 3
 
+# Tracked content is written to the tree the caller commits from ($TREE, exported by adopt.sh
+# --tree; canonical when unset), never to canonical behind a session worktree's back.
+W="${TREE:-$WIKI}"
+
 CHECK="${ADOPT_CHECK:-}"
 
 # CONSUMER STATE — a vault with no repos/ has nothing to normalise. Genuine no-op.
-[ -d "$WIKI/repos" ] || exit 0
+[ -d "$W/repos" ] || exit 0
 
 changed=0
-for f in "$WIKI/repos"/*.md; do
+for f in "$W/repos"/*.md; do
   [ -f "$f" ] || continue
   # only inside frontmatter's sources block: a ref: line. Match the describe suffix.
   grep -qE '^[[:space:]]*-?[[:space:]]*ref:[[:space:]]*[^[:space:]]*-[0-9]+-g[0-9a-f]{7,}[[:space:]]*$' "$f" || continue
   old="$(awk '/^[[:space:]]*-?[[:space:]]*ref:/{sub(/^[^:]*:[[:space:]]*/,""); gsub(/[[:space:]]/,""); print; exit}' "$f")"
   new="$(printf '%s' "$old" | sed -E 's/-[0-9]+-g[0-9a-f]{7,}$//')"
   if [ -n "$CHECK" ]; then
-    echo "adopt: would normalise ${f#$WIKI/} ref $old -> $new"
+    echo "adopt: would normalise ${f#$W/} ref $old -> $new"
   else
     tmp="$f.tmp.$$"
     sed -E "s/^([[:space:]]*-?[[:space:]]*ref:[[:space:]]*)${old}[[:space:]]*$/\1${new}/" "$f" > "$tmp" && mv "$tmp" "$f"
-    echo "adopt: normalised ${f#$WIKI/} ref $old -> $new"
+    echo "adopt: normalised ${f#$W/} ref $old -> $new"
   fi
   changed=$((changed+1))
 done

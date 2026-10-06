@@ -809,6 +809,33 @@ jobs:
           chk "adoption adds log.md merge=union once" '[ "$(git -C "$V" check-attr merge -- log.md | sed "s/.*: //")" = union ] && [ "$(grep -c "merge=union" "$V/.gitattributes")" = 1 ]'
           exit "$fail"
 
+      - name: update.sh run from a worktree writes adoption's tracked files into that worktree
+        run: |
+          # REGRESSION (found landing v3.2.1): update.sh promises tracked content goes to the caller's
+          # worktree, but it ran adoption against canonical, so adopt.d/45 wrote .gitattributes into
+          # canonical as an untracked file while the session committed from its worktree.
+          fail=0; chk() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1"; fail=1; fi; }
+          T="$(cd "$RUNNER_TEMP" && pwd -P)/adopttree"; rm -rf "$T"; mkdir -p "$T/cfg"   # physical path: on macOS /var is a symlink, and update.sh matches the cwd to the vault by path
+          export GIT_CONFIG_GLOBAL="$T/gitconfig"; git config --global user.email ci@example.invalid; git config --global user.name CI; git config --global init.defaultBranch main
+          # The engine as a plugin install has it: no .git, so its release is read from the
+          # manifest. In a CI checkout of an untagged merge commit git would name a bare sha,
+          # which update.sh rightly refuses as a MAJOR difference from the vault's record.
+          EN="$T/engine"; mkdir -p "$EN"; rsync -a --exclude .git --exclude .worktrees "$GITHUB_WORKSPACE/" "$EN/"
+          export CLAUDE_SETTINGS="$T/settings.json" CLAUDE_CONFIG_DIR="$T/cfg" WIKI_ENGINE="$EN" WIKI_WT_SESSION=adopttree
+          V="$T/v"; "$EN/bin/new-wiki.sh" --path "$V" --boundary personal --email ci@example.invalid --git-name CI --no-rag >/dev/null 2>&1
+          git -C "$V" rm -q .gitattributes; git -C "$V" commit -qm "pre-union vault" --no-verify
+          # The vault last adopted an OLDER release: where scaffolding also ran the machine wiring,
+          # it recorded this release as adopted and update.sh would skip adoption as done.
+          rm -f "$V/.engine-adopted"
+          git init -q --bare "$T/v.git"; git -C "$V" remote add origin "$T/v.git"; git -C "$V" push -q -u origin main 2>/dev/null
+          export WIKI_PATH="$V"; W="$("$EN/bin/vault-worktree.sh" ensure 2>/dev/null)"
+          chk "fixture: a session worktree exists and log.md has no merge attribute" '[ -d "$W" ] && [ "$(git -C "$W" check-attr merge -- log.md | sed "s/.*: //")" = unspecified ]'
+          rc=0; out="$(cd "$W" && "$EN/bin/update.sh" 2>&1)" || rc=$?
+          printf '%s' "$out" | grep -q "log.md merge=union" || { echo "  (update.sh output, for the next check:)"; printf '%s\n' "$out" | tail -8; }
+          chk "update.sh from a worktree writes the adoption's .gitattributes into the worktree" '[ "$(git -C "$W" check-attr merge -- log.md | sed "s/.*: //")" = union ]'
+          chk "...and leaves canonical clean (no untracked file behind the session)" '[ -z "$(git -C "$V" status --porcelain)" ]'
+          exit "$fail"
+
       - name: Crossover fail-closed smoke test
         run: |
           # crossover's safety property is that a LOSSY PASTE CAN NEVER AUTHORIZE A DELETE:

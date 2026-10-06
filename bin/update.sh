@@ -109,7 +109,7 @@ fi
 
 # --- adoption and the recall runtime, FIRST: adoption may install the vault's gate, and
 # whether canonical is gated decides where everything below is written.
-"$SCRIPT_DIR/adopt.sh" --wiki "$WIKI"
+"$SCRIPT_DIR/adopt.sh" --wiki "$WIKI" --tree "$PAGE_TREE"
 if [ -x "$WIKI/.rag/venv/bin/python" ]; then
   "$SCRIPT_DIR/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
 fi

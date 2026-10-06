@@ -19,13 +19,17 @@ set -uo pipefail
 # shellcheck source=bin/adopt-lib.sh
 . "${ADOPT_LIB:?}" || exit 3
 
-GA="$WIKI/.gitattributes"
+# Tracked content is written to the tree the caller commits from ($TREE, exported by adopt.sh
+# --tree; canonical when unset), never to canonical behind a session worktree's back.
+W="${TREE:-$WIKI}"
+
+GA="$W/.gitattributes"
 CHECK="${ADOPT_CHECK:-}"
 
 # CONSUMER STATE — no git repository, no merge to configure.
 git -C "$WIKI" rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
-[ "$(git -C "$WIKI" check-attr merge -- log.md 2>/dev/null | sed 's/.*: //')" = "union" ] && exit 0
+[ "$(git -C "$W" check-attr merge -- log.md 2>/dev/null | sed 's/.*: //')" = "union" ] && exit 0
 
 if [ -n "$CHECK" ]; then
   echo "adopt: would append 'log.md merge=union' to $GA (add-only)"
