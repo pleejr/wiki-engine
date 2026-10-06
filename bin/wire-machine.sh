@@ -10,7 +10,7 @@
 # not installed from here either: that is two `claude plugin` commands, printed when the
 # plugin is missing, because a script that edits enabledPlugins would bypass the install.
 #
-# Called by `new-wiki.sh` after scaffolding and by the `wiki-adopt` skill for a second or
+# Called by `new-wiki.sh` after scaffolding and by the `adopt` skill for a second or
 # Nth machine. Scaffolding (create-new) stays in new-wiki.sh; wiring (converge) lives here.
 #
 # Usage:

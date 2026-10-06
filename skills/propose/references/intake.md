@@ -1,4 +1,4 @@
-# engine-proposal — the intake design pass
+# propose — the intake design pass
 
 Read from `SKILL.md` §6 when a proposal touches a wire/file format, an on-disk contract, a safety gate, or flips a default. The body carries the commands and the hard rules; this file carries the review method and the history that produced it.
 

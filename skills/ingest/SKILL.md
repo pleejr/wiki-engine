@@ -1,12 +1,12 @@
 ---
-name: wiki-repo
+name: ingest
 description: Ingest or refresh ONE repo's wiki page in the wiki vault ($WIKI_PATH) with git-ref provenance. Use when documenting a repository for the vault, or when a repo's existing wiki page is stale (its recorded ref/sha differs from HEAD). Single repo only — no cross-repo synthesis.
 status: active
 summary: ingest/refresh one repo's wiki page with git-ref provenance.
 updated: 2026-09-03
 ---
 
-# wiki-repo — ingest or refresh one repo
+# ingest — ingest or refresh one repo
 
 Generate or update `$WIKI_PATH/repos/<name>.md` so a session can load a repo's context cheaply instead of re-deriving it. **One repo per run.** Never synthesize across repos (fragile, drops stale).
 

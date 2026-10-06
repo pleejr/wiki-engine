@@ -8,7 +8,7 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 
 - **Curated knowledge graph** — a typed node model (repo · project · skill · memory, plus concepts/entities/comparisons/queries/notes) linked by `[[wikilinks]]`, with the right freshness signal per node type. Full model in `SCHEMA.md`.
 - **Proposal round-trip** — a consumer's `HANDOFF` slug comes back: `PROPOSALS.md` records every proposal on arrival (including the ones **declined**, which produce no other artifact anywhere), the implementing commit carries a `Proposal:` trailer, and `engine-proposal.sh status` tells a consumer what shipped, what was rejected and why, and what never arrived.
-- **In-session maintenance skills** — `wiki-context` (index-first context router), `wiki-repo` (ingest/refresh a repo page with git-ref provenance), `checkpoint` (end-of-session curate + log), `wiki-onboard`/`wiki-adopt` (bootstrap), `crossover` (integrity-checked page migration between vaults), `engine-proposal` (boundary-scrub a consumer's engine-improvement idea **or bug report** into a handoff block for the engine-dev vault — the route for a defect you hit while running the engine, since a consumer vault cannot fix the engine it runs). No orchestrator — driven by Claude Code.
+- **In-session maintenance skills** — `wiki-context` (index-first context router), `ingest` (ingest/refresh a repo page with git-ref provenance), `distill` (end-of-session curate + log), `onboard`/`adopt` (bootstrap), `export` (integrity-checked page migration between vaults), `propose` (boundary-scrub a consumer's engine-improvement idea **or bug report** into a handoff block for the engine-dev vault — the route for a defect you hit while running the engine, since a consumer vault cannot fix the engine it runs). No orchestrator — driven by Claude Code.
 - **One-command adoption & wiring** — scaffold a new vault (`new-wiki.sh`) or wire an existing one onto a new machine (`wire-machine.sh`), idempotently. The plugin carries the hooks and skills; the vault records the release it needs in `.engine-version`, which its CI checks out.
 - **Write-time invariant gates (held at zero)** — `lint.sh` enforces vault invariants — memory schema, frontmatter, soft-wrap, catalog drift, **boundary present on every node**, **boundary matching the vault's own declaration**, **provenance present on every repo page**, **a clean release tag rather than a `git describe` string**, link integrity, and the opt-in foreign-boundary denylist — as a hard gate wired into CI + a pre-commit hook, not an honor-system lint.
 - **Freshness *and* correctness signals** — provenance freshness (`sources.sha` vs `HEAD`) tells you nothing *changed*; the `verified:` signal (`verify-status.sh`) records that someone *confirmed the content correct*, and is invalidated by provenance (a refresh auto-demotes a stale stamp), not a clock.
@@ -18,18 +18,18 @@ Reusable machinery for an LLM-Wiki / Karpathy-pattern vault, maintained **in-ses
 
 ## What's here
 
-- `skills/` — the Claude Code skills, loaded as `wiki-engine:<name>`: `wiki-repo`, `wiki-context`, `checkpoint`, `wiki-onboard`, `wiki-adopt`, `update`, `verify`, `crossover`, `engine-proposal`, and more (the vault's generated catalog lists them).
+- `skills/` — the Claude Code skills, loaded as `wiki-engine:<name>`: `ingest`, `wiki-context`, `distill`, `onboard`, `adopt`, `update`, `verify`, `export`, `propose`, and more (the vault's generated catalog lists them).
 - `.claude-plugin/` + `hooks/hooks.json` — the plugin manifest, its marketplace (pinned to the latest release tag), and the SessionStart boot, UserPromptSubmit recall and SessionEnd capture hooks.
 - `SCHEMA.md` — node model, three layers, page conventions, memory lifecycle.
 - `CLAUDE.md` — generic context router a wiki imports from its own thin `CLAUDE.md`.
 - `bin/` — deterministic maintenance tools (no LLM):
   - `new-wiki.sh` + `scaffold/` — scaffold a new consuming wiki in one command (node folders from `scaffold/node-dirs.txt`).
   - `adopt.sh` — ensure an existing vault has the engine's current node folders + run the `adopt.d/` steps (the boot hook runs them after each release).
-  - `wire-machine.sh` — idempotently make a machine ready for an existing vault (plugin present, `WIKI_PATH` in settings `env`, CLAUDE.md import, status line, `.rag`, vault adoption); `--check` previews. The "wire an existing clone" converge verb behind `wiki-adopt`, and the shared wiring path `new-wiki.sh` calls after scaffolding.
+  - `wire-machine.sh` — idempotently make a machine ready for an existing vault (plugin present, `WIKI_PATH` in settings `env`, CLAUDE.md import, status line, `.rag`, vault adoption); `--check` previews. The "wire an existing clone" converge verb behind `adopt`, and the shared wiring path `new-wiki.sh` calls after scaffolding.
   - `engine-version.sh` · `doctor.sh` · `update.sh` — freshness: the running release vs the latest tag; full health report (engine + RAG deps + security + model); record the running release in the vault (same-MAJOR).
   - `session-boot.sh` · `session-preflight.sh` — the plugin's SessionStart hook: vault adoption, then the running release vs the vault's `.engine-version` (network-free since 2.5.0 — whether a newer release exists is the `plugin-updates` plugin's question) and a leftover 1.x submodule or settings hook; on a mismatch it prints an ACTION-REQUIRED block telling the assistant to ask before changing anything. Deterministic, never runs `claude`.
   - `rag-setup.sh` · `rag-build.sh` · `recall.sh` · `recall-hook.sh` · `rag-capture.sh` (+ `rag_embed.py`, `rag_deps_check.py`) — the optional, self-contained semantic-recall + auto-capture layer.
-  - `lint.sh` — umbrella lint **and write-time gate** (memory + frontmatter-property + soft-wrap + catalog + boundary-present + boundary-matches-vault + provenance-present + repo-ref-is-a-clean-tag + link-integrity + foreign-boundary); `checkpoint`, a pre-commit hook, and vault CI run it.
+  - `lint.sh` — umbrella lint **and write-time gate** (memory + frontmatter-property + soft-wrap + catalog + boundary-present + boundary-matches-vault + provenance-present + repo-ref-is-a-clean-tag + link-integrity + foreign-boundary); `distill`, a pre-commit hook, and vault CI run it.
   - `verify-status.sh` · `upkeep.sh` — the `verified:` correctness reporter (verified/stale/unverified, `--todo`, `--check`), and the drainable upkeep queue (`scan`/`next`/`done`) it feeds.
   - `gen-skills-index.sh` · `gen-projects-index.sh` · `lint-memory.sh` · `reflow.sh` — catalog generation (skills + projects), memory validation, soft-wrap normalization. The generators write the working tree they are invoked from rather than `$WIKI_PATH`, so a session in its own worktree updates the index on the branch it is committing from (`bin/wiki-root-lib.sh`).
 
@@ -44,28 +44,28 @@ Have these in place on the machine *before* adopting:
 
 **For pushing the vault to a remote (recommended)**
 - **A git host account** (GitHub, GitLab, …) where the vault repo will live, and network access to it.
-- **The [`gh`](https://cli.github.com/) CLI, authenticated** (`gh auth status`) — only if you want `wiki-adopt` / `new-wiki.sh --create-remote` to *create and push* the remote for you. Authenticate `gh` against the org/account that should own the vault. Without `gh` you can still adopt and add a remote by hand (`--remote <url>`), or skip the remote entirely.
+- **The [`gh`](https://cli.github.com/) CLI, authenticated** (`gh auth status`) — only if you want `adopt` / `new-wiki.sh --create-remote` to *create and push* the remote for you. Authenticate `gh` against the org/account that should own the vault. Without `gh` you can still adopt and add a remote by hand (`--remote <url>`), or skip the remote entirely.
 - Cloning *this* engine needs no auth (the repo is public); auth is only for your own vault's remote.
 
 **Optional — semantic recall + auto-capture (the RAG layer)**
 - **Python 3.12–3.14 with `venv`/`pip`** and one-time network access — `rag-setup.sh` provisions a self-contained `.rag/venv` CPU embedder (no server, GPU, or cloud). The pinned default stack (fastembed + bge, verified on 3.13) needs Python **3.12–3.14**; Python 3.11 and below are unsupported (numpy 2.5.x requires >=3.12). If your default `python3` is outside that range, `rag-setup.sh` **auto-selects an in-range interpreter** from PATH or pyenv — so you don't need to juggle it by hand. If none is available, use the lightweight, onnxruntime-free embedder instead: `RAG_PIP_PKG=model2vec RAG_LOCAL_MODEL=minishlab/potion-base-8M <engine>/bin/rag-setup.sh` (the choice persists in `.rag/config.json`). Skip RAG entirely with `--no-rag`; the vault and its link-graph still work fully — you just lose *semantic* recall (lexical + link-graph recall remains) until you run `rag-setup.sh` later.
 
-**Boundary reminder:** decide the vault's boundary (`personal` | `work`) and the git identity (name/email) it should commit under up front — `wiki-adopt` will ask, and they get stamped into the vault. Keep work and personal on separate vaults (ideally separate machines); the engine holds no identity, so it's safe to share, but **content never crosses**.
+**Boundary reminder:** decide the vault's boundary (`personal` | `work`) and the git identity (name/email) it should commit under up front — `adopt` will ask, and they get stamped into the vault. Keep work and personal on separate vaults (ideally separate machines); the engine holds no identity, so it's safe to share, but **content never crosses**.
 
 ## New machine — idempotent adoption (recommended)
 
-Install the plugin, restart Claude Code, then let the `wiki-adopt` skill drive the flow — it **detects state and converges**: no vault yet → scaffold → wire → seed; a vault already cloned (a second/Nth machine) → just wire this machine, no re-scaffold. Safe to re-run.
+Install the plugin, restart Claude Code, then let the `adopt` skill drive the flow — it **detects state and converges**: no vault yet → scaffold → wire → seed; a vault already cloned (a second/Nth machine) → just wire this machine, no re-scaffold. Safe to re-run.
 
 ```
 claude plugin marketplace add pleejr/wiki-engine
 claude plugin install wiki-engine@wiki-engine --scope user
 claude                                              # from ANY folder, after the install
-> /wiki-engine:wiki-adopt
+> /wiki-engine:adopt
 ```
 
-`/wiki-adopt` prompts for the vault's boundary/identity/remote, runs the scaffolder, wires the machine, and runs `wiki-onboard` to seed the vault — usable in the very next session. Because *you* start the session there is no recursive `claude` spawn (the hard safety rule holds). This assumes a **single-vault machine** (one boundary); on a machine that hosts both a `personal` and a `work` vault, scaffold without the wiring flags and scope activation per-directory instead.
+`/adopt` prompts for the vault's boundary/identity/remote, runs the scaffolder, wires the machine, and runs `onboard` to seed the vault — usable in the very next session. Because *you* start the session there is no recursive `claude` spawn (the hard safety rule holds). This assumes a **single-vault machine** (one boundary); on a machine that hosts both a `personal` and a `work` vault, scaffold without the wiring flags and scope activation per-directory instead.
 
-**Second machine (the vault already exists):** install the plugin, clone the vault, then converge the machine — `/wiki-adopt` detects the clone and only wires, or directly:
+**Second machine (the vault already exists):** install the plugin, clone the vault, then converge the machine — `/adopt` detects the clone and only wires, or directly:
 
 ```
 git clone <vault-remote> ~/Documents/repos/<vault>
@@ -88,7 +88,7 @@ That path exists after the plugin's first session start (the boot hook keeps it 
 
 It creates the vault repo, records this engine's release in `.engine-version`, renders the `scaffold/` templates (thin `CLAUDE.md`, `index.md`, `log.md`, node folders), and hands machine wiring to `wire-machine.sh`. Run interactively (no flags) and it prompts for the required args. The opt-in `--wire-env`, `--wire-claude-md`, `--wire-statusline`, `--wire-shell` and `--remote`/`--create-remote` flags automate each wiring step (idempotent; single-vault machines only). Run `new-wiki.sh --help` for all options.
 
-Then **seed the empty vault** — run the `wiki-onboard` skill in a Claude Code session (with `$WIKI_PATH` set) to distill existing native memories, ingest the repos you work in, and stub project pages. It's a one-time bootstrap; `checkpoint` keeps the vault current thereafter.
+Then **seed the empty vault** — run the `onboard` skill in a Claude Code session (with `$WIKI_PATH` set) to distill existing native memories, ingest the repos you work in, and stub project pages. It's a one-time bootstrap; `distill` keeps the vault current thereafter.
 
 ## Doing it by hand
 

@@ -9,7 +9,7 @@
 # moves bytes; it never edits them.
 #
 # TWO CONSTRAINTS THIS CARRIES, both on-disk contracts other components name:
-#   - the live file stays at `log.md` — `skill-candidates`, `wiki-context` and the chunker's
+#   - the live file stays at `log.md` — `mine`, `wiki-context` and the chunker's
 #     own comment name it literally, and `lint-links.sh` excludes it by name;
 #   - the archive lands under `log/`, a plain directory the RAG builder walks (its skip rule
 #     is `engine` plus any dot-prefixed segment — read from bin/rag-build.sh, not assumed),

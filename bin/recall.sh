@@ -17,7 +17,7 @@
 # Usage:
 #   recall.sh "why is the gpu node hot"     top matches (human-readable)
 #   recall.sh -n 8 "query"                  return N matches (default 5)
-#   recall.sh --json "query"                machine-readable (for wiki-context)
+#   recall.sh --json "query"                machine-readable (for consult)
 #   recall.sh --wiki DIR "query"            target DIR
 #   recall.sh --min-score 0.6 "query"       drop matches scoring below 0.6
 #   recall.sh --min-gap 0.04 "query"        return nothing unless the best page stands out

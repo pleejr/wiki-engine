@@ -189,11 +189,11 @@ jobs:
           mk() { printf '{"workspace":{"current_dir":"/w"},"model":{"display_name":"M"},"context_window":{"used_percentage":%s}}' "$1"; }
           out() { mk "$1" | ./bin/statusline.sh; }
           out 42 | grep -q 'ctx 42%'            || { echo "normal band missing"; exit 1; }
-          out 42 | grep -q 'checkpoint'         && { echo "nudged too early at 42%"; exit 1; }
-          out 70 | grep -q 'checkpoint soon'    || { echo "no soon-nudge at 70%"; exit 1; }
-          out 85 | grep -q 'checkpoint now'     || { echo "no now-nudge at 85%"; exit 1; }
+          out 42 | grep -q 'distill'         && { echo "nudged too early at 42%"; exit 1; }
+          out 70 | grep -q 'distill soon'    || { echo "no soon-nudge at 70%"; exit 1; }
+          out 85 | grep -q 'distill now'     || { echo "no now-nudge at 85%"; exit 1; }
           # truncate, never round: 84.9 is not 85 and must not escalate the nudge
-          out 84.9 | grep -q 'checkpoint soon'  || { echo "84.9 mis-banded"; exit 1; }
+          out 84.9 | grep -q 'distill soon'  || { echo "84.9 mis-banded"; exit 1; }
           # degradation: absent field, null, non-numeric, and non-JSON all exit 0
           for bad in '{"model":{"display_name":"M"}}' '{"context_window":{"used_percentage":null}}' \
                      '{"context_window":{"used_percentage":"abc"}}' 'not json'; do
@@ -562,7 +562,7 @@ jobs:
             && echo "  ok   the shipped skills pass" \
             || { echo "  FAIL the shipped skills do not pass their own gate"; fail=1; }
           # the same step with canonical stripped: caught
-          S="$T/skills/checkpoint/SKILL.md"
+          S="$T/skills/distill/SKILL.md"
           printf '%s\n' '- prune `raw/sessions/` blocks once promoted' >> "$S"
           # `|| rc=$?`, not a bare assignment: this step runs under `bash -e`, where a
           # command substitution that exits non-zero aborts the step at the assignment —
@@ -591,7 +591,7 @@ jobs:
           "$T/bin/lint-docs.sh" >/dev/null 2>&1 \
             && echo "  ok   the shipped skills pass" \
             || { echo "  FAIL the shipped skills do not pass their own gate"; fail=1; }
-          for s in checkpoint skill-candidates; do
+          for s in distill mine; do
             printf '%s\n' '- When the writes are committed, run `vault-worktree.sh integrate`, then `gc`.' \
               >> "$T/skills/$s/SKILL.md"
             rc=0; out="$("$T/bin/lint-docs.sh" 2>&1)" || rc=$?
@@ -603,7 +603,7 @@ jobs:
             cp "skills/$s/SKILL.md" "$T/skills/$s/SKILL.md"
           done
           # NEAR-MISS: a step that says what NOT to do with integrate is not a prescription.
-          printf '%s\n' '- The buffer is untracked: no commit and no integrate.' >> "$T/skills/checkpoint/SKILL.md"
+          printf '%s\n' '- The buffer is untracked: no commit and no integrate.' >> "$T/skills/distill/SKILL.md"
           "$T/bin/lint-docs.sh" >/dev/null 2>&1 \
             && echo "  ok   a negated integrate is left alone" \
             || { echo "  FAIL the gate rejected a line telling the reader NOT to integrate"; fail=1; }
@@ -3038,7 +3038,7 @@ jobs:
           [ $rc = 0 ] && printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin)["hookSpecificOutput"]; sys.exit(0 if d["hookEventName"]=="UserPromptSubmit" and "memory/lock.md" in d["additionalContext"] else 1)'
           ck $? "an on-topic prompt gets pointers as additionalContext"
           [ -z "$(hk "yes")" ];                               ck $? "a short prompt adds nothing"
-          [ -z "$(hk "/checkpoint the mortgage rate lock now")" ]; ck $? "a slash command adds nothing"
+          [ -z "$(hk "/distill the mortgage rate lock now")" ]; ck $? "a slash command adds nothing"
           [ -z "$(hk "write a haiku about autumn leaves falling")" ]; ck $? "an off-topic prompt adds nothing"
           [ -z "$(RAG_RECALL_HOOK=0 hk "the mortgage rate lock expires before closing")" ]; ck $? "RAG_RECALL_HOOK=0 disables it"
           out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$RUNNER_TEMP/novault" "$H")"; rc=$?
@@ -3376,12 +3376,12 @@ jobs:
             || { echo "  FAIL stash retired silently"; fail=1; }
           # the skill must not instruct anyone to use it (historical mentions are fine;
           # an imperative is not)
-          grep -nE '^\s*[-*].*`stash`' skills/engine-proposal/SKILL.md | grep -viE 'retired' \
+          grep -nE '^\s*[-*].*`stash`' skills/propose/SKILL.md | grep -viE 'retired' \
             && { echo "  FAIL the skill still prescribes stash"; fail=1; } \
             || echo "  ok   no skill instruction prescribes stash"
           # and submit/push must be what the skill actually tells you to run
-          grep -q 'engine-proposal.sh submit' skills/engine-proposal/SKILL.md \
-            && grep -q 'engine-proposal.sh push' skills/engine-proposal/SKILL.md \
+          grep -q 'engine-proposal.sh submit' skills/propose/SKILL.md \
+            && grep -q 'engine-proposal.sh push' skills/propose/SKILL.md \
             && echo "  ok   the skill teaches submit and push" \
             || { echo "  FAIL the skill does not teach the replacement"; fail=1; }
 
@@ -3498,7 +3498,7 @@ jobs:
 
           # The lint-docs check is LOAD-BEARING, proven by reinstating the literal at each
           # of the sites that actually carried it.
-          for site in skills/checkpoint/SKILL.md skills/wiki-repo/SKILL.md bin/crossover.sh; do
+          for site in skills/distill/SKILL.md skills/ingest/SKILL.md bin/crossover.sh; do
             cp "$site" "$RUNNER_TEMP/site.bak"
             printf '\nboundary: personal\n' >> "$site"
             ./bin/lint-docs.sh >/dev/null 2>&1 \
@@ -5053,7 +5053,7 @@ jobs:
           ./bin/lint-docs.sh >/dev/null 2>&1 \
             && echo "  ok   the live skills pass as they stand" \
             || { echo "  FAIL lint-docs is red before the fixture is applied"; fail=1; }
-          F=skills/wiki-repo/SKILL.md
+          F=skills/ingest/SKILL.md
           cp "$F" "$RUNNER_TEMP/SKILL.keep"
           base="$(awk '/^description:/{sub(/^description:[ \t]*/,""); print length($0); exit}' "$F")"
           # (1) over the budget by a clause: pad to 1501+ characters
@@ -5064,7 +5064,7 @@ jobs:
             && echo "  ok   fixture applied: description is now $len characters" \
             || { echo "  FIXTURE BROKEN: description is $len characters, not over 1500"; fail=1; }
           out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
-          printf '%s\n' "$out" | grep -q "wiki-repo/SKILL.md description is $len characters" \
+          printf '%s\n' "$out" | grep -q "ingest/SKILL.md description is $len characters" \
             && echo "  ok   ...and lint-docs names the file and the length" \
             || { echo "  FAIL lint-docs did not name the over-long description: $out"; fail=1; }
           [ "$rc" != "0" ] \
@@ -5083,7 +5083,7 @@ jobs:
           [ "$rc" = "0" ] \
             && echo "  ok   a description under 1500 is not refused" \
             || { echo "  FAIL a $len-character description was refused: $out"; fail=1; }
-          printf '%s\n' "$out" | grep -q "warning: skills/wiki-repo/SKILL.md description is $len" \
+          printf '%s\n' "$out" | grep -q "warning: skills/ingest/SKILL.md description is $len" \
             && echo "  ok   ...but is warned about by name, before it crosses" \
             || { echo "  FAIL no warning for a description past 1400: $out"; fail=1; }
           ./bin/lint-docs.sh >/dev/null 2>&1 \
@@ -5101,7 +5101,7 @@ jobs:
           ./bin/lint-docs.sh >/dev/null 2>&1 \
             && echo "  ok   the live skills pass as they stand" \
             || { echo "  FAIL lint-docs is red before the fixture is applied"; fail=1; }
-          D=skills/engine-proposal/references; F="$D/orphan-fixture.md"
+          D=skills/propose/references; F="$D/orphan-fixture.md"
           [ -d "$D" ] || { echo "  FIXTURE BROKEN: $D does not exist"; exit 1; }
           printf '# orphan\n\nnothing links here\n' > "$F"
           out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
@@ -5112,7 +5112,7 @@ jobs:
             && echo "  ok   ...and exits non-zero" \
             || { echo "  FAIL lint-docs exited 0 with an orphan reference file"; fail=1; }
           # NEAR-MISS: a mention inside a code fence is a quoted example, not a link.
-          B=skills/engine-proposal/SKILL.md; cp "$B" "$RUNNER_TEMP/SKILL.keep"
+          B=skills/propose/SKILL.md; cp "$B" "$RUNNER_TEMP/SKILL.keep"
           printf '\n```\nsee references/orphan-fixture.md\n```\n' >> "$B"
           out="$(./bin/lint-docs.sh 2>&1)" && rc=0 || rc=$?
           cp "$RUNNER_TEMP/SKILL.keep" "$B"
@@ -5144,7 +5144,7 @@ jobs:
             && echo "  ok   the live docs pass as they stand" \
             || { echo "  FAIL lint-docs is red before any fixture"; fail=1; }
 
-          S=skills/engine-proposal/SKILL.md
+          S=skills/propose/SKILL.md
           cp "$S" "$RUNNER_TEMP/SKILL.keep"
 
           # 1. drop the reporter-facing site -> red, and it says how many sites it found

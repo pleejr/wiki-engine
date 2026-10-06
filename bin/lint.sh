@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # lint.sh — umbrella lint for a wiki vault. Runs every deterministic check and
-# aggregates the result, so `checkpoint` (or a pre-commit) can call one command:
+# aggregates the result, so `distill` (or a pre-commit) can call one command:
 #   1. memory notes         — lint-memory.sh (frontmatter, type, >=2 wikilinks, drift)
 #   2. frontmatter props     — wikilink-valued properties must be a quoted YAML block
 #                              list; catches Obsidian's "invalid properties"

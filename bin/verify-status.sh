@@ -10,7 +10,7 @@
 #     against: <sha>     # repo pages: the sources.sha it was confirmed against
 #
 # For a repo page the stamp is CURRENT only while verified.against == sources.sha,
-# so a `wiki-repo` refresh (which bumps sources.sha) auto-demotes it to STALE. This
+# so a `ingest` refresh (which bumps sources.sha) auto-demotes it to STALE. This
 # check is deterministic and offline — it compares recorded fields, never fetches.
 #
 # Scope: repo pages (repos/*.md) are the verification universe (they carry an

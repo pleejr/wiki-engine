@@ -110,7 +110,7 @@ seg_dir() {
 seg_model() { [ -n "$model" ] && printf '%s' "$model"; return 0; }
 
 # WHY the context gauge exists: compaction is the thing a long session should get AHEAD of,
-# not react to. `checkpoint` is what makes a session disposable — once it has run, closing
+# not react to. `distill` is what makes a session disposable — once it has run, closing
 # the session costs nothing and a fresh one starts with the vault as its handoff. Without a
 # visible gauge the decision is made by surprise, mid-task, which is exactly when it is most
 # expensive. So the thresholds name the ACTION, not just the number.
@@ -136,8 +136,8 @@ _band() {
 }
 seg_ctx() {
   _is_pct "$ctx" || return 0
-  if   [ "$ctx" -ge 85 ]; then printf '%sctx %s%% — checkpoint now%s'  "$(_band "$ctx")" "$ctx" "$RESET"
-  elif [ "$ctx" -ge 70 ]; then printf '%sctx %s%% — checkpoint soon%s' "$(_band "$ctx")" "$ctx" "$RESET"
+  if   [ "$ctx" -ge 85 ]; then printf '%sctx %s%% — distill now%s'  "$(_band "$ctx")" "$ctx" "$RESET"
+  elif [ "$ctx" -ge 70 ]; then printf '%sctx %s%% — distill soon%s' "$(_band "$ctx")" "$ctx" "$RESET"
   else                         printf '%sctx %s%%%s'                   "$(_band "$ctx")" "$ctx" "$RESET"
   fi
 }

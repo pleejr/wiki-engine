@@ -1,24 +1,24 @@
 ---
-name: skill-candidates
-description: Mine the vault's durable record — `memory/` notes, `log.md`, the session buffer — for procedures repeated often enough to deserve a skill, and report ranked CANDIDATES with dated evidence. A candidate needs 3+ dated occurrences spread over weeks with stable steps and a varying subject, never the session that just ended. Reports name, procedure, evidencing notes, and an overlap check against the installed catalog, then puts EVERY candidate to the operator as a develop / discard / defer choice — it recommends, never decides — and records those verdicts itself as `type: decision` notes tagged `skill-candidate`, in its own worktree and commit. First run on an un-mined vault is a backlog drain (expect many); later runs sweep forward from the newest verdict (expect zero or one). Never writes a `SKILL.md` and invokes nothing. Triggers: "mine the vault for skill candidates", "should this be a skill", "what should I turn into a skill", "have I done this enough times to encode it", "find the skills hiding in my notes", "catch up on the skills I never wrote", or when `checkpoint` offers it. Distinct from `checkpoint` (distills facts INTO `memory/`; offers this pass, never runs it) — this reads those notes back out. NOT for writing or debugging a skill, and NOT for a one-off procedure — one session is a feeling, not evidence.
+name: mine
+description: Mine the vault's durable record — `memory/` notes, `log.md`, the session buffer — for procedures repeated often enough to deserve a skill, and report ranked CANDIDATES with dated evidence. A candidate needs 3+ dated occurrences spread over weeks with stable steps and a varying subject, never the session that just ended. Reports name, procedure, evidencing notes, and an overlap check against the installed catalog, then puts EVERY candidate to the operator as a develop / discard / defer choice — it recommends, never decides — and records those verdicts itself as `type: decision` notes tagged `skill-candidate`, in its own worktree and commit. First run on an un-mined vault is a backlog drain (expect many); later runs sweep forward from the newest verdict (expect zero or one). Never writes a `SKILL.md` and invokes nothing. Triggers: "mine the vault for skill candidates", "should this be a skill", "what should I turn into a skill", "have I done this enough times to encode it", "find the skills hiding in my notes", "catch up on the skills I never wrote", or when `distill` offers it. Distinct from `distill` (distills facts INTO `memory/`; offers this pass, never runs it) — this reads those notes back out. NOT for writing or debugging a skill, and NOT for a one-off procedure — one session is a feeling, not evidence.
 status: active
 summary: mine `memory/`, `log.md` and the session buffer for procedures proven to repeat; report ranked skill candidates with dated evidence and record the verdicts, never a SKILL.md.
 updated: 2026-09-03
 ---
 
-# skill-candidates — find the procedures the vault already proved you repeat
+# mine — find the procedures the vault already proved you repeat
 
-A skill is worth writing when a procedure **repeats**, and the end of a session is the worst moment to judge that. The vault settles it: `checkpoint` distils every session into dated `memory/` notes and a `log.md` line, and this skill reads that record back out and reports **candidates with their evidence**.
+A skill is worth writing when a procedure **repeats**, and the end of a session is the worst moment to judge that. The vault settles it: `distill` distils every session into dated `memory/` notes and a `log.md` line, and this skill reads that record back out and reports **candidates with their evidence**.
 
 ## Where it runs
 
-**Two halves, in different places.** §1–§6 (bar, evidence, shapes, overlap, report) are **read-only and subagent-safe** — a host subagent may run them over canonical `$WIKI_PATH` and return the report as text. §6a–§7 (questions and verdict notes) **need the operator and a worktree**: the questions need the host's interactive question facility, which its subagents lack (measured: a subagent's tool set has none), so they run in the session that offered the pass; a host whose subagents can ask may run the whole pass there. A report returned to the offering session is data flowing back, not an invocation edge into `checkpoint`.
+**Two halves, in different places.** §1–§6 (bar, evidence, shapes, overlap, report) are **read-only and subagent-safe** — a host subagent may run them over canonical `$WIKI_PATH` and return the report as text. §6a–§7 (questions and verdict notes) **need the operator and a worktree**: the questions need the host's interactive question facility, which its subagents lack (measured: a subagent's tool set has none), so they run in the session that offered the pass; a host whose subagents can ask may run the whole pass there. A report returned to the offering session is data flowing back, not an invocation edge into `distill`.
 
 **Reads canonical `$WIKI_PATH`; writes its verdicts through a worktree of its own**, taken at the start of the verdict half:
 
-- `WORK="$(${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh ensure)" || { echo "not isolated — resolve before writing"; }` — **check the exit status** and read its stderr for a stale base; the full contract is `checkpoint` §0.
+- `WORK="$(${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh ensure)" || { echo "not isolated — resolve before writing"; }` — **check the exit status** and read its stderr for a stale base; the full contract is `distill` §0.
 - **Read the evidence from canonical `$WIKI_PATH`, write the verdicts to `$WORK`.** The session buffer is git-ignored, so it exists only in canonical; a worktree's empty copy is indistinguishable from a quiet month.
-- Commit, land it as `checkpoint` §0 does — `vault-worktree.sh integrate` when the vault commits straight to `main`, or push and merge a pull request (no `integrate`) when it ships by one — then `gc "$WORK"`.
+- Commit, land it as `distill` §0 does — `vault-worktree.sh integrate` when the vault commits straight to `main`, or push and merge a pull request (no `integrate`) when it ships by one — then `gc "$WORK"`.
 
 This skill invokes nothing; writing its own notes is not an invocation.
 
@@ -141,7 +141,7 @@ Read those notes at the start of the next run (the frontmatter query from **Two 
 ## Rules
 
 - **In-session, on demand; never from a lifecycle hook** (engine `CLAUDE.md`, Hard safety rule).
-- **Never invoke `checkpoint`, and never be invoked by it** — zero edges, in either direction.
+- **Never invoke `distill`, and never be invoked by it** — zero edges, in either direction.
 - **Never propose a skill from the current session alone.**
 - **Recommend; never decide** — every candidate clearing the bar goes to the operator.
 - **Query the frontmatter, never the prose; filter on the bar, never on the count.**

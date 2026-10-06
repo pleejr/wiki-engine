@@ -1,6 +1,6 @@
 ---
 name: update
-description: This skill should be used to bring the wiki-engine current on THIS machine and in its vault — report engine freshness (doctor.sh), offer to update the plugin and record the new release in the vault (update.sh, on confirmation only), and converge machine wiring (wire-machine.sh). Engine-only and generic: it never touches a consumer's separate skill plugins. Run it at session start when the banner flags the engine stale, or any time to verify. Triggers: "/update", "catch up the engine", "am I on the latest engine", "converge this machine", "update the engine". Distinct from `checkpoint` (which curates vault *content*) and from the `plugin-updates` plugin (which reports any installed plugin behind its latest release at session start) — this converges the engine loop only, including the vault record `plugin-updates` never touches.
+description: This skill should be used to bring the wiki-engine current on THIS machine and in its vault — report engine freshness (doctor.sh), offer to update the plugin and record the new release in the vault (update.sh, on confirmation only), and converge machine wiring (wire-machine.sh). Engine-only and generic: it never touches a consumer's separate skill plugins. Run it at session start when the banner flags the engine stale, or any time to verify. Triggers: "/update", "catch up the engine", "am I on the latest engine", "converge this machine", "update the engine". Distinct from `distill` (which curates vault *content*) and from the `plugin-updates` plugin (which reports any installed plugin behind its latest release at session start) — this converges the engine loop only, including the vault record `plugin-updates` never touches.
 status: active
 summary: engine-only catch-up — report freshness, offer the plugin update and record the release in the vault, converge wiring.
 updated: 2026-09-22
@@ -29,7 +29,7 @@ This session's skill path still names the release it started on, so `update.sh` 
 If it reports pending, run it again without `--check`. Add-only and idempotent — it checks the plugin is enabled and the vault is on 2.x, ensures the wiring flags you pass (`--wire-env`, `--wire-claude-md`, `--wire-statusline`), provisions `.rag`, and runs vault adoption.
 
 ## 4. Report + hand off
-Summarize what changed (release, `.engine-version`, wiring). Remind: session *content* is `checkpoint`'s job. This verb keeps the **engine** current.
+Summarize what changed (release, `.engine-version`, wiring). Remind: session *content* is `distill`'s job. This verb keeps the **engine** current.
 
 ## Rules
 - Deterministic engine tools only; never spawns `claude`. The *skill* stays **in-session / on-demand** (or banner-nudged): updating is a judgement call the operator confirms, and `doctor.sh`'s report is advice, not an instruction to apply.

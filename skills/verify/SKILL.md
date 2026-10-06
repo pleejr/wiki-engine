@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Run a verification pass on the vault's repo pages — confirm a page's content is actually CORRECT against the repo at its recorded sha (freshness only proves nothing changed since ingest, never that the page was right), fix any drift found (and the SOURCE repo if the drift originated there), then stamp the `verified:` correctness signal. Use when the user says "run a verification pass", "verify the <X> repo page", "verify the repo pages", "drain the verify queue", "confirm this page is still accurate/correct", or after `verify-status.sh` / `upkeep.sh` flags unverified or verified-stale pages. Distinct from `wiki-repo` (which re-ingests when the sha MOVED — a freshness refresh) and `checkpoint` (session curation): verify confirms CORRECTNESS at the current sha and records who checked it, on what date.
+description: Run a verification pass on the vault's repo pages — confirm a page's content is actually CORRECT against the repo at its recorded sha (freshness only proves nothing changed since ingest, never that the page was right), fix any drift found (and the SOURCE repo if the drift originated there), then stamp the `verified:` correctness signal. Use when the user says "run a verification pass", "verify the <X> repo page", "verify the repo pages", "drain the verify queue", "confirm this page is still accurate/correct", or after `verify-status.sh` / `upkeep.sh` flags unverified or verified-stale pages. Distinct from `ingest` (which re-ingests when the sha MOVED — a freshness refresh) and `distill` (session curation): verify confirms CORRECTNESS at the current sha and records who checked it, on what date.
 status: active
 summary: verification pass — confirm a repo page correct against its sha, fix drift at the source, stamp verified.
 updated: 2026-07-24
@@ -13,7 +13,7 @@ Freshness and correctness are different axes. A repo page is *fresh* when its re
 ## When to use — and when not
 
 - **Use** for a `repos/` page flagged unverified or verified-stale (by `verify-status.sh`), for the `verify:*` items in the upkeep queue, or for a direct "is this page still right?" request.
-- **Not** for a page whose sha has *moved* (recorded `sources.sha` ≠ repo `HEAD`) — that is a **freshness** problem: run **`wiki-repo`** to re-ingest first. If a page is *both* stale and wrong, refresh with `wiki-repo`, then verify the refreshed content.
+- **Not** for a page whose sha has *moved* (recorded `sources.sha` ≠ repo `HEAD`) — that is a **freshness** problem: run **`ingest`** to re-ingest first. If a page is *both* stale and wrong, refresh with `ingest`, then verify the refreshed content.
 - **Not** for project/memory/concept pages — verification targets version-keyed `repos/` pages, which have an objective sha to check against. (A non-repo page may carry a `verified:` block opt-in, but it's not queue work.)
 
 ## Inputs
@@ -25,10 +25,10 @@ Freshness and correctness are different axes. A repo page is *fresh* when its re
 
 1. **Find the work** — `${CLAUDE_SKILL_DIR}/../../bin/verify-status.sh --todo` (or `upkeep.sh scan` then `upkeep.sh next`). Each line is a `repos/<slug>.md` needing a pass.
 2. **Confirm the anchor sha** — compare the page's `sources.sha` with the clone's `git rev-parse --short HEAD` (tagged repos: `git describe --tags`).
-   - **sha moved** → freshness, not verification: run **`wiki-repo`** to refresh (bumps the sha), *then* verify the refreshed page.
+   - **sha moved** → freshness, not verification: run **`ingest`** to refresh (bumps the sha), *then* verify the refreshed page.
    - **sha matches** → verify at that sha; you're confirming the page against exactly what it claims to describe.
 3. **Read the page and the real repo** at that sha. Check every substantive, checkable claim: directory/path structure, version pins, commands, counts, config keys, group/app/role names, external interfaces. Read the README, manifests, and the dirs the page describes; sample deeper as needed — do **not** dump file contents.
-4. **On drift, fix it — and fix the source.** Correct the vault page to match reality. If the drift originated in the **source repo** (e.g. the repo's own README is wrong), fix the source too and open a PR — otherwise the next `wiki-repo` re-ingests the same error (the *fix-at-source* rule). A correction that only re-aligns the page to the **same** sha keeps `sources.sha` unchanged; only a genuine re-ingest of newer content bumps it (that's `wiki-repo`, not this).
+4. **On drift, fix it — and fix the source.** Correct the vault page to match reality. If the drift originated in the **source repo** (e.g. the repo's own README is wrong), fix the source too and open a PR — otherwise the next `ingest` re-ingests the same error (the *fix-at-source* rule). A correction that only re-aligns the page to the **same** sha keeps `sources.sha` unchanged; only a genuine re-ingest of newer content bumps it (that's `ingest`, not this).
 5. **Stamp `verified:`** in the page frontmatter — **only after genuine confirmation**:
    ```yaml
    verified:
@@ -41,7 +41,7 @@ Freshness and correctness are different axes. A repo page is *fresh* when its re
 ## Rules (non-negotiable)
 
 - **Only stamp what you actually confirmed.** An unchecked stamp is worse than no stamp — it launders a guess as evidence and poisons the signal. If you can't confirm a page (no context, can't reach the repo), **leave it unverified and say so**.
-- **`against` must equal `sources.sha`.** A later `wiki-repo` refresh that bumps the sha auto-demotes the stamp to *stale* — invalidation-by-provenance, the intended behavior; don't work around it.
+- **`against` must equal `sources.sha`.** A later `ingest` refresh that bumps the sha auto-demotes the stamp to *stale* — invalidation-by-provenance, the intended behavior; don't work around it.
 - **Fix drift at the source.** Correcting only the vault page leaves the repo's own docs wrong, so the next re-ingest reintroduces it — see the *ingest-drift-fix-at-source* lesson.
 - **Judgment is yours; mechanics are the tools'.** `verify-status.sh` / `upkeep.sh` / `lint.sh` find the work and record the result deterministically (no `claude`, no network); deciding *is it correct?* is the human/agent's job.
 
