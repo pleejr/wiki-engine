@@ -135,28 +135,85 @@ on_exit() {
 }
 trap on_exit EXIT
 
+# ONE awk pass over every note (and ONE over index.md) computes what the loop below used to
+# fork for per note: eight frontmatter reads, a link extraction, a grep over the whole slug
+# list per link, and a grep of index.md per note. Those two greps made cost grow with
+# (notes x vault), so a vault three times larger linted about six times slower. The loop
+# keeps every message, in the same order; it only reads the answers from here.
+LM_TMP="$(mktemp -d)"
+printf '%s\n' "$SLUGS" > "$LM_TMP/slugs"
+printf '%s\0' "${notes[@]}" | xargs -0 awk -v slugs="$LM_TMP/slugs" -v index_file="$INDEX" \
+    -v table="$LM_TMP/table" -v dead="$LM_TMP/dead" '
+  function emit(   k, n, dl) {
+    if (idx == 0) return
+    n = 0; for (k in L) if (k != "") n++
+    for (k in L) if (k != "" && k != self && !(k in S)) print idx "\t" k > dead
+    # \037 (unit separator), not a tab: `read` collapses runs of whitespace separators, so
+    # an empty field would shift every field after it.
+    print idx US hasfm US V["title"] US V["type"] US V["boundary"] US V["updated"] US V["created"] US V["status"] US V["superseded_by"] US n US ((("[[" self "]]") in IX) ? 1 : 0) > table
+  }
+  BEGIN {
+    US = "\037"
+    while ((getline l < slugs) > 0) if (l != "") S[l] = 1
+    # Every literal "[[X]]" in index.md: from EACH "[[" (overlapping starts included) to
+    # the first "]]" after it. Equivalent to grep -F "[[slug]]" for a bracket-free slug.
+    if (index_file != "") while ((getline l < index_file) > 0) {
+      for (i = 1; i < length(l); i++) if (substr(l, i, 2) == "[[") {
+        j = index(substr(l, i + 2), "]]"); if (j) IX[substr(l, i, j + 3)] = 1
+      }
+    }
+  }
+  FNR == 1 {
+    emit(); idx++; delete L; delete V; infm = 0; fmdone = 0
+    self = FILENAME; sub(/.*\//, "", self); sub(/\.md$/, "", self)
+    hasfm = ($0 == "---") ? 1 : 0
+    if (hasfm) { infm = 1; next }
+  }
+  infm && $0 == "---" { infm = 0; fmdone = 1 }
+  infm {
+    split("title type boundary updated created status superseded_by", K, " ")
+    for (q = 1; q <= 7; q++) if (!(K[q] in V) && $0 ~ ("^" K[q] ":")) {
+      v = $0; sub(/^[^:]*:[ \t]*/, "", v); sub(/^"/, "", v); sub(/"$/, "", v); V[K[q]] = v
+    }
+  }
+  {
+    line = $0
+    while (match(line, /\[\[[^]]+\]\]/)) {
+      lk = substr(line, RSTART + 2, RLENGTH - 4); sub(/[|#].*/, "", lk); L[lk] = 1
+      line = substr(line, RSTART + RLENGTH)
+    }
+  }
+  END { emit() }
+'
+LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2 -u "$LM_TMP/dead" -o "$LM_TMP/dead" 2>/dev/null || : > "$LM_TMP/dead"
+exec 3< "$LM_TMP/table" 4< "$LM_TMP/dead"
+pend_idx=""; pend_lk=""
+read_dead() { if IFS="$(printf '\t')" read -r pend_idx pend_lk <&4; then :; else pend_idx=""; fi; }
+read_dead
+
 for f in "${notes[@]}"; do
+  IFS="$(printf '\037')" read -r t_idx t_hasfm t_title t_type t_boundary t_updated t_created t_status t_sby t_nlinks t_inindex <&3
   checked=$((checked+1))
-  last_note="$(basename "$f" .md)"
-  slug="$(basename "$f" .md)"
+  slug="${f##*/}"; slug="${slug%.md}"   # parameter expansion: no process per note
+  last_note="$slug"
   printf '%s\n' "$slug"
 
-  if ! has_frontmatter "$f"; then
+  if [ "$t_hasfm" != "1" ]; then
     err "no YAML frontmatter"
     continue
   fi
 
   # required frontmatter
-  for k in title type boundary; do
-    [ -n "$(fm_get "$f" "$k")" ] || err "missing frontmatter: $k"
-  done
-  [ -n "$(fm_get "$f" updated)" ] || warn "missing frontmatter: updated"
-  [ -n "$(fm_get "$f" created)" ] || warn "missing frontmatter: created (mine counts recurrence by it)"
+  [ -n "$t_title" ] || err "missing frontmatter: title"
+  [ -n "$t_type" ] || err "missing frontmatter: type"
+  [ -n "$t_boundary" ] || err "missing frontmatter: boundary"
+  [ -n "$t_updated" ] || warn "missing frontmatter: updated"
+  [ -n "$t_created" ] || warn "missing frontmatter: created (mine counts recurrence by it)"
 
   # valid type
-  typ="$(fm_get "$f" type)"
-  if [ -n "$typ" ] && ! grep -qF -- " $typ " <<<" $TYPES "; then
-    err "type '$typ' not in: $TYPES"
+  typ="$t_type"
+  if [ -n "$typ" ]; then
+    case " $TYPES " in *" $typ "*) ;; *) err "type '$typ' not in: $TYPES";; esac
   fi
 
   # outbound wikilinks (unique, alias/heading suffixes stripped)
@@ -166,23 +223,18 @@ for f in "${notes[@]}"; do
   # `set -e` then aborted the whole assignment. The loop stopped at the FIRST linkless
   # note, so every note sorting after it went unchecked and the summary line never
   # printed. Zero links is a finding here, not a refusal: do not turn this into one.
-  links="$(grep -oE '\[\[[^]]+\]\]' "$f" 2>/dev/null \
-    | sed -e 's/^\[\[//' -e 's/\]\]$//' -e 's/[|#].*//' | LC_ALL=C sort -u || true)"
-  nlinks="$(printf '%s' "$links" | grep -c . || true)"
+  nlinks="$t_nlinks"
   [ "$nlinks" -ge 2 ] || err "only $nlinks outbound [[wikilink]](s) (need >=2)"
 
-  # dead-link warnings (self-links and empties ignored)
-  while IFS= read -r lk; do
-    [ -n "$lk" ] || continue
-    [ "$lk" = "$slug" ] && continue
-    has_slug "$lk" || warn "dead link [[$lk]] (no such page — stub or stale)"
-  done <<EOF
-$links
-EOF
+  # dead-link warnings (self-links and empties ignored), computed in the pass above
+  while [ "$pend_idx" = "$t_idx" ]; do
+    warn "dead link [[$pend_lk]] (no such page — stub or stale)"
+    read_dead
+  done
 
   # lifecycle: status + superseded_by pairing (SCHEMA: memory status is current|superseded)
-  status="$(fm_get "$f" status)"
-  sby="$(fm_get "$f" superseded_by)"
+  status="$t_status"
+  sby="$t_sby"
   sby="${sby#\[\[}"; sby="${sby%\]\]}"     # tolerate the wikilink spelling of one slug
   if [ "$status" = "superseded" ] && [ -z "$sby" ]; then
     # Search the record for the successor before warning. Two sources, both keyed on
@@ -213,11 +265,12 @@ EOF
 
   # index.md catalog drift (active notes only)
   if [ "$status" != "superseded" ] && [ -f "$INDEX" ]; then
-    grep -qF "[[$slug]]" "$INDEX" || warn "not referenced in index.md (catalog drift)"
+    [ "$t_inindex" = "1" ] || warn "not referenced in index.md (catalog drift)"
   fi
 done
 
 finished=1
+exec 3<&- 4<&-; rm -rf "$LM_TMP"
 echo
 echo "memory lint: ${#notes[@]} notes, $errors error(s), $warnings warning(s)"
 if [ "$errors" -gt 0 ] || { [ "$STRICT" -eq 1 ] && [ "$warnings" -gt 0 ]; }; then

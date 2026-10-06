@@ -2,7 +2,22 @@
 
 All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.org/): **MAJOR** = a breaking framework change (node removed/renamed, frontmatter-schema change) that needs a migration; **MINOR** = additive (new node/tool/skill/convention), adopt with `bin/adopt.sh`; **PATCH** = a backwards-compatible fix to a consumed component. `bin/engine-version.sh` reports the delta and flags MAJOR bumps.
 
-**What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [3.1.0] — 2026-10-06
+**What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
+
+## [3.1.1] — 2026-10-06
+
+Patch — `lint-links.sh` and `lint-memory.sh` cost grows with the vault, not with its square. Output is unchanged byte for byte.
+
+### Changed
+- **`lint-links.sh` resolves every link in one pass and one join.** It ran a `grep` over the whole slug list for every link, so cost grew as links × pages. Now one `awk` extracts every page's links (same fence and code-span stripping) and one join against the slug set keeps only the unresolved ones. The near-miss search runs once over those, skipping edit distance where the lengths already differ by more than two and the component-run test where the first component is absent, which cannot change a result. On a 187-note vault: 7.7 s → 0.36 s; on a copy three times larger: 68.7 s → 2.3 s.
+- **`lint-memory.sh` reads every note in one pass.** It forked eight frontmatter reads, a link extraction, a slug-list `grep` per link and an `index.md` `grep` per note. One `awk` now computes all of it, and the loop only prints. 6.1 s → 0.9 s; on the 3x copy, 28.2 s → 3.7 s.
+- **Full `lint.sh` on the same vault: 17.9 s → 5.3 s**, output identical. This is part of the scaling work in the open `checkpoint-becomes-distill` proposal; the changed-file lint it also asks for comes with the `distill` finish script.
+
+### Fixed
+- **The CHANGELOG intro paragraph was cut mid-sentence in 3.1.0.** The 3.1.0 entry was spliced in by searching for `## [Unreleased]`, which the intro paragraph also contains in prose, so everything from that mention to the real section was overwritten. The paragraph is restored; entries are now placed before the first line that *starts* with a version heading.
+
+### Tests
+- CI counts the processes each lint launches, through PATH shims, at 20 and 60 notes, and fails if the count grows. A control shows the counter sees per-note growth. Against v3.1.0 the counts were 160 → 440 and 390 → 1150; now 18 and 9 at both sizes. A wall-clock ratio was tried first and rejected: process start-up dominates a CI-sized fixture, so the old lints also scaled about 3x there and the bound would have passed against the defect.
 
 ## [3.1.0] — 2026-10-06
 
