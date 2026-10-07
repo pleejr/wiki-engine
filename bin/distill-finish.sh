@@ -125,14 +125,18 @@ elif [ "$route" = "direct" ]; then
 else
   if git -C "$WORK" push -q -u origin "$BRANCH" 2>/dev/null; then say "pushed $BRANCH"
   else owe "push of $BRANCH failed: git -C \"$WORK\" push -u origin $BRANCH"; fi
-  pr=""; state=""
+  pr=""; state=""; create_err=""
   if command -v gh >/dev/null 2>&1; then
-    pr="$(cd "$WORK" && gh pr list --head "$BRANCH" --state all --json number,state -q '.[0] | "\(.number) \(.state)"' 2>/dev/null)"
+    # `// empty`: on an empty list `.[0]` is null and the interpolation would print "null null",
+    # which read as a pull request numbered null and skipped the create below.
+    pr="$(cd "$WORK" && gh pr list --head "$BRANCH" --state all --json number,state -q '.[0] // empty | "\(.number) \(.state)"' 2>/dev/null)"
     state="${pr#* }"; pr="${pr%% *}"
     if [ -z "$pr" ]; then
       subj="$(git -C "$WORK" log -1 --format=%s)"
-      pr="$(cd "$WORK" && gh pr create --head "$BRANCH" --title "$subj" --body "Session branch $BRANCH, landed by distill-finish.sh." 2>/dev/null | sed -n 's#.*/pull/\([0-9]*\).*#\1#p')"
+      created="$(cd "$WORK" && gh pr create --head "$BRANCH" --title "$subj" --body "Session branch $BRANCH, landed by distill-finish.sh." 2>&1)" || true
+      pr="$(sed -n 's#.*/pull/\([0-9][0-9]*\).*#\1#p' <<<"$created" | head -1)"
       state="OPEN"
+      [ -n "$pr" ] || create_err="$(tail -1 <<<"$created")"
     fi
   fi
   if [ "$state" = "MERGED" ]; then
@@ -141,7 +145,8 @@ else
   elif [ -n "$pr" ]; then
     owe "pull request #$pr is not merged: merge it, then rerun distill-finish.sh"
   else
-    owe "no pull request for $BRANCH (gh unavailable?): open one, merge it, then rerun"
+    if command -v gh >/dev/null 2>&1; then owe "opening the pull request for $BRANCH failed (${create_err:-no output from gh}): open it by hand, merge it, then rerun"
+    else owe "no pull request for $BRANCH: gh is not installed — open one, merge it, then rerun"; fi
   fi
 fi
 
