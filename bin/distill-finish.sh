@@ -127,9 +127,14 @@ else
   else owe "push of $BRANCH failed: git -C \"$WORK\" push -u origin $BRANCH"; fi
   pr=""; state=""; create_err=""
   if command -v gh >/dev/null 2>&1; then
-    # `// empty`: on an empty list `.[0]` is null and the interpolation would print "null null",
-    # which read as a pull request numbered null and skipped the create below.
-    pr="$(cd "$WORK" && gh pr list --head "$BRANCH" --state all --json number,state -q '.[0] // empty | "\(.number) \(.state)"' 2>/dev/null)"
+    # Only the pull request whose head is THIS branch tip counts. A session reuses its branch
+    # name (wt/<session>) for every landing, so `--state all` also lists earlier, merged pull
+    # requests for that name; taking the first one declared a new commit landed that never
+    # reached main. `--state all` stays so a rerun after the operator merges is recognised.
+    # `// empty`: no match must print nothing, not "null null", or the create below is skipped.
+    tip="$(git -C "$WORK" rev-parse HEAD)"
+    pr="$(cd "$WORK" && gh pr list --head "$BRANCH" --state all --json number,state,headRefOid \
+          -q "map(select(.headRefOid == \"$tip\")) | .[0] // empty | \"\\(.number) \\(.state)\"" 2>/dev/null)"
     state="${pr#* }"; pr="${pr%% *}"
     if [ -z "$pr" ]; then
       subj="$(git -C "$WORK" log -1 --format=%s)"

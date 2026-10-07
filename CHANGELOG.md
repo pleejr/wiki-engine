@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.4.1] — 2026-10-06
+
+Patch — `distill-finish.sh` counts only the pull request whose head is the branch's current tip.
+
+### Fixed
+- **A reused branch name landed a commit that never reached main** (fail-open). A session lands every change on the same `wt/<session>` branch, so `gh pr list --state all` also returns its earlier, merged pull requests; the script took the first, read MERGED, skipped the create, printed `VAULT DONE` and retired the worktree while the new commit sat only on the branch. It now keeps only the pull request whose `headRefOid` is the current tip: an earlier merged one opens a new pull request, and a rerun after this tip's pull request merged still reports done. Reported from a consumer vault on its third landing in one session.
+
+### Tests
+- A `gh` stub serves a pull-request list through the caller's `jq` expression: an earlier MERGED entry at another tip must yield a new pull request and `VAULT OUTSTANDING` with the worktree kept (red against 3.4.0), and a MERGED entry at this tip must yield done.
+
 ## [3.4.0] — 2026-10-06
 
 Minor — a `release` skill cuts one engine release and confirms it is live.
