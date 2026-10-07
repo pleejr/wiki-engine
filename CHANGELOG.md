@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.4.0] — 2026-10-06
+
+Minor — a `release` skill cuts one engine release and confirms it is live.
+
+### Added
+- **`release`.** Decides whether a change earns a tag, chooses the SemVer level from the CHANGELOG's own rules, writes the section with its title previewed through `bin/release-title.sh`, moves the four version pins together (the pairing `lint-docs.sh` check 11 enforces), merges through CI judged by run status, pushes one annotated tag on the merge commit, and reads the release back from the workflow run, `gh release view` and `engine-version.sh --latest-tag` — never `gh release create`, which wins the race with the workflow and keeps a bare title. It ends by handing adoption to the consuming vault. It carries two rules learned today: insert a CHANGELOG section before the line that *starts* with a version heading, since the header paragraph names `## [Unreleased]` in prose and splicing there shipped a truncated paragraph in 3.1.0; and parse a changed workflow file before pushing, since one that does not parse runs no checks at all. Drafted by an earlier session and preserved from its uncommitted trees on `feat/release-skill` and `wip/release-skill-main`; this is the later of its two drafts.
+
+### Changed
+- **`drain` ships through `release`** (§2 step 6).
+
 ## [3.3.1] — 2026-10-06
 
 Patch — `distill-finish.sh` on a `publish = pr` vault opens the session's pull request instead of reporting "pull request #null".
