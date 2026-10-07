@@ -37,7 +37,7 @@ Run this to completion for one item before starting the next. Half-finished item
 3. **Sweep for siblings before designing.** If one tool has the defect, ask which other tools share the pattern; fixing the instance leaves the class armed, and the class is usually four lines of grep away.
 4. **Write the test so it fails first.** Then make it pass. A gate that has never been red proves nothing — and a gate that asserts *your implementation's shape* rather than the property will fail a better implementation later.
 5. **Fold this cycle's own drift into this cycle.** A release changes counts, docs, and the consumer's repo page. Update them now. Leaving them to be "found" next round is what turns one loop into five.
-6. **Ship it**: pull request, wait for CI *by run status* (a `gh pr checks` "no checks reported" is often dispatch lag, not a missing run), merge, tag, release.
+6. **Ship it** with the `release` skill: pull request, wait for CI *by run status* (a `gh pr checks` "no checks reported" is often dispatch lag, not a missing run), merge, tag, confirm the release is live.
 7. **Adopt into the vault** with `update.sh`, commit the pin, apply any deferred page edit in a worktree, and re-verify what the release just made stale.
 
 ## 3. What the loop decides for itself
