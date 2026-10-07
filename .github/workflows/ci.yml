@@ -786,6 +786,26 @@ jobs:
           W2="$(WIKI_WT_SESSION=e2 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "pr fail test" "$W2"
           rc=0; out="$(cd "$W2" && WIKI_WT_SESSION=e2 PATH="$T/ghfail:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
           chk "pr route: a failed create names gh's reason" '[ "$rc" = 1 ] && printf "%s" "$out" | grep -q "base branch policy forbids this"'
+          # E3/E4 (distill-finish-pr-route-counts-an-earlier-merged-pr-as-this-landing): a session
+          # reuses its branch name for every landing, so `pr list --state all` also returns earlier,
+          # merged pull requests for it. Only the one whose head is THIS tip may count.
+          mkdir -p "$T/ghjson"; cat > "$T/ghjson/gh" <<'GHEOF'
+          #!/bin/sh
+          case "$1 $2" in
+            "pr list") q=""; while [ $# -gt 0 ]; do [ "$1" = "-q" ] && q="$2"; shift; done
+                       jq -r "$q" "$GH_PRS_JSON";;
+            "pr create") echo https://example.invalid/o/r/pull/78;;
+          esac
+          GHEOF
+          chmod +x "$T/ghjson/gh"
+          W3="$(WIKI_WT_SESSION=e3 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "second landing on a reused branch" "$W3"
+          printf '[{"number":12,"state":"MERGED","headRefOid":"0000000000000000000000000000000000000000"}]\n' > "$T/prs-old.json"
+          rc=0; out="$(cd "$W3" && WIKI_WT_SESSION=e3 GH_PRS_JSON="$T/prs-old.json" PATH="$T/ghjson:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: an earlier merged PR for the branch name does not land a new commit" '[ "$rc" = 1 ] && printf "%s" "$out" | grep -q "pull request #78 is not merged" && [ -d "$W3" ]'
+          tip="$(git -C "$W3" rev-parse HEAD)"
+          printf '[{"number":12,"state":"MERGED","headRefOid":"0000000000000000000000000000000000000000"},{"number":78,"state":"MERGED","headRefOid":"%s"}]\n' "$tip" > "$T/prs-merged.json"
+          rc=0; out="$(cd "$W3" && WIKI_WT_SESSION=e3 GH_PRS_JSON="$T/prs-merged.json" PATH="$T/ghjson:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: a rerun after the PR for this tip merged reports done" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "pull request #78 is merged"'
           # F: a repository the session touched is reported, not acted on
           R="$T/side"; git init -q "$R"; echo a > "$R/f"
           out="$(cd "$W" && PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" --repo "$R" 2>&1)" || true

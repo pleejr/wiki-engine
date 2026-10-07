@@ -1,6 +1,7 @@
 ---
 slug: distill-finish-pr-route-counts-an-earlier-merged-pr-as-this-landing
-outcome: open
+outcome: accepted
+reason: "accepted as suggested. Reproduced against 3.4.0 with a gh stub serving one MERGED entry at another headRefOid: VAULT DONE and the worktree retired. The lookup now filters the list to headRefOid == the worktree tip (real gh exposes headRefOid; checked), keeping --state all so the rerun-after-merge case the reporter flagged still lands, and that case has its own CI assertion. The 3.3.0 #null fix was the same lookup taking .[0] without asking which pull request it was; the class question is now answered by the tip, not the position."
 received: 2026-10-06
 ---
 
