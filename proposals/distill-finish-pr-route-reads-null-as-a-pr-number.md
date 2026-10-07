@@ -1,6 +1,7 @@
 ---
 slug: distill-finish-pr-route-reads-null-as-a-pr-number
-outcome: open
+outcome: accepted
+reason: "accepted as suggested. Reproduced with real gh: `gh pr list --head <no-pr-branch> --json number,state -q '.[0] | ...'` prints `null null`, exit 0; `.[0] // empty` prints nothing. The CI stub had printed nothing for `pr list`, which is not what gh prints, so the create path was never exercised; the stub now runs the caller's -q through jq over the JSON list, and the existing pr-route assertion goes red against 3.3.0. The suggested stderr surfacing is also taken: a failed create now reports gh's last line, with a CI case. Sibling sweep: this was the only `.[0]` interpolation in bin/."
 received: 2026-10-06
 ---
 

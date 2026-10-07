@@ -761,7 +761,19 @@ jobs:
 
           # E: pull-request route -> pushes the branch, never integrates, reports the open PR
           mkvault e; export WIKI_PATH="$V"; printf 'publish = pr\n' > "$V/.wiki-gates.conf"
-          mkdir -p "$T/ghbin"; printf '#!/bin/sh\ncase "$1 $2" in "pr list") exit 0;; "pr create") echo https://example.invalid/o/r/pull/77;; esac\n' > "$T/ghbin/gh"; chmod +x "$T/ghbin/gh"
+          # The stub answers `pr list` the way gh does: the JSON list ([] here) passed through jq with
+          # the caller's own -q expression. An earlier stub printed nothing, which is not what gh
+          # prints for an empty list ("null null" for `.[0] | ...`), so the create path went untested
+          # and shipped unreachable (distill-finish-pr-route-reads-null-as-a-pr-number).
+          mkdir -p "$T/ghbin"; cat > "$T/ghbin/gh" <<'GHEOF'
+          #!/bin/sh
+          case "$1 $2" in
+            "pr list") q=""; while [ $# -gt 0 ]; do [ "$1" = "-q" ] && q="$2"; shift; done
+                       if [ -n "$q" ]; then echo '[]' | jq -r "$q"; else echo '[]'; fi;;
+            "pr create") echo https://example.invalid/o/r/pull/77;;
+          esac
+          GHEOF
+          chmod +x "$T/ghbin/gh"
           W="$("$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "pr test" "$W"; before="$(git -C "$V" rev-parse main)"
           rc=0; out="$(cd "$W" && PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
           chk "pr route: reports the unmerged pull request, rc 1" '[ "$rc" = 1 ] && printf '"'"'%s'"'"' "$out" | grep -q '"'"'pull request #77 is not merged'"'"''
@@ -769,6 +781,11 @@ jobs:
           chk "pr route: the session branch is pushed" 'git -C "$T/e.git" rev-parse -q --verify "refs/heads/wt/finishtest" >/dev/null'
           chk "pr route: the worktree stays until the merge" '[ -d "$W" ]'
 
+          # E2: a pull request that cannot be opened is reported with gh's own reason, not a guess.
+          mkdir -p "$T/ghfail"; printf '#!/bin/sh\ncase "$1 $2" in "pr list") echo "";; "pr create") echo "GraphQL: base branch policy forbids this (createPullRequest)" >&2; exit 1;; esac\n' > "$T/ghfail/gh"; chmod +x "$T/ghfail/gh"
+          W2="$(WIKI_WT_SESSION=e2 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "pr fail test" "$W2"
+          rc=0; out="$(cd "$W2" && WIKI_WT_SESSION=e2 PATH="$T/ghfail:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: a failed create names gh's reason" '[ "$rc" = 1 ] && printf "%s" "$out" | grep -q "base branch policy forbids this"'
           # F: a repository the session touched is reported, not acted on
           R="$T/side"; git init -q "$R"; echo a > "$R/f"
           out="$(cd "$W" && PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" --repo "$R" 2>&1)" || true

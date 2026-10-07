@@ -4,6 +4,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.3.1] — 2026-10-06
+
+Patch — `distill-finish.sh` on a `publish = pr` vault opens the session's pull request instead of reporting "pull request #null".
+
+### Fixed
+- **The pull-request route never opened its pull request.** The lookup interpolated `.[0]` of `gh pr list`, which on an empty list prints `null null` and exits 0, so the branch read as having pull request "null", the create was skipped, and the VAULT line asked the operator to merge `#null`. The lookup now uses `.[0] // empty`. Reported from a consumer vault on its first pull-request-route run.
+- **A failed `gh pr create` reported a guess.** Its stderr was discarded and the fallback said "gh unavailable?"; the VAULT line now carries gh's own last line, and says when gh is not installed.
+
+### Tests
+- The CI `gh` stub answers `pr list` the way gh does — the JSON list passed through `jq` with the caller's `-q` expression — instead of printing nothing, which is why the create path shipped untested. Red against 3.3.0. A second stub makes `pr create` fail and asserts gh's reason reaches the VAULT line.
+
 ## [3.3.0] — 2026-10-06
 
 Minor — the commit path lints what changed, and `mine` counts recorded procedures instead of guessing. Completes `checkpoint-becomes-distill`.
