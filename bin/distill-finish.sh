@@ -24,7 +24,8 @@
 # and, for every --repo given, REVIEW lines: facts about that repository (uncommitted files,
 # unpushed branches, extra worktrees, open pull requests) that this script cannot attribute to
 # a session. The skill decides which are this session's before it says the session is safe
-# to close; running shells and subagents are visible only to the session itself.
+# to close; running processes are listed by session-processes.sh, and subagents are visible
+# only to the session itself.
 #
 # Parallel sessions: everything acted on is keyed by this session's worktree and branch.
 # Peers' worktrees, branches, leases and buffer files are read, never changed.
