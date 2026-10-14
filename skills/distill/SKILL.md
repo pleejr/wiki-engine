@@ -43,8 +43,8 @@ The verdict is yours, from three sources:
 3. This session's own running work. Run `${CLAUDE_SKILL_DIR}/../../bin/session-processes.sh`: it lists every OS process under this session as `shell`, `work`, `orphan` or `harness`, and ends with an `AUDIT` line. Judge each non-`harness` entry:
    - **Legitimate** — expected, bounded (a terminating condition or a timeout), and its purpose still open. It is outstanding; its clearing command is to wait for it or stop it.
    - **Not legitimate** — orphaned, unbounded (a loop whose exit condition cannot be met), or its purpose already met. Stop it with `kill <pid>` and say in one line what was stopped and why; when stopping it is not this session's call, report it as outstanding.
-   Then check your task list for what no process listing shows: subagents, monitors and scheduled wakeups.
-   Running work dies with the session, so it is always outstanding, as are uncommitted edits, unpushed branches and the vault's own unmerged pull request.
+   - **Not a process** — subagents, monitors and scheduled wakeups never appear in the listing. Check your task list for them.
+   - Running work dies with the session, so it is always outstanding, as are uncommitted edits, unpushed branches and the vault's own unmerged pull request.
 
 End with exactly one of:
 

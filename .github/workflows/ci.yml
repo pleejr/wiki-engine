@@ -684,7 +684,7 @@ jobs:
           # $1 session id · $2 output name · $3 audit-shell marker (empty: none) · $4 subjects (full|harness)
           export CLAUDE_CODE_SESSION_ID="$1"
           if [ "$4" = full ]; then
-            bash -c ': shell-snapshots/x; until false; do sleep 311; done' &
+            bash -c ': shell-snapshots/snapshot-x; until false; do sleep 311; done' &
             bash -c "(setsid sleep 301 </dev/null >/dev/null 2>&1 &)"
           fi
           bash -c 'while :; do sleep 312; done' &
@@ -702,9 +702,9 @@ jobs:
           }
           export S T
           ( peer ) & PEER=$!
-          "$T/bin/claude" "$T/root.sh" sess-A main shell-snapshots/x full
+          "$T/bin/claude" "$T/root.sh" sess-A main shell-snapshots/snapshot-x full
           "$T/bin/claude" "$T/root.sh" sess-A nomarker "" full
-          "$T/bin/claude" "$T/root.sh" sess-A idle shell-snapshots/x harness
+          "$T/bin/claude" "$T/root.sh" sess-A idle shell-snapshots/snapshot-x harness
           sed 's/^/    /' "$T/main.out"
           chk "an unbounded loop in a tool shell is listed as session-owned" 'has "^PROC [0-9]+ shell .*sleep 311" main && has "^PROC [0-9]+ work .*sleep 311" main'
           chk "a running loop makes the audit exit 1" 'has "^rc=1$" main'

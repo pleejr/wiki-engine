@@ -65,7 +65,7 @@ for p in $chain; do
 done
 
 # The marker test, validated on the audit's own shell.
-marker="shell-snapshots/"
+marker="shell-snapshots/snapshot-"   # the marker statusline.sh's activity segment counts by
 self_args="$(awk -v p="${self_top:-none}" '$1==p {print; exit}' <<<"$snap")"
 case "$self_args" in *"$marker"*) ;; *) marker="";; esac
 
