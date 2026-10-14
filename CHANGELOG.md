@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.5.0] — 2026-10-14
+
+Minor — `distill` lists a recorded hand-off under `SAFE TO CLOSE` instead of blocking on it.
+
+### Changed
+- **A pushed item that waits on someone else no longer blocks the close verdict.** Step 5 counted every `REVIEW` item the session made as outstanding, so a pull request awaiting another person's review read `NOT SAFE TO CLOSE` with "merge it" as a clearing command the operator could not run. An item is now *handed off* when it is pushed, its next action belongs to someone other than the operator or the session, and a ticket or the project page records that wait; the `SAFE TO CLOSE` line gains a `; handed off: <item> (<where recorded>)` tail for each. An unrecorded one stays outstanding, cleared by recording it. Running work, uncommitted edits, unpushed branches and the vault's own unmerged pull request stay outstanding.
+
 ## [3.4.1] — 2026-10-06
 
 Patch — `distill-finish.sh` counts only the pull request whose head is the branch's current tip.

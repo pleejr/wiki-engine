@@ -3,7 +3,7 @@ name: distill
 description: End-of-session wrap-up. Records what this session made durable — the active project's Current state and Next steps, decisions, and preference/decision/lesson notes in memory/ — then runs distill-finish.sh, which lints, lands the commit by the vault's declared route, ages out the capture buffer and retires the session worktree, and ends with an explicit SAFE TO CLOSE or NOT SAFE TO CLOSE verdict naming every outstanding item (running shells or subagents, unmerged pull requests, unpushed branches, leftover worktrees). Use when finishing or pausing work, or when a keeper fact, decision or lesson emerged. It never offers or runs the `mine` pass. In-session, on demand — never from a lifecycle hook.
 status: active
 summary: "end-of-session: record project state and durable notes, run distill-finish.sh, then say SAFE TO CLOSE or what is still owed. Never offers the mining pass."
-updated: 2026-10-06
+updated: 2026-10-14
 ---
 
 # distill — record what lasts, then say whether the session can close
@@ -37,12 +37,14 @@ It refuses an uncommitted tree, refuses a vault with no declared route (`publish
 ## 5. Say whether the session can close
 The verdict is yours, from three sources:
 1. The script's `VAULT` line.
-2. Each `REVIEW` line: outstanding if this session made it (its branch, its pull request, its worktree, its edits); a peer session's work is reported as `info`, never cleared.
-3. This session's own running work, which no script can see: background shells, monitors, subagents and scheduled wakeups still active. Check your task list.
+2. Each `REVIEW` line this session made (its branch, its pull request, its worktree, its edits) is one of two kinds; a peer session's work is reported as `info`, never cleared.
+   - **Handed off** — all three hold: it is pushed, so closing loses nothing local; its next action belongs to someone other than the operator or this session (another person's review or merge); and a durable record names that wait (a ticket, or the project page's Current state or Next steps). It is not outstanding.
+   - **Outstanding** — anything else. An item whose owner is recorded nowhere stays outstanding, and its clearing command is to record it; recording converts it into a hand-off.
+3. This session's own running work, which no script can see: background shells, monitors, subagents and scheduled wakeups still active. Check your task list. These die with the session, so they are always outstanding, as are uncommitted edits, unpushed branches and the vault's own unmerged pull request.
 
 End with exactly one of:
 
-- `SAFE TO CLOSE — distilled <n> note(s); <project>; nothing outstanding.`
+- `SAFE TO CLOSE — distilled <n> note(s); <project>; nothing outstanding.` When items were handed off, append `; handed off: <item> (<where recorded>)` for each.
 - `NOT SAFE TO CLOSE — <k> outstanding:` then one line per item with the command that clears it.
 
 ## Rules
