@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.6.1] — 2026-10-14
+
+Patch — four pinned RAG deps move to their newest releases, with embeddings bit-identical.
+
+### Changed
+- **Pins:** `fastembed` 0.8.1 → 0.9.0, `onnxruntime` 1.30.0 → 1.31.0, `numpy` 2.5.3 → 2.5.4, `tokenizers` 0.23.2 → 0.23.3. Measured against the old pins in `uv` venvs on cpython 3.12.13, 3.13.14 and 3.14.6: install clean, 28 packages, 768-dim embeddings bit-identical (cosine 1.0, max component delta 0.0) on every interpreter, including with only onnxruntime moved. The instrument was checked first: re-running onnxruntime 1.29.0 → 1.30.0 on the same corpus reproduces its known drift (max delta 2.7e-04). No reindex. fastembed 0.9.0 still requires `huggingface-hub<2.0`, so hub stays on 1.33.0 and `doctor.sh` keeps reporting 2.x as held back.
+
 ## [3.6.0] — 2026-10-14
 
 Minor — `distill` audits the session's running processes before its close verdict.
