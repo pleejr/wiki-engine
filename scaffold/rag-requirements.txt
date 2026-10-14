@@ -13,10 +13,13 @@
 # An onnxruntime bump perturbs embeddings WITHOUT changing their dimension: its kernels
 # differ in the last few float digits, so a store embedded under one release and queried
 # under the next mixes two numerically-different embedders in one similarity space.
-# EVERY minor step measured so far lands at the same order — 1.28.0 -> 1.29.0: cosine
+# Most minor steps measured so far land at the same order — 1.28.0 -> 1.29.0: cosine
 # 0.9999997, max component delta 1.5e-04; 1.29.0 -> 1.30.0: cosine 0.9999997, max
 # component delta 1.25e-04 — identical on 3.12/3.13/3.14 both times, so it is a
-# deterministic version step rather than per-machine noise. Treat the drift as
+# deterministic version step rather than per-machine noise. 1.30.0 -> 1.31.0 is
+# bit-identical (cosine 1.0, max delta 0.0 on 3.12/3.13/3.14, measured 2026-10-14, with
+# 1.29.0 -> 1.30.0 re-run on the same corpus as a control: max delta 2.7e-04), so a step
+# can also move nothing; measure it rather than assume either. Treat the drift as
 # CUMULATIVE: a store spanning several onnxruntime generations mixes more than two
 # embedders, and the figure to reason about is the distance from the release the store
 # was built under, not from the previous pin. At ~1e-04 per step no reindex is implied,
@@ -24,12 +27,13 @@
 # to assume dimension is the whole contract. The other pins here are numerically inert:
 # with only numpy or only huggingface_hub moved the vectors are bit-identical, and
 # fastembed 0.8.0 -> 0.8.1 with huggingface_hub 1.32.0 -> 1.33.0 is bit-identical too
-# (cosine 1.0, max delta 0.0 on 3.12/3.13/3.14, measured 2026-10-02).
+# (cosine 1.0, max delta 0.0 on 3.12/3.13/3.14, measured 2026-10-02), as is fastembed
+# 0.8.1 -> 0.9.0 with numpy 2.5.4 and tokenizers 0.23.3 (measured 2026-10-14).
 #
-# huggingface_hub stays on 1.x: fastembed 0.8.x and tokenizers both require
+# huggingface_hub stays on 1.x: fastembed 0.8.x-0.9.x and tokenizers both require
 # huggingface-hub<2.0, so a 2.x pin cannot resolve. doctor.sh reports it as held back.
-fastembed==0.8.1
-onnxruntime==1.30.0
-numpy==2.5.3
-tokenizers==0.23.2
+fastembed==0.9.0
+onnxruntime==1.31.0
+numpy==2.5.4
+tokenizers==0.23.3
 huggingface_hub==1.33.0
