@@ -1,6 +1,7 @@
 ---
 slug: distill-recorded-handoff-is-safe-to-close
-outcome: open
+outcome: accepted
+reason: "accepted as proposed. The rule it replaces is in distill step 5 at 3.4.1: every REVIEW item this session made counted as outstanding, so a pushed pull request waiting on another person read NOT SAFE TO CLOSE with a clearing command the operator cannot run. A hand-off now needs all three conditions the proposal names: pushed, next action owned by someone else, and a durable record of the wait; an unrecorded one stays outstanding with \"record it\" as its clearing step. The judgement stays in the skill, not distill-finish.sh, as the proposal argued: the script cannot see tickets or ownership. The vault's own unmerged pull request stays outstanding, because distill-finish must be rerun after its merge to fast-forward main and retire the worktree. No CI assertion: the change is model-judgement text, and a grep for the new wording would test its shape, not the verdict."
 received: 2026-10-08
 ---
 
