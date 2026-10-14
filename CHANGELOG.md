@@ -4,6 +4,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.6.0] — 2026-10-14
+
+Minor — `distill` audits the session's running processes before its close verdict.
+
+### Added
+- **`bin/session-processes.sh`** lists the OS processes under this Claude Code session from one `ps` snapshot: tool shells, what they started, the harness's own processes as information, and on Linux the orphans that still carry this session's id. It ends with an `AUDIT` line counting what it examined, exits 1 while session-owned processes run and 2 when no session is above it, never lists a peer session's processes, and never signals anything.
+
+### Changed
+- **`distill` step 5 runs the audit instead of trusting the task list** (fail-open before: an unbounded `until` loop the session had forgotten read as nothing running). Each entry is judged legitimate (bounded, purpose still open: outstanding) or not (orphaned, unbounded, or done: stopped with a one-line record, or reported). The verdict line states the audit's count. Subagents, monitors and scheduled wakeups are not OS processes, so the task-list check stays beside it.
+
+### Tests
+- A fake session root holds an unbounded loop in a tool shell, a marker-less harness shell, a non-shell harness process and an orphan, beside a peer session with its own loop and orphan. CI asserts the loop is session-owned with exit 1, the harness entries are harness, the audit's own shell and every peer process are absent, a missing marker over-reports, an idle session exits 0, and no session exits 2. Each assertion went red against a mutated copy of the tool.
+
 ## [3.5.0] — 2026-10-14
 
 Minor — `distill` lists a recorded hand-off under `SAFE TO CLOSE` instead of blocking on it.

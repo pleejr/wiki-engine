@@ -40,12 +40,18 @@ The verdict is yours, from three sources:
 2. Each `REVIEW` line this session made (its branch, its pull request, its worktree, its edits) is one of two kinds; a peer session's work is reported as `info`, never cleared.
    - **Handed off** — all three hold: it is pushed, so closing loses nothing local; its next action belongs to someone other than the operator or this session (another person's review or merge); and a durable record names that wait (a ticket, or the project page's Current state or Next steps). It is not outstanding.
    - **Outstanding** — anything else. An item whose owner is recorded nowhere stays outstanding, and its clearing command is to record it; recording converts it into a hand-off.
-3. This session's own running work, which no script can see: background shells, monitors, subagents and scheduled wakeups still active. Check your task list. These die with the session, so they are always outstanding, as are uncommitted edits, unpushed branches and the vault's own unmerged pull request.
+3. This session's own running work. Run `${CLAUDE_SKILL_DIR}/../../bin/session-processes.sh`: it lists every OS process under this session as `shell`, `work`, `orphan` or `harness`, and ends with an `AUDIT` line. Judge each non-`harness` entry:
+   - **Legitimate** — expected, bounded (a terminating condition or a timeout), and its purpose still open. It is outstanding; its clearing command is to wait for it or stop it.
+   - **Not legitimate** — orphaned, unbounded (a loop whose exit condition cannot be met), or its purpose already met. Stop it with `kill <pid>` and say in one line what was stopped and why; when stopping it is not this session's call, report it as outstanding.
+   - **Not a process** — subagents, monitors and scheduled wakeups never appear in the listing. Check your task list for them.
+   - Running work dies with the session, so it is always outstanding, as are uncommitted edits, unpushed branches and the vault's own unmerged pull request.
 
 End with exactly one of:
 
-- `SAFE TO CLOSE — distilled <n> note(s); <project>; nothing outstanding.` When items were handed off, append `; handed off: <item> (<where recorded>)` for each.
-- `NOT SAFE TO CLOSE — <k> outstanding:` then one line per item with the command that clears it.
+- `SAFE TO CLOSE — distilled <n> note(s); <project>; nothing outstanding; audit examined <m> process(es).` When items were handed off, append `; handed off: <item> (<where recorded>)` for each.
+- `NOT SAFE TO CLOSE — <k> outstanding:` then one line per item with the command that clears it, and the `AUDIT` line's count.
+
+`<m>` is the `AUDIT` line's count after anything stopped. When the audit could not run (exit 2), say so in the verdict rather than reporting a count.
 
 ## Rules
 - In-session and operator-initiated; never from a lifecycle hook (engine `CLAUDE.md`).

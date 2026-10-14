@@ -1,6 +1,7 @@
 ---
 slug: distill-audits-running-processes-before-the-verdict
-outcome: open
+outcome: partially-accepted
+reason: "partially-accepted. Reproduced the gap at 3.5.0: distill step 5 named background shells, monitors, subagents and wakeups but gave no way to list them. ACCEPTED: bin/session-processes.sh lists the session's OS processes from one ps snapshot, rooted at $CLAUDE_PID or the nearest `claude` ancestor, excluding the audit's own shell; distill step 5 classifies every entry as legitimate or not, stops a not-legitimate one with a one-line record or reports it, keeps a legitimate running one outstanding, and the verdict states the audit's count. Measured against a live session, the harness's own status-line shell read as session work; tool shells are now told apart by the shell-snapshot marker, trusted only when the audit's own shell carries it, and every shell counts as session work otherwise, so a changed marker over-reports rather than reading as nothing running. The marker is the one statusline.sh's activity segment already counts tool shells by, so the two readers cannot disagree about what a tool shell is. NOT BUILT: listing the harness's background tasks from the tool. Subagents, monitors and wakeups are not OS processes and no script can see them, so the task-list check stays in the skill beside the audit. PARTIAL: orphans (parent died, reparented outside the tree) are found only on Linux, by the exact session id in /proc/<pid>/environ; macOS does not expose another process's environment, so there the AUDIT line says the orphan scan did not run rather than claiming none."
 received: 2026-10-14
 ---
 
