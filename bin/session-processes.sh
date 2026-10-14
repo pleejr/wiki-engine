@@ -78,8 +78,9 @@ if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
     for d in /proc/[0-9]*; do
       p="${d#/proc/}"
       [ -r "$d/environ" ] || continue
-      tr '\0' '\n' < "$d/environ" 2>/dev/null | grep -qxF "CLAUDE_CODE_SESSION_ID=$CLAUDE_CODE_SESSION_ID" \
-        && orphans="$orphans $p"
+      # Captured, then matched: `| grep -q` under pipefail can report a miss through SIGPIPE.
+      env_of="$(tr '\0' '\n' < "$d/environ" 2>/dev/null)"
+      case $'\n'"$env_of"$'\n' in *$'\n'"CLAUDE_CODE_SESSION_ID=$CLAUDE_CODE_SESSION_ID"$'\n'*) orphans="$orphans $p";; esac
     done
   else
     oscan="unavailable (this platform does not expose another process's environment)"
