@@ -4,6 +4,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.7.0] — 2026-10-22
+
+Minor — `integrate` refuses on a `publish = pr` vault and points at `distill-finish.sh`.
+
+### Changed
+- **`vault-worktree.sh integrate` refuses on a `publish = pr` vault** (exit 2), naming `distill-finish.sh`. On that route main moves only by the pull request's merge; integrating first fast-forwarded local main to the pre-squash commit with a success line and nothing pushed, and the squash then left it diverged from origin (fail-open). The route is read from the session worktree, then canonical, as `distill-finish.sh` reads it; `direct` and an undeclared route are unchanged.
+
+### Fixed
+- **The canonical-commit refusal named `integrate` as the landing on every vault.** On `publish = pr` it now names `distill-finish.sh`, which pushes the branch and opens its pull request; `direct` and an undeclared route keep the `integrate` line.
+
+### Tests
+- A `publish = pr` vault: the refusal must name `distill-finish.sh` and not `Integrate when done`, and `integrate` must exit 2 without moving main (red against 3.6.2). The same vault switched to `direct` must keep the hint and integrate.
+
 ## [3.6.2] — 2026-10-22
 
 Patch — `distill-finish.sh` stops re-pushing a session branch that already merged.

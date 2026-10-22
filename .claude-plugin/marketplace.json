@@ -7,8 +7,8 @@
     {
       "name": "wiki-engine",
       "description": "LLM-Wiki engine: vault skills, write-time gates, recall, and session boot and capture hooks.",
-      "version": "3.6.2",
-      "source": { "source": "github", "repo": "pleejr/wiki-engine", "ref": "v3.6.2" },
+      "version": "3.7.0",
+      "source": { "source": "github", "repo": "pleejr/wiki-engine", "ref": "v3.7.0" },
       "category": "productivity",
       "homepage": "https://github.com/pleejr/wiki-engine"
     }

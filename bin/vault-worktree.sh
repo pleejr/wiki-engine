@@ -36,7 +36,8 @@
 #                                  #   slug, report every claim and whether it is live or
 #                                  #   STALE. Advisory, never blocking — see the verb.
 #   vault-worktree.sh peers        # live sessions, their branches and declared paths
-#   vault-worktree.sh integrate    # locked: rebase this session's branch, ff main to it
+#   vault-worktree.sh integrate    # locked: rebase this session's branch, ff main to it;
+#                                  #   refused (exit 2) on a `publish = pr` vault
 #   vault-worktree.sh gc [path...] # with paths: retire exactly those now (clean-only, no
 #                                  #   age gate). Bare: sweep clean orphans older than
 #                                  #   WIKI_WT_STALE_HOURS. Both never discard uncommitted work.
@@ -79,6 +80,19 @@ lease_lib_init "$WIKI"
 WT_ROOT="$LEASE_WT_ROOT"
 EXCLUDE="$WIKI/.git/info/exclude"
 LOCK="$WT_ROOT/.integrate.lock"
+
+# The vault's declared publish route (`publish` in .wiki-gates.conf), read as distill-finish.sh
+# reads it: the given tree first, then canonical. Empty when undeclared. On `pr` main moves only
+# by the pull request's merge, so `integrate` — the `direct` route's landing — must not be named
+# or run there: it moves local main to the pre-squash commit, and the squash then diverges it.
+publish_route() {
+  local conf r
+  for conf in "$1/.wiki-gates.conf" "$WIKI/.wiki-gates.conf"; do
+    [ -f "$conf" ] || continue
+    r="$(awk -F= '/^[ \t]*#/{next} {k=$1; gsub(/[ \t]/,"",k); if (k=="publish") {v=$2; gsub(/[ \t]/,"",v); print v; exit}}' "$conf")"
+    [ -n "$r" ] && { printf '%s' "$r"; return 0; }
+  done
+}
 
 lease_file() { printf '%s/%s.lease' "$LEASE_DIR" "$(session_id)"; }
 
@@ -476,7 +490,12 @@ case "$CMD" in
       fi
     fi
 
-    log "  Integrate when done:  $SCRIPT_DIR/vault-worktree.sh integrate"
+    if [ "$(publish_route "$WIKI")" = "pr" ]; then
+      log "  Land when done:  $SCRIPT_DIR/distill-finish.sh   # from \$WORK: pushes the branch, opens its pull request"
+      log "  (this vault declares publish = pr: never \`integrate\`, which moves local main only)"
+    else
+      log "  Integrate when done:  $SCRIPT_DIR/vault-worktree.sh integrate"
+    fi
     log "  Override for a single-session machine:  WIKI_WORKTREE=0"
     exit 1
     ;;
@@ -605,6 +624,13 @@ case "$CMD" in
     branch="$(git -C "$wt" symbolic-ref --short HEAD 2>/dev/null)" || { log "vault-worktree: detached HEAD"; exit 2; }
     if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
       log "vault-worktree: $wt has uncommitted changes — commit them before integrating"; exit 1
+    fi
+    if [ "$(publish_route "$wt")" = "pr" ]; then
+      log "vault-worktree: refusing integrate — this vault declares publish = pr, so $branch lands"
+      log "  by its pull request's merge. integrate would move local main to the pre-squash commit,"
+      log "  print success with nothing pushed, and leave main diverged once the squash lands."
+      log "  Land it with:  $SCRIPT_DIR/distill-finish.sh"
+      exit 2
     fi
     # The canonical dirty-check is PATH-PRECISE and lives further down, immediately
     # before the fast-forward — the only point where the set of paths the ff will touch
