@@ -1662,6 +1662,42 @@ jobs:
             || { echo "a refused integrate still clobbered the canonical edit"; exit 1; }
           git -C "$V" checkout -- notes/seed.md
 
+      - name: a pull-request vault is never told, or allowed, to integrate
+        run: |
+          # canonical-commit-refusal-names-integrate-on-a-pr-route-vault: the canonical-commit
+          # refusal named `integrate` on every vault. On `publish = pr` that fast-forwards local
+          # main to the pre-squash commit with a success line and nothing pushed, and the squash
+          # then diverges it. The refusal names the route's own landing, and integrate refuses.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-pr"
+          git config --global user.email ci@example.com; git config --global user.name CI
+          V="$RUNNER_TEMP/prv"; mkdir -p "$V/notes"; git -C "$V" init -q .
+          printf 'seed\n' > "$V/notes/seed.md"; printf 'publish = pr\n' > "$V/.wiki-gates.conf"
+          git -C "$V" add -A && git -C "$V" commit -qm seed && git -C "$V" branch -M main
+          export WIKI_PATH="$V"; VW="$GITHUB_WORKSPACE/bin/vault-worktree.sh"
+          printf 'x\n' >> "$V/notes/seed.md"; git -C "$V" add notes/seed.md
+          rc=0; out="$(cd "$V" && "$VW" guard 2>&1)" || rc=$?
+          [ "$rc" = 1 ] || { echo "guard did not refuse the canonical commit (rc=$rc)"; exit 1; }
+          printf '%s' "$out" | grep -q 'distill-finish.sh' || { echo "pr refusal does not name distill-finish.sh"; exit 1; }
+          if printf '%s' "$out" | grep -q 'Integrate when done'; then echo "pr refusal still names integrate as the landing"; exit 1; fi
+          git -C "$V" checkout -q HEAD -- notes/seed.md
+          A="$(WIKI_WT_SESSION=pr-A "$VW" ensure 2>/dev/null)"
+          printf 'A\n' > "$A/notes/a.md"; git -C "$A" add notes/a.md; git -C "$A" commit -qm "A work"
+          before="$(git -C "$V" rev-parse main)"
+          rc=0; out="$(cd "$A" && WIKI_WT_SESSION=pr-A "$VW" integrate 2>&1)" || rc=$?
+          [ "$rc" = 2 ] || { echo "integrate on a pr vault exited $rc, not 2"; exit 1; }
+          [ "$(git -C "$V" rev-parse main)" = "$before" ] || { echo "integrate on a pr vault moved main"; exit 1; }
+          printf '%s' "$out" | grep -q 'distill-finish.sh' || { echo "the integrate refusal does not name distill-finish.sh"; exit 1; }
+          # near miss: the same vault on `publish = direct` keeps both the hint and integrate.
+          printf 'publish = direct\n' > "$V/.wiki-gates.conf"; git -C "$V" commit -qam direct --no-verify
+          git -C "$A" rebase -q main
+          printf 'y\n' >> "$V/notes/seed.md"; git -C "$V" add notes/seed.md
+          out="$(cd "$V" && "$VW" guard 2>&1)" || true
+          printf '%s' "$out" | grep -q 'Integrate when done' || { echo "direct refusal lost its integrate hint"; exit 1; }
+          git -C "$V" checkout -q HEAD -- notes/seed.md
+          (cd "$A" && WIKI_WT_SESSION=pr-A "$VW" integrate >/dev/null 2>&1) || { echo "integrate refused on a direct vault"; exit 1; }
+          [ -f "$V/notes/a.md" ] || { echo "direct integrate did not land A"; exit 1; }
+          echo "ok: pr vault names distill-finish and refuses integrate; direct vault unchanged"
+
       - name: ensure never silently hands back the canonical checkout
         run: |
           # The isolation is worthless if it can turn itself off quietly. Two regressions

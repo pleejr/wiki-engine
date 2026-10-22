@@ -1,6 +1,7 @@
 ---
 slug: canonical-commit-refusal-names-integrate-on-a-pr-route-vault
-outcome: open
+outcome: accepted
+reason: "accepted, including the optional half. Reproduced at 3.6.2: on a vault declaring publish = pr, the canonical-commit refusal printed 'Integrate when done: .../vault-worktree.sh integrate', and integrate from the session worktree exited 0 and fast-forwarded local main with nothing pushed. The refusal now reads the route (the same publish key distill-finish.sh reads, canonical then the given tree) and on pr names distill-finish.sh as the landing; direct and an undeclared route keep the integrate line. integrate itself now refuses with exit 2 on a pr vault, naming distill-finish.sh: the hint was one path to the divergence, but any caller following muscle memory or older docs reached the same state, so fixing only the message left the class armed. distill-finish.sh calls integrate on the direct route only, so no engine caller is affected. Sibling sweep: mine's SKILL.md already routes around integrate (and lint-docs gates skills for it); no other bin/ message names integrate as a landing. MINOR rather than PATCH because integrate changes what it does on a pr vault."
 received: 2026-10-20
 ---
 
