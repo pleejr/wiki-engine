@@ -51,6 +51,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `bump-pinned-onnxruntime-1-29-0` | shipped | v1.73.1 |
 | `bump-pinned-onnxruntime-1-30-0` | shipped | derived |
 | `bump-pinned-tokenizers-0-23-2` | shipped | derived |
+| `canonical-commit-refusal-names-integrate-on-a-pr-route-vault` | open | received 2026-10-20 |
 | `canonical-commit-refusal-strands-staged-work-and-names-no-way-to-carry-it` | shipped | v1.73.2 |
 | `capture-scales-with-harness-fanout` | shipped | v1.65.0 |
 | `checkpoint-becomes-distill` | partially-accepted | shipped across 3.0.0-3.3.0: the rename (3.0.0, with no alias, per the 2026-10-06 amendment); the mining offer removed (3.1.0, step 7, shipped first at the operator's request); linear lint-links and lint-memory (3.1.1, scaling requirements b and c); bin/distill-finish.sh, the declared publish route, buffer age-out and a judgement-only distill ending in SAFE TO CLOSE / NOT SAFE TO CLOSE (3.2.0); dogfood fixes for the route read and concurrent log.md appends (3.2.1) and for adoption writing canonical (3.2.2); changed-file lint and procedure keys (3.3.0). DECLINED: (d) the generated memory index, by operator choice (it would backfill ~180 notes and replace a hand-ordered section); the session manifest, replaced by --repo REVIEW lines the session attributes itself, because no script can tell a peer's branch from its own; and the acceptance bound written as a wall-clock ratio, replaced by a process-count assertion after the ratio proved unable to tell the old lints from the new on a CI-sized fixture. |
