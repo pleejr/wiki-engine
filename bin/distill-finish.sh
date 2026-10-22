@@ -124,19 +124,39 @@ elif [ "$route" = "direct" ]; then
     else owe "push of $main was refused: git -C \"$CANON\" pull --rebase && git -C \"$CANON\" push origin $main"; fi
   fi
 else
-  if git -C "$WORK" push -q -u origin "$BRANCH" 2>/dev/null; then say "pushed $BRANCH"
-  else owe "push of $BRANCH failed: git -C \"$WORK\" push -u origin $BRANCH"; fi
-  pr=""; state=""; create_err=""
+  # Only the pull request whose head is a given commit counts. A session reuses its branch
+  # name (wt/<session>) for every landing, so `--state all` also lists earlier, merged pull
+  # requests for that name; taking the first one declared a new commit landed that never
+  # reached main. `--state all` stays so a rerun after the operator merges is recognised.
+  # `// empty`: no match must print nothing, not "null null", or the create below is skipped.
+  pr_at() {
+    command -v gh >/dev/null 2>&1 || return 0
+    (cd "$WORK" && gh pr list --head "$BRANCH" --state all --json number,state,headRefOid \
+       -q "map(select(.headRefOid == \"$1\")) | .[0] // empty | \"\\(.number) \\(.state)\"" 2>/dev/null)
+  }
+  tip="$(git -C "$WORK" rev-parse HEAD)"
+  pr="$(pr_at "$tip")"; state="${pr#* }"; pr="${pr%% *}"; create_err=""
+  # Look before pushing: a rerun after the merge must not push, or it recreates the head
+  # branch the merge deleted, and the session's next landing is refused as non-fast-forward
+  # against that stale tip (distill-finish-rerun-resurrects-merged-session-branch).
+  if [ "$state" != "MERGED" ]; then
+    if git -C "$WORK" push -q -u origin "$BRANCH" 2>/dev/null; then say "pushed $BRANCH"
+    else
+      # Refused. Replace the remote tip only when it is already landed — in main, or the head
+      # of a merged pull request (a squash leaves it outside main's history) — and only over
+      # that exact tip, so a commit pushed since is never overwritten.
+      rtip="$(git -C "$WORK" ls-remote origin "refs/heads/$BRANCH" 2>/dev/null | cut -f1)"; rpr=""
+      if [ -n "$rtip" ]; then
+        git -C "$WORK" fetch -q origin "$rtip" 2>/dev/null || true
+        if git -C "$WORK" merge-base --is-ancestor "$rtip" "origin/$main" 2>/dev/null; then rpr="in $main"
+        else rpr="$(pr_at "$rtip")"; case "$rpr" in *" MERGED") rpr="#${rpr%% *}, merged";; *) rpr="";; esac; fi
+      fi
+      if [ -n "$rpr" ] && git -C "$WORK" push -q -u --force-with-lease="refs/heads/$BRANCH:$rtip" origin "$BRANCH" 2>/dev/null; then
+        say "pushed $BRANCH over its stale remote tip ${rtip:0:7} ($rpr)"
+      else owe "push of $BRANCH failed: git -C \"$WORK\" push -u origin $BRANCH"; fi
+    fi
+  fi
   if command -v gh >/dev/null 2>&1; then
-    # Only the pull request whose head is THIS branch tip counts. A session reuses its branch
-    # name (wt/<session>) for every landing, so `--state all` also lists earlier, merged pull
-    # requests for that name; taking the first one declared a new commit landed that never
-    # reached main. `--state all` stays so a rerun after the operator merges is recognised.
-    # `// empty`: no match must print nothing, not "null null", or the create below is skipped.
-    tip="$(git -C "$WORK" rev-parse HEAD)"
-    pr="$(cd "$WORK" && gh pr list --head "$BRANCH" --state all --json number,state,headRefOid \
-          -q "map(select(.headRefOid == \"$tip\")) | .[0] // empty | \"\\(.number) \\(.state)\"" 2>/dev/null)"
-    state="${pr#* }"; pr="${pr%% *}"
     if [ -z "$pr" ]; then
       subj="$(git -C "$WORK" log -1 --format=%s)"
       created="$(cd "$WORK" && gh pr create --head "$BRANCH" --title "$subj" --body "Session branch $BRANCH, landed by distill-finish.sh." 2>&1)" || true

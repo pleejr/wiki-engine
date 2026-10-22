@@ -863,6 +863,32 @@ jobs:
           printf '[{"number":12,"state":"MERGED","headRefOid":"0000000000000000000000000000000000000000"},{"number":78,"state":"MERGED","headRefOid":"%s"}]\n' "$tip" > "$T/prs-merged.json"
           rc=0; out="$(cd "$W3" && WIKI_WT_SESSION=e3 GH_PRS_JSON="$T/prs-merged.json" PATH="$T/ghjson:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
           chk "pr route: a rerun after the PR for this tip merged reports done" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "pull request #78 is merged"'
+          # E5-E7 (distill-finish-rerun-resurrects-merged-session-branch): the merge deletes the
+          # head branch, so a rerun that pushes before looking recreates it at the merged tip,
+          # and the session's next landing is refused as non-fast-forward against it.
+          W3="$(WIKI_WT_SESSION=e3 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "third landing, rerun after merge" "$W3"
+          tip="$(git -C "$W3" rev-parse HEAD)"
+          printf '[{"number":79,"state":"MERGED","headRefOid":"%s"}]\n' "$tip" > "$T/prs-79.json"
+          git -C "$T/e.git" update-ref -d refs/heads/wt/e3
+          rc=0; out="$(cd "$W3" && WIKI_WT_SESSION=e3 GH_PRS_JSON="$T/prs-79.json" PATH="$T/ghjson:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: a rerun after the merge does not recreate the deleted head branch" '[ "$rc" = 0 ] && ! git -C "$T/e.git" rev-parse -q --verify refs/heads/wt/e3 >/dev/null'
+          # E6: a head branch already resurrected (by an earlier release) at a merged PR's tip is
+          # replaced, over that exact tip only.
+          git -C "$V" push -q origin "$tip:refs/heads/wt/e3"
+          # The stub's merge never reached main, so drop the local branch as a squash merge
+          # leaves it: the next landing starts from main, not on top of the stale tip.
+          git -C "$V" branch -q -D wt/e3 2>/dev/null || true
+          chk "fixture: the next landing does not descend from the stale head" '! git -C "$V" merge-base --is-ancestor "$tip" main'
+          W3="$(WIKI_WT_SESSION=e3 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "fourth landing over a stale head" "$W3"
+          rc=0; out="$(cd "$W3" && WIKI_WT_SESSION=e3 GH_PRS_JSON="$T/prs-79.json" PATH="$T/ghjson:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: a stale head that is a merged PR's tip is pushed over" '[ "$(git -C "$T/e.git" rev-parse refs/heads/wt/e3)" = "$(git -C "$W3" rev-parse HEAD)" ] && printf "%s" "$out" | grep -q "over its stale remote tip"'
+          # E7 (near miss): a remote tip that is neither in main nor a merged PR's head is someone's
+          # unlanded work and is never overwritten.
+          git -C "$W3" commit -q --allow-empty -m "unlanded remote work"; foreign="$(git -C "$W3" rev-parse HEAD)"
+          git -C "$W3" push -q origin "HEAD:refs/heads/wt/e7"; git -C "$W3" reset -q --hard HEAD~1
+          W7="$(WIKI_WT_SESSION=e7 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "landing beside unlanded work" "$W7"
+          rc=0; out="$(cd "$W7" && WIKI_WT_SESSION=e7 GH_PRS_JSON="$T/prs-79.json" PATH="$T/ghjson:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: an unlanded remote tip is not overwritten" '[ "$rc" = 1 ] && [ "$(git -C "$T/e.git" rev-parse refs/heads/wt/e7)" = "$foreign" ] && printf "%s" "$out" | grep -q "push of wt/e7 failed"'
           # F: a repository the session touched is reported, not acted on
           R="$T/side"; git init -q "$R"; echo a > "$R/f"
           out="$(cd "$W" && PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" --repo "$R" 2>&1)" || true

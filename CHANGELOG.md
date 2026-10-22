@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.6.2] — 2026-10-22
+
+Patch — `distill-finish.sh` stops re-pushing a session branch that already merged.
+
+### Fixed
+- **A rerun after the merge recreated the deleted head branch, and the session's next landing could not land** (fail-closed). The pull-request route pushed before it looked up the pull request, so a rerun after a squash-merge that deleted `wt/<session>` pushed it back at the merged tip, printed `VAULT DONE`, and left the next landing in that session refused as non-fast-forward, with a new pull request opened against the stale head that conflicted with main and ran no checks. It now looks up the pull request for the tip first and skips the push when it is MERGED. A refused push replaces the remote tip only when that tip is already landed — in main, or the head of a merged pull request — and only with `--force-with-lease` on that exact tip, so a head left by an earlier release is recovered and any other remote work is reported, never overwritten.
+
+### Tests
+- A rerun after the merge must leave the deleted head branch absent, and a landing over a head resurrected at a merged pull request's tip must replace it (both red against 3.6.1); a remote tip that is neither in main nor a merged head must be left as it was.
+
 ## [3.6.1] — 2026-10-14
 
 Patch — four pinned RAG deps move to their newest releases, with embeddings bit-identical.

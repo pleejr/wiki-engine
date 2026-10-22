@@ -1,6 +1,7 @@
 ---
 slug: distill-finish-rerun-resurrects-merged-session-branch
-outcome: open
+outcome: accepted
+reason: "accepted, both halves. Reproduced at 3.6.1 with a bare origin and a gh stub: the rerun after a squash-merge printed 'pushed wt/<session>' then VAULT DONE, the remote head reappeared at the merged tip, and the next landing's push was refused while a pull request opened against the stale head. The pr route now looks up the pull request for the tip BEFORE pushing and skips the push when it is MERGED. When a push is refused, the remote tip is replaced only if it is already landed (an ancestor of main, or the headRefOid of a MERGED pull request \u2014 a squash leaves it outside main's history, so git cherry alone would miss a multi-commit squash) and only by --force-with-lease on that exact tip; any other remote tip is reported, never overwritten. The second half is kept although the first prevents the condition, because consumers already carry heads resurrected by earlier releases. Sibling sweep: the only other branch push in bin/ is engine-proposal.sh submit, a one-shot per slug, so it does not share the rerun pattern."
 received: 2026-10-19
 ---
 
