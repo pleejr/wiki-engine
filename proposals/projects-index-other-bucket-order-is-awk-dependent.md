@@ -1,6 +1,7 @@
 ---
 slug: projects-index-other-bucket-order-is-awk-dependent
-outcome: open
+outcome: accepted
+reason: "accepted. Reproduced at HEAD on one machine, which the report could not do: under BSD awk alone, eight unknown statuses rendered under Other in hash order (omega, mid, zeta, ...), not sorted, so any two awks with different hashing disagree. Taken in the suggested pre-sort shape without a new sort: the shell pipeline already sorts rows by status with LC_ALL=C, so the generator records first appearance in an indexed array and emits Other in that order. Sibling sweep of for-in loops in bin/: rotate-log.sh pipes to sort, lint-memory.sh sorts its dead-link file, session-processes.sh and statusline.sh only build sets or counts, so none emits hash order."
 received: 2026-10-27
 ---
 

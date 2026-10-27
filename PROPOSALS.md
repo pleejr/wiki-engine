@@ -89,7 +89,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `pre-commit-skew-note-reads-canonical-engine-version` | shipped | derived |
 | `project-page-staleness-queue` | partially-accepted | shape and status-gating kept; the signal is derived from git rather than the hand-maintained updated: field, which was measured drifting three days on two of three active pages, and a reviewed: marker was added — the alternative the proposal rejected — because without a clock reset the queue can never be drained to zero |
 | `project-summary-volatility-gate` | partially-accepted | shape kept; warn-by-default inverted to an enforced content-hashed ratchet, slug allowlist replaced by summary hashing, and the `live` marker dropped as unreproduced |
-| `projects-index-other-bucket-order-is-awk-dependent` | open | received 2026-10-27 |
+| `projects-index-other-bucket-order-is-awk-dependent` | shipped | derived |
 | `proposal-slug-roundtrip` | shipped | derived |
 | `proposal-submit-branches-from-an-unfetched-origin-main` | open | received 2026-10-27 |
 | `prove-the-test-can-fail-cede-verdict-audit` | shipped | derived |

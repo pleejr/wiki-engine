@@ -81,7 +81,11 @@ gen_block() {
       label["paused"]="Paused";   label["done"]="Done"
     }
     $1 == "" { next }   # empty vault: no rows — still emit the buckets below
-    { line[$1] = line[$1] sprintf("- [[%s]] — %s\n", $2, $3); seen[$1]=1 }
+    # The rows arrive C-sorted by status, so first appearance IS the sorted order; record
+    # it in an indexed array. `for (s in seen)` walked the awk hash order instead, which
+    # differs between BSD awk, mawk and gawk — a catalog written on one failed --check on
+    # another.
+    { line[$1] = line[$1] sprintf("- [[%s]] — %s\n", $2, $3); if (!($1 in seen)) { seen[$1]=1; ord[++ns]=$1 } }
     END {
       for (i=1; i<=n; i++) {
         s=order[i]
@@ -92,7 +96,8 @@ gen_block() {
       }
       # any unexpected status value gets surfaced, not silently dropped
       first=1
-      for (s in seen) {
+      for (k=1; k<=ns; k++) {
+        s=ord[k]
         if (done_known[s]) continue
         if (first) { print "### Other"; first=0 }
         printf "%s", line[s]
