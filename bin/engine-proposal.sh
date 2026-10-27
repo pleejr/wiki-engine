@@ -461,6 +461,15 @@ do_submit() {
   local base="main"
   git -C "$eng" rev-parse --verify -q main >/dev/null 2>&1 || base="$(git -C "$eng" symbolic-ref --short HEAD 2>/dev/null || echo main)"
   local start="$base"
+  # FETCH it first. origin/main is only as current as the clone's last fetch, and a branch
+  # cut from a stale tip carries, against the remote's main, a tree that reverts everything
+  # since — GitHub then refuses the push when that span touched a workflow file, with an
+  # error about token scopes rather than the base. Offline is a warning, not a refusal:
+  # preparing is local, and push is where the network is required anyway.
+  if git -C "$eng" remote get-url origin >/dev/null 2>&1; then
+    GIT_TERMINAL_PROMPT=0 git -C "$eng" fetch -q origin "$base" >/dev/null 2>&1 \
+      || printf 'engine-proposal: WARNING — could not fetch origin/%s; branching from the last-fetched tip, which may be stale. If push is refused, delete the branch, fetch, and re-run submit.\n' "$base" >&2
+  fi
   git -C "$eng" rev-parse --verify -q "origin/$base" >/dev/null 2>&1 && start="origin/$base"
 
   # Where the checkout sat before we touched it — a branch name, or a detached sha. It is
@@ -569,6 +578,12 @@ do_push() {
   #
   # This is the irreversible step: everything up to here is local and discardable.
   if ! git -C "$eng" push -q --set-upstream origin "$br" 2>&1; then
+    # A branch prepared on a stale main is refused for reasons that name something else
+    # (a workflow-scope error, for one), so check the base before blaming access.
+    if GIT_TERMINAL_PROMPT=0 git -C "$eng" fetch -q origin main >/dev/null 2>&1 \
+       && ! git -C "$eng" merge-base --is-ancestor origin/main "$br" 2>/dev/null; then
+      die "could not push $br — it is based on a stale main, so against the remote it reverts later changes. Discard it (git -C \"$eng\" branch -D $br) and re-run submit; nothing was published."
+    fi
     die "could not push $br to origin — you may lack write access. Fork the repo and push there, then open the pull request by hand; nothing was published."
   fi
   echo "engine-proposal: pushed $br"

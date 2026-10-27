@@ -4,6 +4,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.7.3] — 2026-10-27
+
+Patch — `engine-proposal.sh submit` fetches main before cutting the proposal branch.
+
+### Fixed
+- **`submit` cut the proposal branch from a stale `origin/main`** (fail-closed). It never fetched, so a clone behind the remote produced a branch whose tree, against the remote's main, reverted later work; when that span touched a workflow file GitHub refused the push with a token-scope error. `submit` now fetches `origin/main` first, and an unreachable remote warns and still prepares locally.
+- **`push` blamed write access for every refusal.** When a push is refused and the fetched `origin/main` is not an ancestor of the branch, it now names the stale base and the discard-and-resubmit fix.
+
+### Tests
+- A clone one commit behind its bare origin must branch from the remote tip; an unreachable origin must warn and prepare; a refused push must name the stale base only when the base is stale (red against 3.7.2).
+
 ## [3.7.2] — 2026-10-27
 
 Patch — the projects catalog's `### Other` bucket is ordered the same under every awk.
