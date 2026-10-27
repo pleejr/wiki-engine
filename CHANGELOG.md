@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.7.2] — 2026-10-27
+
+Patch — the projects catalog's `### Other` bucket is ordered the same under every awk.
+
+### Fixed
+- **`gen-projects-index.sh --check` passed on macOS and failed on Linux CI** (fail-closed). Statuses outside planned/active/paused/done were emitted with `for (s in seen)`, which walks the awk's hash order, so BSD awk, mawk and gawk wrote different catalogs from the same pages. The rows already arrive C-sorted by status, so Other now follows their first-appearance order, which is the sorted order on every awk. A catalog committed by 3.7.0 with two or more unknown statuses regenerates once.
+
+### Tests
+- Eight unknown statuses must render under Other in C-sorted order, under each of `awk`, `mawk`, `gawk` and `original-awk` the runner has (red against 3.7.0 under BSD awk).
+
 ## [3.7.1] — 2026-10-27
 
 Patch — summary volatility markers match whole words, so `spending` no longer reads as `pending`.

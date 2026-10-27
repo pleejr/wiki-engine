@@ -2069,6 +2069,32 @@ jobs:
             || { echo "FAIL: gen-skills-index.sh --stdout now requires a vault"; exit 1; }
           echo "ok: --stdout still needs no vault"
 
+      - name: The projects catalog's Other bucket is ordered the same under every awk
+        run: |
+          # REGRESSION: statuses outside planned/active/paused/done were emitted by
+          # `for (s in seen)`, whose order is the awk's hash order. A catalog committed
+          # from macOS then failed `--check` on Linux CI (fail-closed). The property is
+          # the order itself: Other must follow the C-sorted status order, under each
+          # awk this runner has, so a better implementation still passes.
+          V="$RUNNER_TEMP/other-order"; rm -rf "$V"; mkdir -p "$V/projects"
+          printf -- '<!-- projects:start -->\n<!-- projects:end -->\n' > "$V/index.md"
+          for st in zeta wont-do backlog current alpha mid omega beta; do
+            printf -- '---\nstatus: %s\nsummary: s-%s\n---\n' "$st" "$st" > "$V/projects/p-$st.md"
+          done
+          want="$(printf '%s\n' zeta wont-do backlog current alpha mid omega beta | LC_ALL=C sort | sed 's/^/p-/')"
+          fail=0; ran=0
+          for a in awk mawk gawk original-awk; do
+            bin="$(command -v "$a" 2>/dev/null)" || continue
+            shim="$RUNNER_TEMP/awk-$a"; rm -rf "$shim"; mkdir -p "$shim"; ln -s "$bin" "$shim/awk"
+            got="$(PATH="$shim:$PATH" bin/gen-projects-index.sh --wiki "$V" --stdout \
+                   | sed -n '/^### Other/,$p' | sed -n 's/^- \[\[\([^]]*\)\]\].*/\1/p')"
+            ran=$((ran+1))
+            if [ "$got" = "$want" ]; then echo "  ok   $a: Other is in sorted status order"
+            else echo "  FAIL $a: Other order is"; printf '    %s\n' $got; fail=1; fi
+          done
+          [ "$ran" -gt 0 ] || { echo "FAIL: no awk found to test"; exit 1; }
+          exit "$fail"
+
       - name: A per-machine gate keeps its rules when the lint runs from a worktree
         run: |
           # REGRESSION: the foreign-boundary gate read its patterns from "$WIKI/<file>",
