@@ -91,6 +91,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `project-summary-volatility-gate` | partially-accepted | shape kept; warn-by-default inverted to an enforced content-hashed ratchet, slug allowlist replaced by summary hashing, and the `live` marker dropped as unreproduced |
 | `projects-index-other-bucket-order-is-awk-dependent` | open | received 2026-10-27 |
 | `proposal-slug-roundtrip` | shipped | derived |
+| `proposal-submit-branches-from-an-unfetched-origin-main` | open | received 2026-10-27 |
 | `prove-the-test-can-fail-cede-verdict-audit` | shipped | derived |
 | `push-verb-omits-git-push` | shipped | derived |
 | `queue-cannot-see-unmerged-proposal-prs` | shipped | derived |
