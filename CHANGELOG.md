@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.7.1] — 2026-10-27
+
+Patch — summary volatility markers match whole words, so `spending` no longer reads as `pending`.
+
+### Fixed
+- **A word marker matched inside a longer word** (fail-closed). The scaffold marker list held bare words, so `pending` flagged "track AWS spending per ticket" and blocked the commit, and `shipped`, `blocked`, `deployed` and `remains` had the same shape. Each word marker is now anchored with `\b` on both sides, as `complete\b` already was on one; the numeric version, date and fraction markers are unchanged. The fix is in the data, not the matcher: a vault's own marker list is still matched exactly as written.
+
+### Tests
+- `spending`, `upending` and `impending` must pass and `pending review` must still fail (red against 3.7.0).
+
 ## [3.7.0] — 2026-10-22
 
 Minor — `integrate` refuses on a `publish = pr` vault and points at `distill-finish.sh`.

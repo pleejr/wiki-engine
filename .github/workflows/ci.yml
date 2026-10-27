@@ -4532,6 +4532,10 @@ jobs:
           mk adjectiv active  "a live artifact IS the work queue"
           mk typo     activo  "blocked on inputs"
           mk identity active  "a durable index of household records"
+          # a marker is a WORD: "pending" inside "spending" is not a state claim
+          mk spending active  "track AWS spending per ticket"
+          mk upending active  "upending the impending ledger"
+          mk pendrev  active  "pending review by the board"
 
           out="$("$G" --wiki "$V" 2>&1)" || true
           chk() { printf '%s' "$out" | grep -q "$2" && { [ "$1" = y ] && echo "  ok   $3" || { echo "  FAIL $3"; fail=1; }; } \
@@ -4541,6 +4545,9 @@ jobs:
           chk n 'projects/adjectiv.md'  "adjectival 'live' is not treated as a state claim"
           chk y 'projects/typo.md'      "an unknown status flags rather than exempting"
           chk n 'projects/identity.md'  "an identity summary is clean"
+          chk n 'projects/spending.md'  "a marker inside a longer word (spending) is not flagged"
+          chk n 'projects/upending.md'  "upending / impending do not match pending"
+          chk y 'projects/pendrev.md'   "the whole word 'pending' is still flagged"
           "$G" --wiki "$V" >/dev/null 2>&1 \
             && { echo "  FAIL gate exited 0 with findings"; fail=1; } || echo "  ok   findings exit non-zero"
 

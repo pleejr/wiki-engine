@@ -20,21 +20,24 @@ v?[0-9]+\.[0-9]+\.[0-9]+
 [0-9]+ +of +[0-9]+
 
 # --- deployment / completion state verbs ---
-not +deployed
-deployed
-still +on
-shipped
-rolled +out
-in +progress
-remains
-pending
-blocked
+# Each is a WORD, so each is anchored with \b on both sides: unanchored, `pending`
+# matched inside "spending" and `shipped` inside "worshipped". A vault's own list
+# keeps whatever anchoring it writes — the gate matches each line exactly as given.
+\bnot +deployed\b
+\bdeployed\b
+\bstill +on\b
+\bshipped\b
+\brolled +out\b
+\bin +progress\b
+\bremains\b
+\bpending\b
+\bblocked\b
 
-# `complete` only as a state claim, not inside "completely" / "completeness"
-complete\b
+# `complete` only as a state claim, not inside "completely" / "completeness" / "incomplete"
+\bcomplete\b
 
 # `live` is DELIBERATELY not a bare marker. Measured against a real vault, every
 # status-gated hit it produced was adjectival — "a live artifact IS the work queue",
 # "first live candidate toured" — meaning *current instance*, not *deployed*. It only
 # counts as volatile in an explicit state phrase.
-(is|went|now|goes|going) +live
+\b(is|went|now|goes|going) +live\b

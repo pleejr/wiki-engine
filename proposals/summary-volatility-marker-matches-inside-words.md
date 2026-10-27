@@ -1,6 +1,7 @@
 ---
 slug: summary-volatility-marker-matches-inside-words
-outcome: open
+outcome: partially-accepted
+reason: "the observation is reproduced exactly at 3.7.0 and the Expected is met, by a different shape. The suggested fix wrapped every marker in a word anchor inside the matcher; that also wraps the numeric markers, so a version glued to a word (python3.11.4) would stop matching, and it silently changes what a vault-supplied marker list means. Instead the scaffold list anchors its word markers with \\b on both sides, the convention complete\\b already used on one side, and the matcher keeps matching each line as written. Sibling sweep: shipped, blocked, deployed, remains, still on, rolled out and in progress shared the unanchored shape and are anchored too; no other bin/ tool matches a word list against prose."
 received: 2026-10-27
 ---
 
