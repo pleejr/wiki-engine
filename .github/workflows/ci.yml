@@ -4180,6 +4180,67 @@ jobs:
 
           exit "$fail"
 
+      - name: submit branches from the remote's current main, not the last fetch
+        run: |
+          # REGRESSION: submit chose origin/main without fetching it. On a clone 25 commits
+          # behind, the proposal branch was cut from the stale tip; against the remote's
+          # main its tree reverted later work, including a workflow file, and push was
+          # refused for a token scope the reporter did not need. The property: the branch's
+          # base is the remote's main tip at submit time, and an unreachable remote still
+          # prepares, with a warning.
+          export GIT_CONFIG_GLOBAL="$RUNNER_TEMP/gitconfig-subfetch"
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          git config --global init.defaultBranch main
+          EP="$GITHUB_WORKSPACE/bin/engine-proposal.sh"
+          fail=0
+          T="$RUNNER_TEMP/subfetch"; rm -rf "$T"; mkdir -p "$T"
+          git init -q --bare "$T/origin.git"
+          git clone -q "$T/origin.git" "$T/seed" 2>/dev/null
+          echo seed > "$T/seed/README.md"; git -C "$T/seed" add README.md; git -C "$T/seed" commit -qm seed
+          git -C "$T/seed" push -q origin main
+          git clone -q "$T/origin.git" "$T/engine"
+          # the remote moves on; the engine clone does not fetch
+          mkdir -p "$T/seed/.github/workflows"; echo ci > "$T/seed/.github/workflows/ci.yml"
+          git -C "$T/seed" add .github; git -C "$T/seed" commit -qm later; git -C "$T/seed" push -q origin main
+          tip="$(git -C "$T/seed" rev-parse HEAD)"
+          V="$T/vault"; mkdir -p "$V"; git -C "$V" init -q .
+          printf -- '---\nboundary: personal\n---\n' > "$V/CLAUDE.md"; : > "$V/.gitignore"
+          git -C "$V" add -A; git -C "$V" commit -qm seed
+          printf 'slug: fresh\nboundary: generic\n\nA generic problem statement.\n' \
+            | ENGINE_REPO="$T/engine" "$EP" submit --vault "$V" --slug fresh >/dev/null 2>&1 \
+            || { echo "  FAIL a clean block was refused"; fail=1; }
+          base="$(git -C "$T/engine" rev-parse 'proposal/fresh^' 2>/dev/null || true)"
+          [ "$base" = "$tip" ] \
+            && echo "  ok   the proposal branch is cut from the remote's current main" \
+            || { echo "  FAIL the branch is based on $base, not the remote tip $tip"; fail=1; }
+
+          # an unreachable remote must not block a local prepare, and must say so
+          git -C "$T/engine" remote set-url origin "$T/no-such-remote.git"
+          out="$(printf 'slug: offline\nboundary: generic\n\nA generic problem statement.\n' \
+            | ENGINE_REPO="$T/engine" "$EP" submit --vault "$V" --slug offline 2>&1)" \
+            && echo "  ok   an unreachable remote still prepares" \
+            || { echo "  FAIL an unreachable remote blocked submit:"; printf '%s\n' "$out"; fail=1; }
+          printf '%s' "$out" | grep -qi 'could not fetch' \
+            && echo "  ok   the stale-base risk is reported" \
+            || { echo "  FAIL no warning that the base may be stale:"; printf '%s\n' "$out"; fail=1; }
+
+          # a refused push names the stale base when that is the cause, and access otherwise
+          git -C "$T/engine" remote set-url origin "$T/origin.git"
+          printf '#!/bin/sh\nexit 1\n' > "$T/origin.git/hooks/pre-receive"; chmod +x "$T/origin.git/hooks/pre-receive"
+          out="$(ENGINE_REPO="$T/engine" "$EP" push --vault "$V" --slug fresh 2>&1 || true)"
+          printf '%s' "$out" | grep -q 'you may lack write access' \
+            && echo "  ok   a refusal on a current base still points at access" \
+            || { echo "  FAIL wrong diagnosis on a current base:"; printf '%s\n' "$out"; fail=1; }
+          echo more > "$T/seed/README.md"; git -C "$T/seed" commit -qam more
+          rm "$T/origin.git/hooks/pre-receive"; git -C "$T/seed" push -q origin main
+          printf '#!/bin/sh\nexit 1\n' > "$T/origin.git/hooks/pre-receive"; chmod +x "$T/origin.git/hooks/pre-receive"
+          out="$(ENGINE_REPO="$T/engine" "$EP" push --vault "$V" --slug fresh 2>&1 || true)"
+          printf '%s' "$out" | grep -q 'based on a stale main' \
+            && echo "  ok   a refusal on a stale base names the stale base" \
+            || { echo "  FAIL a stale base was not named:"; printf '%s\n' "$out"; fail=1; }
+          exit "$fail"
+
       - name: The proposal queue is the source of truth, and submit cannot leak
         run: |
           # The queue directory replaces the copy-paste channel. Two properties dominate

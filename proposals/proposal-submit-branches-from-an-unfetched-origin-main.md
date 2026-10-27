@@ -1,6 +1,7 @@
 ---
 slug: proposal-submit-branches-from-an-unfetched-origin-main
-outcome: open
+outcome: accepted
+reason: "accepted. Reproduced at HEAD with a bare origin moved one commit (a workflow file) past the clone: submit cut the branch from the stale tip and printed no warning. submit now fetches origin/main before choosing the start point and warns, without refusing, when the fetch fails. The optional push guard is shaped as a diagnosis rather than a pre-push refusal: a stale base that does not touch a workflow file pushes fine and GitHub diffs the pull request from the merge-base, so the unverified fail-open case shows no reverts and refusing it would block a working push. Instead a REFUSED push checks the base and names it, replacing the write-access message that misdirected the reporter. Sibling sweep: vault-worktree.sh already fetches before creating a branch; no other bin/ tool cuts a branch."
 received: 2026-10-27
 ---
 
