@@ -106,7 +106,12 @@ say "lint passed"
 
 # --- 3. land ----------------------------------------------------------------------------
 git -C "$CANON" fetch -q origin 2>/dev/null || true
-main="$(git -C "$CANON" rev-parse --abbrev-ref HEAD)"
+main="$(git -C "$CANON" symbolic-ref --short -q HEAD)" || {
+  # Detached (mid-rebase, say): <main> would read "HEAD", the count below would be HEAD --not
+  # HEAD, and a real commit would be reported as nothing to land.
+  echo "distill-finish: $CANON is not on a branch — finish or abort what detached it, then rerun. Nothing was landed." >&2
+  exit 2
+}
 # New means on this branch and in neither canonical <main> nor origin/<main>. Either can be
 # the stale one: canonical <main> sits behind after a merge not pulled here, while the branch
 # is normally cut from origin/<main>. Counting against canonical <main> alone called that
@@ -122,11 +127,17 @@ if [ "$ahead" = "0" ]; then
   say "nothing on $BRANCH that $base lacks"; landed=1
   # Zero can also mean the branch is already on origin/<main> but not on canonical <main>: a
   # rerun after its pull request was merged with a merge commit, or a merge another session
-  # made. Bring canonical up to it when it can fast-forward; when it cannot (an untracked file
-  # in the way), the work is on origin and nothing is owed, so say so rather than fail.
+  # made. Bring canonical up to it the way integrate's own reconcile does (a fast-forward to
+  # origin/<main>, never `git pull`, whose config can change what happens). A fast-forward
+  # blocked by a file in canonical owes nothing, since the work is on origin; a canonical
+  # <main> that has diverged from origin is said out loud, as the next integrate will refuse it.
   if [ "${#not_refs[@]}" -gt 1 ] && ! git -C "$WORK" merge-base --is-ancestor HEAD "$main" 2>/dev/null; then
-    if git -C "$CANON" pull -q --ff-only 2>/dev/null; then say "$BRANCH is on origin/$main; $main fast-forwarded"
-    else say "$BRANCH is on origin/$main; $main did not fast-forward (pull it when its tree allows: git -C \"$CANON\" pull --ff-only)"; fi
+    if git -C "$CANON" merge-base --is-ancestor "$main" "origin/$main" 2>/dev/null; then
+      if VAULT_INTEGRATE=1 git -C "$CANON" merge --ff-only -q "origin/$main" 2>/dev/null; then say "$BRANCH is on origin/$main; $main fast-forwarded"
+      else say "$BRANCH is on origin/$main; $main did not fast-forward to it (a file in $CANON is in the way: git -C \"$CANON\" merge --ff-only origin/$main shows which)"; fi
+    else
+      owe "$main in $CANON has diverged from origin/$main, and the next integrate will refuse it: reconcile it (e.g. rebase $main onto origin/$main), then rerun"
+    fi
   fi
 elif [ "$route" = "direct" ]; then
   ( cd "$WORK" && "$SCRIPT_DIR/vault-worktree.sh" integrate ) >/dev/null 2>&1; rc=$?

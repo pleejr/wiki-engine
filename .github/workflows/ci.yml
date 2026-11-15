@@ -916,7 +916,21 @@ jobs:
           W10="$(WIKI_PATH="$DV" WIKI_WT_SESSION=d10 "$E/vault-worktree.sh" ensure 2>/dev/null)"
           rc=0; out="$(cd "$W10" && WIKI_PATH="$DV" WIKI_WT_SESSION=d10 "$E/distill-finish.sh" --no-push 2>&1)" || rc=$?
           chk "direct route: a session with no commits lands nothing, even with canonical main behind and blocked" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^VAULT DONE" && printf "%s" "$out" | grep -q "nothing on wt/d10"'
-          rm -f "$DV/peer.md"; V="$T/e"; export WIKI_PATH="$V"
+          rm -f "$DV/peer.md"
+          # E10b: canonical main both behind origin and ahead of it (an unpushed local commit).
+          # The empty session owes nothing of its own, but the divergence must be reported:
+          # the next session's integrate refuses it.
+          VAULT_INTEGRATE=1 git -C "$DV" commit -q --allow-empty -m "unpushed local commit" --no-verify
+          W10="$(WIKI_PATH="$DV" WIKI_WT_SESSION=d10b "$E/vault-worktree.sh" ensure 2>/dev/null)"
+          rc=0; out="$(cd "$W10" && WIKI_PATH="$DV" WIKI_WT_SESSION=d10b "$E/distill-finish.sh" --no-push 2>&1)" || rc=$?
+          chk "direct route: an empty session reports a canonical main diverged from origin" '[ "$rc" = 1 ] && printf "%s" "$out" | grep -q "has diverged from origin/main"'
+          # E10c: a detached canonical is refused, never read as "nothing to land".
+          git -C "$DV" checkout -q --detach
+          W10="$(WIKI_PATH="$DV" WIKI_WT_SESSION=d10c "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "a real commit beside a detached canonical" "$W10"
+          rc=0; out="$(cd "$W10" && WIKI_PATH="$DV" WIKI_WT_SESSION=d10c "$E/distill-finish.sh" --no-push 2>&1)" || rc=$?
+          chk "a detached canonical is refused with rc 2, and the session's commit is not reported as landed" '[ "$rc" = 2 ] && printf "%s" "$out" | grep -q "not on a branch" && [ -d "$W10" ]'
+          git -C "$DV" checkout -q main
+          V="$T/e"; export WIKI_PATH="$V"
           # E11 (near miss): a rerun after the session's pull request was merged with a merge
           # commit. Its tip is now on origin/main, so the count is zero; canonical main must
           # still be brought up to it, as the merged-pull-request path does.
