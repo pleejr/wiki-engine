@@ -916,7 +916,16 @@ jobs:
           W10="$(WIKI_PATH="$DV" WIKI_WT_SESSION=d10 "$E/vault-worktree.sh" ensure 2>/dev/null)"
           rc=0; out="$(cd "$W10" && WIKI_PATH="$DV" WIKI_WT_SESSION=d10 "$E/distill-finish.sh" --no-push 2>&1)" || rc=$?
           chk "direct route: a session with no commits lands nothing, even with canonical main behind and blocked" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^VAULT DONE" && printf "%s" "$out" | grep -q "nothing on wt/d10"'
-          rm -f "$DV/peer.md"; export WIKI_PATH="$T/e"
+          rm -f "$DV/peer.md"; V="$T/e"; export WIKI_PATH="$V"
+          # E11 (near miss): a rerun after the session's pull request was merged with a merge
+          # commit. Its tip is now on origin/main, so the count is zero; canonical main must
+          # still be brought up to it, as the merged-pull-request path does.
+          W11="$(WIKI_WT_SESSION=e11 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "merged with a merge commit" "$W11"; tip="$(git -C "$W11" rev-parse HEAD)"
+          git -C "$W11" push -q origin "HEAD:refs/heads/wt/e11"
+          git -C "$T/e-other" pull -q origin main
+          git -C "$T/e-other" fetch -q origin wt/e11 && git -C "$T/e-other" merge -q --no-ff -m "Merge pull request #90" FETCH_HEAD && git -C "$T/e-other" push -q origin main
+          rc=0; out="$(cd "$W11" && WIKI_WT_SESSION=e11 PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: a rerun after a merge-commit merge fast-forwards canonical main to it" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "main fast-forwarded" && git -C "$V" merge-base --is-ancestor "$tip" main'
 
           # F: a repository the session touched is reported, not acted on
           R="$T/side"; git init -q "$R"; echo a > "$R/f"

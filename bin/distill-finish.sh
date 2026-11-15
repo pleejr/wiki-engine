@@ -120,6 +120,14 @@ ahead="$(git -C "$WORK" rev-list --count HEAD --not "${not_refs[@]}" 2>/dev/null
 landed=0
 if [ "$ahead" = "0" ]; then
   say "nothing on $BRANCH that $base lacks"; landed=1
+  # Zero can also mean the branch is already on origin/<main> but not on canonical <main>: a
+  # rerun after its pull request was merged with a merge commit, or a merge another session
+  # made. Bring canonical up to it when it can fast-forward; when it cannot (an untracked file
+  # in the way), the work is on origin and nothing is owed, so say so rather than fail.
+  if [ "${#not_refs[@]}" -gt 1 ] && ! git -C "$WORK" merge-base --is-ancestor HEAD "$main" 2>/dev/null; then
+    if git -C "$CANON" pull -q --ff-only 2>/dev/null; then say "$BRANCH is on origin/$main; $main fast-forwarded"
+    else say "$BRANCH is on origin/$main; $main did not fast-forward (pull it when its tree allows: git -C \"$CANON\" pull --ff-only)"; fi
+  fi
 elif [ "$route" = "direct" ]; then
   ( cd "$WORK" && "$SCRIPT_DIR/vault-worktree.sh" integrate ) >/dev/null 2>&1; rc=$?
   case "$rc" in
