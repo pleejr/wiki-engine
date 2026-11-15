@@ -6,13 +6,14 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [3.7.5] — 2026-11-15
 
-Patch — `distill-finish.sh` counts a pull-request vault's new commits against `origin/main`, not a stale local `main`.
+Patch — `distill-finish.sh` no longer counts a merge it has not pulled as the session's own work.
 
 ### Fixed
-- **An empty session opened a pull request GitHub refuses** (fail-closed). On the `publish = pr` route the count of commits to land was taken against canonical `main`, which can sit behind `origin/main` after a merge not pulled locally. A session cut from `origin/main` with no commits then counted that merge as ahead, pushed an empty `wt/<session>` branch, and reported `VAULT OUTSTANDING` with "No commits between main and wt/<session>". It now counts against `origin/<main>`, the base the branch was cut from and the pull request targets, and takes the "nothing to land" path. The `direct` route is unchanged: it lands into canonical `main`, which `integrate` reconciles with origin first.
+- **An empty session opened a pull request GitHub refuses** (fail-closed). The count of commits to land was taken against canonical `main` alone, which can sit behind `origin/main` after a merge not pulled locally. On the `publish = pr` route a session with no commits then pushed an empty `wt/<session>` branch and reported `VAULT OUTSTANDING` with "No commits between main and wt/<session>". It now counts only commits in neither canonical `main` nor `origin/main`, the base `vault-worktree.sh ensure` normally cuts from, and takes the "nothing to land" path.
+- **The direct route had the same defect in two forms.** An empty session integrated the peer's commit and reported `1 commit(s) landed`; with the peer's file left untracked in canonical, the blocked fast-forward told it to resolve a conflict in its own worktree. The same count fixes both.
 
 ### Tests
-- A pull-request vault with canonical `main` one commit behind `origin/main`: a session with no commits must report `VAULT DONE` and push no branch (red against 3.7.4), and a session with a commit must still open its pull request.
+- Canonical `main` one commit behind `origin/main`: on the pull-request route a session with no commits must report `VAULT DONE` and push no branch, and on the direct route (fast-forward blocked) it must report `VAULT DONE` with nothing landed; all three are red against 3.7.4. A session with a commit must still open its pull request.
 
 ## [3.7.4] — 2026-11-15
 

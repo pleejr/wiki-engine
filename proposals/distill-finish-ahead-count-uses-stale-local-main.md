@@ -1,7 +1,7 @@
 ---
 slug: distill-finish-ahead-count-uses-stale-local-main
 outcome: accepted
-reason: "accepted. Reproduced at HEAD (3.7.4): a publish = pr vault with canonical main one commit behind origin/main and a session worktree with no commits pushed wt/<session> and asked for a pull request. The count now uses origin/<main> on the pr route, the base vault-worktree.sh ensure cuts from and the pull request targets, falling back to <main> when that ref is absent. The direct route, which the report asked to be reviewed, keeps counting against canonical <main>: it lands into that branch, and integrate fast-forwards it to origin/<main> before rebasing, so a stale local main there is reconciled rather than misreported."
+reason: "accepted. Reproduced at HEAD (3.7.4): a publish = pr vault with canonical main one commit behind origin/main and a session worktree with no commits pushed wt/<session> and asked for a pull request. The suggested origin/<main> base fixed the pr route, but review found the direct route, which the report asked to be checked, failing the same way: an empty session integrated the peer's commit and reported it as landed, and with the peer's file untracked in canonical it reported a conflict in its own worktree. So the count is now HEAD --not <main> origin/<main> on both routes: only commits in neither ref are new, whichever one is stale."
 received: 2026-11-06
 ---
 

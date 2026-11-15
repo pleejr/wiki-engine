@@ -906,6 +906,17 @@ jobs:
           W9="$(WIKI_WT_SESSION=e9 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "a real landing beside a stale main" "$W9"
           rc=0; out="$(cd "$W9" && WIKI_WT_SESSION=e9 PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
           chk "pr route: a session with a commit over origin/main still opens its pull request" '[ "$rc" = 1 ] && printf "%s" "$out" | grep -q "pull request #77 is not merged"'
+          # E10: the same stale canonical main on the direct route. Counting against it alone
+          # integrated the peer's commit and reported it as this session's landing; with the
+          # peer's file left untracked in canonical, the fast-forward was blocked and an empty
+          # session was told to resolve a conflict in its own worktree.
+          mkvault d; printf 'publish = direct\n' > "$V/.wiki-gates.conf"; DV="$V"
+          O="$T/d-other"; git clone -q "$T/d.git" "$O"; echo peer > "$O/peer.md"; git -C "$O" add peer.md; git -C "$O" commit -qm "peer page" >/dev/null 2>&1; git -C "$O" push -q origin main
+          git -C "$DV" fetch -q origin; echo local > "$DV/peer.md"
+          W10="$(WIKI_PATH="$DV" WIKI_WT_SESSION=d10 "$E/vault-worktree.sh" ensure 2>/dev/null)"
+          rc=0; out="$(cd "$W10" && WIKI_PATH="$DV" WIKI_WT_SESSION=d10 "$E/distill-finish.sh" --no-push 2>&1)" || rc=$?
+          chk "direct route: a session with no commits lands nothing, even with canonical main behind and blocked" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^VAULT DONE" && printf "%s" "$out" | grep -q "nothing on wt/d10"'
+          rm -f "$DV/peer.md"; export WIKI_PATH="$T/e"
 
           # F: a repository the session touched is reported, not acted on
           R="$T/side"; git init -q "$R"; echo a > "$R/f"
