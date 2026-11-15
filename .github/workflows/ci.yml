@@ -889,6 +889,24 @@ jobs:
           W7="$(WIKI_WT_SESSION=e7 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "landing beside unlanded work" "$W7"
           rc=0; out="$(cd "$W7" && WIKI_WT_SESSION=e7 GH_PRS_JSON="$T/prs-79.json" PATH="$T/ghjson:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
           chk "pr route: an unlanded remote tip is not overwritten" '[ "$rc" = 1 ] && [ "$(git -C "$T/e.git" rev-parse refs/heads/wt/e7)" = "$foreign" ] && printf "%s" "$out" | grep -q "push of wt/e7 failed"'
+          # E8 (distill-finish-ahead-count-uses-stale-local-main): canonical main is behind
+          # origin/main (another session's merge, not pulled here). A session worktree is cut from
+          # origin/main and makes no commits, so nothing is new against the base the pull request
+          # targets. Counting against the stale local main called the merged commit "ahead",
+          # pushed the branch and asked GitHub for a pull request it refuses.
+          O="$T/e-other"; git clone -q "$T/e.git" "$O"; entry "merged by another session" "$O"; git -C "$O" push -q origin main
+          git -C "$V" fetch -q origin
+          chk "fixture: canonical main is behind origin/main" '[ "$(git -C "$V" rev-list --count main..origin/main)" = 1 ]'
+          mkdir -p "$T/ghempty"; printf '#!/bin/sh\ncase "$1 $2" in "pr list") echo "";; "pr create") echo "pull request create failed: GraphQL: No commits between main and wt/e8 (createPullRequest)" >&2; exit 1;; esac\n' > "$T/ghempty/gh"; chmod +x "$T/ghempty/gh"
+          W8="$(WIKI_WT_SESSION=e8 "$E/vault-worktree.sh" ensure 2>/dev/null)"
+          rc=0; out="$(cd "$W8" && WIKI_WT_SESSION=e8 PATH="$T/ghempty:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: a session with no commits over origin/main lands nothing, even with canonical main behind" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^VAULT DONE" && printf "%s" "$out" | grep -q "nothing on wt/e8"'
+          chk "...and pushes no empty branch" '! git -C "$T/e.git" rev-parse -q --verify refs/heads/wt/e8 >/dev/null'
+          # E9 (near miss): with canonical main still behind, a session that does commit still opens its PR.
+          W9="$(WIKI_WT_SESSION=e9 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "a real landing beside a stale main" "$W9"
+          rc=0; out="$(cd "$W9" && WIKI_WT_SESSION=e9 PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" 2>&1)" || rc=$?
+          chk "pr route: a session with a commit over origin/main still opens its pull request" '[ "$rc" = 1 ] && printf "%s" "$out" | grep -q "pull request #77 is not merged"'
+
           # F: a repository the session touched is reported, not acted on
           R="$T/side"; git init -q "$R"; echo a > "$R/f"
           out="$(cd "$W" && PATH="$T/ghbin:$PATH" "$E/distill-finish.sh" --repo "$R" 2>&1)" || true

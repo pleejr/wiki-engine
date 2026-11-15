@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.7.5] — 2026-11-15
+
+Patch — `distill-finish.sh` counts a pull-request vault's new commits against `origin/main`, not a stale local `main`.
+
+### Fixed
+- **An empty session opened a pull request GitHub refuses** (fail-closed). On the `publish = pr` route the count of commits to land was taken against canonical `main`, which can sit behind `origin/main` after a merge not pulled locally. A session cut from `origin/main` with no commits then counted that merge as ahead, pushed an empty `wt/<session>` branch, and reported `VAULT OUTSTANDING` with "No commits between main and wt/<session>". It now counts against `origin/<main>`, the base the branch was cut from and the pull request targets, and takes the "nothing to land" path. The `direct` route is unchanged: it lands into canonical `main`, which `integrate` reconciles with origin first.
+
+### Tests
+- A pull-request vault with canonical `main` one commit behind `origin/main`: a session with no commits must report `VAULT DONE` and push no branch (red against 3.7.4), and a session with a commit must still open its pull request.
+
 ## [3.7.4] — 2026-11-15
 
 Patch — the prompt recall hook ends a slow recall itself, silently, before the harness timeout, and logs how often it does.

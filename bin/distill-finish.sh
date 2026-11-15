@@ -107,10 +107,19 @@ say "lint passed"
 # --- 3. land ----------------------------------------------------------------------------
 git -C "$CANON" fetch -q origin 2>/dev/null || true
 main="$(git -C "$CANON" rev-parse --abbrev-ref HEAD)"
-ahead="$(git -C "$WORK" rev-list --count "$main..HEAD" 2>/dev/null || echo 0)"
+# What counts as new depends on where it lands. A pull request targets origin/<main>, which is
+# also the base vault-worktree.sh cut this branch from; canonical <main> can sit behind it (a
+# merge not pulled here), and counting against it called that merge "ahead", pushed an empty
+# branch and asked for a pull request GitHub refuses. The direct route lands into canonical
+# <main> itself (integrate reconciles it with origin first), so it keeps counting against that.
+base="$main"
+if [ "$route" = "pr" ] && git -C "$WORK" rev-parse -q --verify "origin/$main" >/dev/null 2>&1; then
+  base="origin/$main"
+fi
+ahead="$(git -C "$WORK" rev-list --count "$base..HEAD" 2>/dev/null || echo 0)"
 landed=0
 if [ "$ahead" = "0" ]; then
-  say "nothing on $BRANCH that $main lacks"; landed=1
+  say "nothing on $BRANCH that $base lacks"; landed=1
 elif [ "$route" = "direct" ]; then
   ( cd "$WORK" && "$SCRIPT_DIR/vault-worktree.sh" integrate ) >/dev/null 2>&1; rc=$?
   case "$rc" in
