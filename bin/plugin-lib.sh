@@ -87,7 +87,7 @@ engine_marketplace_source() {
          "${CLAUDE_PLUGIN_ROOT:-}/.claude-plugin/plugin.json" 2>/dev/null | head -1)"
   [ -n "$name" ] || name=wiki-engine
   command -v python3 >/dev/null 2>&1 || return 0
-  python3 - "$cfg" "$name" <<'PYMP' 2>/dev/null || true
+  python3 -I - "$cfg" "$name" <<'PYMP' 2>/dev/null || true
 import json, os, sys
 cfg, plugin = sys.argv[1], sys.argv[2]
 try:
@@ -129,7 +129,7 @@ engine_update_remedy() {
 engine_installed_root() {
   local cfg="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" p
   command -v python3 >/dev/null 2>&1 || return 0
-  p="$(python3 - "$cfg" <<'PYIR' 2>/dev/null || true
+  p="$(python3 -I - "$cfg" <<'PYIR' 2>/dev/null || true
 import json, os, sys
 try:
     installed = json.load(open(os.path.join(sys.argv[1], "installed_plugins.json")))["plugins"]

@@ -16,7 +16,9 @@
 #
 # Deterministic: runs a CPU embedder, NEVER `claude` — no re-entry path (hard rule, see
 # CLAUDE.md). Always exits 0, so a slow or broken index can never block a prompt; its own
-# RAG_RECALL_DEADLINE (at most 6s) bounds the latency, below the hooks.json timeout.
+# RAG_RECALL_DEADLINE (at most 6s) bounds the recall step, leaving the hooks.json timeout
+# room for the stdin read and the short Python steps around it. Each run appends one line
+# (time, ok|deadline|error|interrupted, seconds, deadline) to <vault>/.rag/recall-hook.log.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,18 +58,33 @@ set -- --min-gap "${RAG_RECALL_MIN_GAP:-0.04}"
 # longer one hands the run back to the harness timeout. CI asserts stdin timeout + maximum
 # + 1s stays below the hooks.json timeout.
 RECALL_DEADLINE_MAX=6
-hits="$(python3 -I -c '
-import math, subprocess, sys
+hits="$(RAG_RECALL_LOG="$WIKI/.rag/recall-hook.log" python3 -I -c '
+import os, subprocess, sys, time
 top = float(sys.argv[2])
 try: deadline = float(sys.argv[1])
 except ValueError: deadline = top
-if not (math.isfinite(deadline) and 0 < deadline <= top): deadline = top
+if not 0 < deadline <= top: deadline = top
+t0 = time.time()
 p = subprocess.Popen(sys.argv[3:], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                      stderr=subprocess.DEVNULL)
+def log(outcome):
+    # One line per run, so how often recall misses its deadline is a reading, not a guess.
+    # Kept under ~256K by dropping the older half; failure to log never fails the hook.
+    try:
+        path = os.environ["RAG_RECALL_LOG"]
+        if os.path.exists(path) and os.path.getsize(path) > 262144:
+            lines = open(path).readlines(); open(path, "w").writelines(lines[len(lines) // 2:])
+        with open(path, "a") as f:
+            f.write("%s %s %.2f %g\n" % (time.strftime("%Y-%m-%dT%H:%M:%S%z"), outcome,
+                                         time.time() - t0, deadline))
+    except Exception: pass
 try:
     out, _ = p.communicate(timeout=deadline)
-except BaseException:
-    p.kill(); p.wait(); sys.exit(124)
+except BaseException as e:
+    p.kill(); p.wait()
+    log("deadline" if isinstance(e, subprocess.TimeoutExpired) else "interrupted")
+    sys.exit(124)
+log("ok" if p.returncode == 0 else "error")
 sys.stdout.buffer.write(out)
 sys.exit(p.returncode)' "${RAG_RECALL_DEADLINE:-}" "$RECALL_DEADLINE_MAX" \
   "$SCRIPT_DIR/recall.sh" --wiki "$WIKI" --json -n "${RAG_RECALL_N:-5}" "$@" \

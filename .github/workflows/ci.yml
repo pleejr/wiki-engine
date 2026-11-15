@@ -3602,8 +3602,22 @@ jobs:
           out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:8774/x RAG_RECALL_DEADLINE=inf "$H")"; rc=$?
           el=$(( $(date +%s) - t0 ))
           for _ in $(seq 1 20); do [ -e "$HUNG" ] && break; sleep 0.1; done
-          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -le 9 ] && [ -e "$HUNG" ]
-          ck $? "RAG_RECALL_DEADLINE=inf is capped at the maximum (took ${el}s)"
+          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -ge 5 ] && [ "$el" -le 9 ] && [ -e "$HUNG" ]
+          ck $? "RAG_RECALL_DEADLINE=inf runs for the maximum, not zero and not unbounded (took ${el}s)"
+          rm -f "$HUNG"; t0=$(date +%s)
+          out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:8774/x RAG_RECALL_DEADLINE=20 "$H")"; rc=$?
+          el=$(( $(date +%s) - t0 ))
+          for _ in $(seq 1 20); do [ -e "$HUNG" ] && break; sleep 0.1; done
+          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -ge 5 ] && [ "$el" -le 9 ] && [ -e "$HUNG" ]
+          ck $? "RAG_RECALL_DEADLINE=20 is capped at the maximum (took ${el}s)"
+          # Each run leaves one line in the vault's recall log, so how often the deadline
+          # fires is a reading. The last run above missed it; an answered one is "ok".
+          L="$V/.rag/recall-hook.log"
+          tail -1 "$L" | grep -Eq '^[0-9T:+-]+ deadline [0-9.]+ 6$'
+          ck $? "a run that hits the deadline is logged as deadline"
+          hk "the mortgage rate lock expires before closing" >/dev/null
+          tail -1 "$L" | grep -Eq '^[0-9T:+-]+ ok [0-9.]+ 6$'
+          ck $? "an answered run is logged as ok"
           # The hook runs in whatever directory the session is in. A module there named like a
           # stdlib one must not run in place of it, in the hook or in recall.sh's embedder.
           P="$RUNNER_TEMP/planted"; rm -rf "$P"; mkdir -p "$P"

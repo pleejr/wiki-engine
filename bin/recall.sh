@@ -48,7 +48,6 @@ done
 [ -n "$QUERY" ] || QUERY="$(cat)"
 [ -n "$WIKI" ] || { echo "error: set \$WIKI_PATH or pass --wiki DIR" >&2; exit 1; }
 [ -d "$WIKI" ] || { echo "error: no vault at $WIKI" >&2; exit 1; }
-WIKI="$(cd "$WIKI" && pwd)"   # absolute: recall runs from its own directory below
 [ -n "$QUERY" ] || { echo "error: empty query" >&2; exit 1; }
 
 INDEX="$WIKI/.rag/index.jsonl"
@@ -62,17 +61,17 @@ else
 fi
 [ -n "$PYBIN" ] || { echo "error: python3 required" >&2; exit 1; }
 
-# Run from this script's own directory: Python puts the working
-# directory first on sys.path for a script read from stdin, so a json.py (or any module) in
-# whatever directory recall was started from would otherwise run in place of the stdlib.
-cd "$SCRIPT_DIR" || exit 1
-
 export RAG_WIKI="$WIKI" RAG_BINDIR="$SCRIPT_DIR" RAG_QUERY="$QUERY" RAG_TOPN="$TOPN" RAG_JSON="$JSON" \
   RAG_MINSCORE="$MINSCORE" RAG_MINGAP="$MINGAP" RAG_EXCLUDE_HUBS="$HUBS"
 
 # exec: the embedder replaces this shell, so a caller that stops recall stops the embedder.
 exec "$PYBIN" - <<'PY'
-import os, sys, json, math
+# A script read from stdin gets the working directory first on sys.path, so a json.py (or
+# any module) in the directory recall was started from would run in place of the stdlib.
+# Drop that entry before importing anything; os and sys are already loaded at startup.
+import os, sys
+sys.path = [p for p in sys.path if p not in ("", ".")]
+import json, math
 sys.path.insert(0, os.environ["RAG_BINDIR"])
 from rag_embed import Embedder
 

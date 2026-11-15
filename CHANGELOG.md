@@ -6,14 +6,17 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 ## [3.7.4] — 2026-11-15
 
-Patch — the prompt recall hook ends a slow recall itself, silently, before the harness timeout.
+Patch — the prompt recall hook ends a slow recall itself, silently, before the harness timeout, and logs how often it does.
 
 ### Fixed
 - **A slow recall surfaced "UserPromptSubmit hook ... timed out after 10s — output discarded"** (fail-closed). `recall-hook.sh` had no bound of its own and relied on the 10s `hooks.json` timeout, so a recall slowed by load was killed by the harness with a visible error instead of ending quietly as documented. It now stops `recall.sh` after `RAG_RECALL_DEADLINE` seconds (at most 6, the default) and exits 0 with no output. `recall.sh` now execs its embedder, so that kill reaches the process doing the work, and a signal sent to the hook's process group still reaches it. A deadline that is not a number in (0, 6] uses 6, since a longer one hands the run back to the harness timeout.
-- **A `json.py` in the directory recall was started from ran in place of the standard library.** `recall.sh` read its Python from stdin, which puts the working directory first on `sys.path`; it now runs from its own directory, and the hook's own Python steps run with `-I`.
+- **A `json.py` in the directory a hook ran from could run in place of the standard library.** `recall.sh` read its Python from stdin, which puts the working directory first on `sys.path`; it now drops that entry before importing anything. The recall hook's own Python steps, the capture hook's payload parser and the plugin-metadata readers in `plugin-lib.sh` run with `-I`.
+
+### Added
+- **`<vault>/.rag/recall-hook.log`** — one line per prompt recall: time, `ok` / `deadline` / `error` / `interrupted`, seconds taken, and the deadline in force. Kept under about 256K. It makes the share of prompts that miss the deadline a reading, which the deferred index-format speed-up needs before it can be decided.
 
 ### Tests
-- An embedder that answers after 30s: the hook must exit 0 with no output inside the deadline (red against 3.7.3 at 31s), and the embedding process must hang up its connection (red when `recall.sh` does not exec it). A TERM to the hook's process group must stop the embedding process; `RAG_RECALL_DEADLINE=inf` must be capped at the maximum; a planted `json.py` in the working directory must not run (red without the `cd`). The `hooks.json` timeout must outlast the stdin timeout plus the maximum deadline plus 1s.
+- An embedder that answers after 30s: the hook must exit 0 with no output inside the deadline (red against 3.7.3 at 31s), and the embedding process must hang up its connection (red when `recall.sh` does not exec it). A TERM to the hook's process group must stop the embedding process. `RAG_RECALL_DEADLINE=inf` and `=20` must both run for the maximum, not zero and not longer (red without the cap). A planted `json.py` in the working directory must not run (red without the `sys.path` filter). The log must record `deadline` and `ok` runs. The `hooks.json` timeout must outlast the stdin timeout plus the maximum deadline plus 1s.
 
 ## [3.7.3] — 2026-10-27
 

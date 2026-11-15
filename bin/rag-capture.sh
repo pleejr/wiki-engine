@@ -92,7 +92,7 @@ if [ ! -t 0 ] && command -v python3 >/dev/null 2>&1; then
   hook_json=""
   IFS= read -r -d '' -t "${RAG_CAPTURE_STDIN_TIMEOUT:-2}" hook_json || true
   if [ -n "$hook_json" ]; then
-    hook_vals="$(printf '%s' "$hook_json" | python3 -c 'import sys,json
+    hook_vals="$(printf '%s' "$hook_json" | python3 -I -c 'import sys,json
 try: d=json.load(sys.stdin)
 except Exception: d={}
 print(d.get("cwd",""))
