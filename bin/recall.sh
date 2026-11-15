@@ -64,8 +64,14 @@ fi
 export RAG_WIKI="$WIKI" RAG_BINDIR="$SCRIPT_DIR" RAG_QUERY="$QUERY" RAG_TOPN="$TOPN" RAG_JSON="$JSON" \
   RAG_MINSCORE="$MINSCORE" RAG_MINGAP="$MINGAP" RAG_EXCLUDE_HUBS="$HUBS"
 
-"$PYBIN" - <<'PY'
-import os, sys, json, math
+# exec: the embedder replaces this shell, so a caller that stops recall stops the embedder.
+exec "$PYBIN" - <<'PY'
+# A script read from stdin gets the working directory first on sys.path, so a json.py (or
+# any module) in the directory recall was started from would run in place of the stdlib.
+# Drop that entry before importing anything; os and sys are already loaded at startup.
+import os, sys
+sys.path = [p for p in sys.path if p not in ("", ".")]
+import json, math
 sys.path.insert(0, os.environ["RAG_BINDIR"])
 from rag_embed import Embedder
 

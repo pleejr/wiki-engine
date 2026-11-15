@@ -3546,8 +3546,96 @@ jobs:
           [ $rc = 0 ] && [ -z "$out" ]; ck $? "a vault with no index exits 0 and adds nothing"
           out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:9/x "$H")"; rc=$?
           [ $rc = 0 ] && [ -z "$out" ]; ck $? "an unreachable embedder exits 0 and adds nothing"
-          python3 -c 'import json; h=json.load(open("hooks/hooks.json"))["hooks"]["UserPromptSubmit"][0]["hooks"][0]; assert "recall-hook.sh" in h["command"] and h.get("timeout")'
-          ck $? "hooks.json wires the hook with a timeout"
+          # A slow recall must end inside the hook, silently. When the harness timeout ends it
+          # instead, the user sees "timed out after 10s — output discarded" on that prompt.
+          # The stub answers after 30s; the hook's own deadline must stop the run long before.
+          # It also records when the client hangs up, which is how the test sees that the
+          # embedding process itself was stopped, not only the shell script that started it.
+          HUNG="$RUNNER_TEMP/recall-hungup"; rm -f "$HUNG"
+          HUNG="$HUNG" python3 - <<'PY' &
+          import os, socket, time
+          from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+          class H(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  self.rfile.read(int(self.headers.get('Content-Length', 0)))
+                  end = time.time() + 30
+                  self.connection.settimeout(0.2)
+                  while time.time() < end:
+                      try:
+                          if self.connection.recv(1, socket.MSG_PEEK) == b"":
+                              open(os.environ["HUNG"], "w").close(); return
+                      except socket.timeout: pass
+                      except OSError:
+                          open(os.environ["HUNG"], "w").close(); return
+                  self.send_response(500); self.end_headers()
+              def log_message(self, *a): pass
+          ThreadingHTTPServer(('127.0.0.1', 8774), H).serve_forever()
+          PY
+          SLOW=$!
+          trap 'kill $STUB $SLOW 2>/dev/null' EXIT
+          for _ in $(seq 1 50); do
+            python3 -c "import socket;socket.create_connection(('127.0.0.1',8774),0.2)" 2>/dev/null && break
+            sleep 0.1
+          done
+          t0=$(date +%s)
+          out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:8774/x RAG_RECALL_DEADLINE=2 "$H")"; rc=$?
+          el=$(( $(date +%s) - t0 ))
+          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -le 5 ]
+          ck $? "a recall slower than RAG_RECALL_DEADLINE exits 0 and adds nothing, inside the deadline (took ${el}s)"
+          for _ in $(seq 1 20); do [ -e "$HUNG" ] && break; sleep 0.1; done
+          [ -e "$HUNG" ]
+          ck $? "the deadline stops the embedding process too, not only recall.sh"
+          # A signal the harness sends to the hook's process group must reach the embedding
+          # process, as it did before the deadline existed. A deadline longer than the maximum
+          # (inf, or any large number) must use the maximum: inf makes the timer raise, which
+          # would switch recall off, and a large finite one hands the run back to the harness.
+          rm -f "$HUNG"
+          WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:8774/x RAG_RECALL_DEADLINE=20 H="$H" python3 -c '
+          import os, signal, subprocess, time
+          p = subprocess.Popen([os.environ["H"]], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, start_new_session=True)
+          p.stdin.write(b"{\"prompt\":\"the mortgage rate lock expires before closing\"}"); p.stdin.close()
+          time.sleep(2); os.killpg(p.pid, signal.SIGTERM); p.wait()'
+          for _ in $(seq 1 30); do [ -e "$HUNG" ] && break; sleep 0.1; done
+          [ -e "$HUNG" ]
+          ck $? "a TERM to the hook's process group stops the embedding process"
+          rm -f "$HUNG"; t0=$(date +%s)
+          out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:8774/x RAG_RECALL_DEADLINE=inf "$H")"; rc=$?
+          el=$(( $(date +%s) - t0 ))
+          for _ in $(seq 1 20); do [ -e "$HUNG" ] && break; sleep 0.1; done
+          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -ge 5 ] && [ "$el" -le 9 ] && [ -e "$HUNG" ]
+          ck $? "RAG_RECALL_DEADLINE=inf runs for the maximum, not zero and not unbounded (took ${el}s)"
+          rm -f "$HUNG"; t0=$(date +%s)
+          out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:8774/x RAG_RECALL_DEADLINE=20 "$H")"; rc=$?
+          el=$(( $(date +%s) - t0 ))
+          for _ in $(seq 1 20); do [ -e "$HUNG" ] && break; sleep 0.1; done
+          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -ge 5 ] && [ "$el" -le 9 ] && [ -e "$HUNG" ]
+          ck $? "RAG_RECALL_DEADLINE=20 is capped at the maximum (took ${el}s)"
+          # Each run leaves one line in the vault's recall log, so how often the deadline
+          # fires is a reading. The last run above missed it; an answered one is "ok".
+          L="$V/.rag/recall-hook.log"
+          tail -1 "$L" | grep -Eq '^[0-9T:+-]+ deadline [0-9.]+ 6$'
+          ck $? "a run that hits the deadline is logged as deadline"
+          hk "the mortgage rate lock expires before closing" >/dev/null
+          tail -1 "$L" | grep -Eq '^[0-9T:+-]+ ok [0-9.]+ 6$'
+          ck $? "an answered run is logged as ok"
+          # The hook runs in whatever directory the session is in. A module there named like a
+          # stdlib one must not run in place of it, in the hook or in recall.sh's embedder.
+          P="$RUNNER_TEMP/planted"; rm -rf "$P"; mkdir -p "$P"
+          printf 'open(%s, "w").close()\nraise ImportError\n' "'$P/ran'" > "$P/json.py"
+          out="$(cd "$P" && printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" "$OLDPWD/$H")"
+          [ ! -e "$P/ran" ] && printf '%s' "$out" | grep -q 'memory/lock.md'
+          ck $? "a json.py in the working directory does not run, and recall still answers"
+          python3 - "$H" <<'PY'
+          import json, re, sys
+          h = json.load(open("hooks/hooks.json"))["hooks"]["UserPromptSubmit"][0]["hooks"][0]
+          src = open(sys.argv[1]).read()
+          d = float(re.search(r'^RECALL_DEADLINE_MAX=([0-9.]+)$', src, re.M).group(1))
+          s = float(re.search(r'RAG_RECALL_STDIN_TIMEOUT:-([0-9.]+)', src).group(1))
+          assert "recall-hook.sh" in h["command"] and h.get("timeout")
+          # stdin read + the longest deadline + the three short python starts and the kill
+          assert d + s + 1 < h["timeout"], (d, s, h["timeout"])
+          PY
+          ck $? "hooks.json wires the hook with a timeout that outlasts the hook's own deadline"
           ! grep -Eq '(^|[^-])\bclaude +(-p|--print)|exec +claude|"claude"' "$H"
           ck $? "the hook never invokes claude"
           exit "$fail"
