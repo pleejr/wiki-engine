@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.7.4] — 2026-11-15
+
+Patch — the prompt recall hook ends a slow recall itself, silently, before the harness timeout.
+
+### Fixed
+- **A slow recall surfaced "UserPromptSubmit hook ... timed out after 10s — output discarded"** (fail-closed). `recall-hook.sh` had no bound of its own and relied on the 10s `hooks.json` timeout, so a recall slowed by load was killed by the harness with a visible error instead of ending quietly as documented. It now runs `recall.sh` in its own process group under `RAG_RECALL_DEADLINE` (default 6s); on expiry it kills the whole group, including the embedding process, and exits 0 with no output. The same group kill runs on any other exit of the wrapper and on a TERM, INT or HUP sent to the hook, so no recall outlives the hook; a deadline that is not a finite positive number falls back to the default. The hook's three Python steps now run with `-I`, so a module planted in the working directory cannot shadow the standard library.
+
+### Tests
+- An embedder that answers after 30s: the hook must exit 0 with no output inside the deadline (red against 3.7.3 at 31s), and the embedding process must hang up its connection (red when only `recall.sh` is killed). A TERM to the hook's process group must stop the embedding process (red without the signal handlers), and `RAG_RECALL_DEADLINE=inf` must fall back to the default (red without the fallback). The `hooks.json` timeout must outlast the stdin timeout plus the default deadline plus 1s.
+
 ## [3.7.3] — 2026-10-27
 
 Patch — `engine-proposal.sh submit` fetches main before cutting the proposal branch.

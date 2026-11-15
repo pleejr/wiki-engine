@@ -15,8 +15,8 @@
 # adds an absolute floor, unset by default. RAG_RECALL_HOOK=0 switches it off.
 #
 # Deterministic: runs a CPU embedder, NEVER `claude` — no re-entry path (hard rule, see
-# CLAUDE.md). Always exits 0, so a slow or broken index can never block a prompt; the
-# hook's own timeout in hooks/hooks.json bounds the latency.
+# CLAUDE.md). Always exits 0, so a slow or broken index can never block a prompt; its own
+# RAG_RECALL_DEADLINE (default 6s) bounds the latency, below the hooks.json timeout.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,7 +34,7 @@ if [ ! -t 0 ]; then
 fi
 [ -n "$payload" ] || exit 0
 
-prompt="$(printf '%s' "$payload" | python3 -c '
+prompt="$(printf '%s' "$payload" | python3 -I -c '
 import sys, json, os
 try: p = json.load(sys.stdin).get("prompt") or ""
 except Exception: p = ""
@@ -46,10 +46,42 @@ print(p[:1000])' 2>/dev/null)" || exit 0
 
 set -- --min-gap "${RAG_RECALL_MIN_GAP:-0.04}"
 [ -n "${RAG_RECALL_MIN_SCORE:-}" ] && set -- "$@" --min-score "$RAG_RECALL_MIN_SCORE"
-hits="$("$SCRIPT_DIR/recall.sh" --wiki "$WIKI" --json -n "${RAG_RECALL_N:-5}" "$@" \
+
+# The hook ends a slow recall itself, inside RAG_RECALL_DEADLINE seconds, and adds nothing.
+# Left to the harness timeout in hooks/hooks.json, the same run is killed with a visible
+# "timed out ... output discarded" error on the prompt. recall.sh runs in its own process
+# group so the deadline stops the embedding process it starts, not only the shell script.
+# Because that group is not the hook's, every way the wrapper ends — deadline, error, or a
+# TERM/INT/HUP sent to the hook — kills it, so no recall outlives the hook. A deadline that
+# is not a finite positive number falls back to the default. Keep stdin timeout + deadline
+# + ~1s below the hooks.json timeout; CI asserts that.
+RECALL_DEADLINE_DEFAULT=6
+hits="$(python3 -I -c '
+import math, os, signal, subprocess, sys
+try: deadline = float(sys.argv[1])
+except ValueError: deadline = float("nan")
+if not (math.isfinite(deadline) and deadline > 0): deadline = float(sys.argv[2])
+p = None
+def reap():
+    if p is not None and p.poll() is None:
+        try: os.killpg(p.pid, signal.SIGKILL)
+        except OSError: pass
+        p.wait()
+def on_signal(signum, frame):
+    reap(); os._exit(128 + signum)
+for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP): signal.signal(s, on_signal)
+try:
+    p = subprocess.Popen(sys.argv[3:], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    out, _ = p.communicate(timeout=deadline)
+except BaseException:
+    reap(); sys.exit(124)
+sys.stdout.buffer.write(out)
+sys.exit(p.returncode)' "${RAG_RECALL_DEADLINE:-}" "$RECALL_DEADLINE_DEFAULT" \
+  "$SCRIPT_DIR/recall.sh" --wiki "$WIKI" --json -n "${RAG_RECALL_N:-5}" "$@" \
   "$prompt" 2>/dev/null)" || exit 0
 
-printf '%s' "$hits" | RAG_WIKI="$WIKI" python3 -c '
+printf '%s' "$hits" | RAG_WIKI="$WIKI" python3 -I -c '
 import sys, json, os
 try: hits = json.load(sys.stdin)
 except Exception: hits = []
