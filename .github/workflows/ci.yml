@@ -930,6 +930,16 @@ jobs:
           rc=0; out="$(cd "$W10" && WIKI_PATH="$DV" WIKI_WT_SESSION=d10c "$E/distill-finish.sh" --no-push 2>&1)" || rc=$?
           chk "a detached canonical is refused with rc 2, and the session's commit is not reported as landed" '[ "$rc" = 2 ] && printf "%s" "$out" | grep -q "not on a branch" && [ -d "$W10" ]'
           git -C "$DV" checkout -q main
+          # E10d (near miss): canonical main diverged only in history, its content equal to
+          # origin's (a squash merge of a local commit). integrate adopts that state, so an
+          # empty session must not report it as owed.
+          mkvault q; printf 'publish = direct\n' > "$V/.wiki-gates.conf"; QV="$V"
+          echo same > "$QV/sq.md"; git -C "$QV" add sq.md; VAULT_INTEGRATE=1 git -C "$QV" commit -qm "local page" --no-verify
+          Q="$T/q-other"; git clone -q "$T/q.git" "$Q"; echo same > "$Q/sq.md"; git -C "$Q" add sq.md; git -C "$Q" commit -qm "squash of local page" >/dev/null 2>&1; git -C "$Q" push -q origin main
+          git -C "$QV" fetch -q origin
+          W10="$(WIKI_PATH="$QV" WIKI_WT_SESSION=q1 "$E/vault-worktree.sh" ensure 2>/dev/null)"
+          rc=0; out="$(cd "$W10" && WIKI_PATH="$QV" WIKI_WT_SESSION=q1 "$E/distill-finish.sh" --no-push 2>&1)" || rc=$?
+          chk "direct route: a content-equal squash state is not reported as diverged" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^VAULT DONE" && printf "%s" "$out" | grep -q "the next integrate adopts"'
           V="$T/e"; export WIKI_PATH="$V"
           # E11 (near miss): a rerun after the session's pull request was merged with a merge
           # commit. Its tip is now on origin/main, so the count is zero; canonical main must
