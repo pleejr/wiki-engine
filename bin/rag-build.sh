@@ -44,7 +44,7 @@ fi
 export RAG_WIKI="$WIKI" RAG_BINDIR="$SCRIPT_DIR" RAG_FORCE="$FORCE"
 
 "$PYBIN" - <<'PY'
-import os, sys, json, glob, re
+import os, sys, json, glob, re, tempfile
 sys.path.insert(0, os.environ["RAG_BINDIR"])
 from rag_embed import Embedder, MAX_CHARS
 from rag_chunk import parse_file, CHUNKER_VERSION
@@ -150,8 +150,11 @@ for rel, p in files:
         embedded += 1
 
 os.makedirs(RAGDIR, exist_ok=True)
-tmp = INDEX + ".tmp"
-with open(tmp, "w", encoding="utf-8") as f:
+# A temp file of this build's own (mkstemp), so two builds at once never write, stamp or
+# rename each other's file; the stamp below then names the file this build wrote.
+fd, tmp = tempfile.mkstemp(dir=RAGDIR, prefix="index.jsonl.", suffix=".tmp")
+os.fchmod(fd, 0o644)
+with os.fdopen(fd, "w", encoding="utf-8") as f:
     for r in records:
         f.write(json.dumps(r, ensure_ascii=False) + "\n")
 # Stamp the sidecar from the file this build wrote, before the rename: a rename keeps its
@@ -175,13 +178,15 @@ try:
 except ImportError:
     np = None
 side_msg = "not written (no numpy in this python; recall reads index.jsonl)"
+stmp = None
 try:
     dims = {len(r["vector"]) for r in records}
     if np is not None and records and len(dims) == 1:
         meta = {"v": 1, "index": INDEX_STAMP,
                 "records": [{k: r[k] for k in ("file", "line", "heading", "text")} for r in records]}
-        stmp = SIDE + ".tmp"
-        with open(stmp, "wb") as f:
+        sfd, stmp = tempfile.mkstemp(dir=RAGDIR, prefix="vectors.", suffix=".npz.tmp")
+        os.fchmod(sfd, 0o644)
+        with os.fdopen(sfd, "wb") as f:
             np.savez(f, vectors=np.asarray([r["vector"] for r in records], dtype=np.float32),
                      meta=np.frombuffer(json.dumps(meta, ensure_ascii=False).encode("utf-8"),
                                         dtype=np.uint8))
@@ -191,8 +196,9 @@ try:
         side_msg = "not written (%s)" % ("no chunks" if not records else "mixed vector sizes")
 except Exception as e:   # the sidecar is a speed-up; a failure to write it never fails the build
     side_msg = "not written (%s)" % e
-    try: os.remove(SIDE + ".tmp")
-    except OSError: pass
+    if stmp:
+        try: os.remove(stmp)
+        except OSError: pass
 if not side_msg[0].isdigit() and os.path.exists(SIDE):
     try: os.remove(SIDE)
     except OSError: pass

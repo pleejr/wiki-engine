@@ -3639,6 +3639,8 @@ jobs:
           if ! python3 -c 'import numpy' 2>/dev/null; then
             ./bin/rag-build.sh --wiki "$V" >/dev/null 2>&1; [ ! -e "$V/.rag/vectors.npz" ]
             ck $? "a build that cannot write the sidecar removes a stale one"
+          else
+            echo "  skip a build that cannot write the sidecar removes a stale one (this runner's python has numpy)"
           fi
           rm -f "$V/.rag/vectors.npz"
 
