@@ -3529,7 +3529,7 @@ jobs:
 
           exit "$fail"
 
-      - name: recall leaves out the hubs, returns pages, and the prompt hook stays quiet off-topic
+      - name: recall leaves out the hubs, returns pages, reads its vector sidecar, and the prompt hook stays quiet off-topic
         run: |
           # Recall was correct and unused: its only trigger was a skill sessions rarely ran.
           # 2.7.0 runs it from a UserPromptSubmit hook, which makes its output reach EVERY
@@ -3597,7 +3597,11 @@ jobs:
 
           # The vector sidecar. This runner's python has no numpy, so the vault above took the
           # index.jsonl path; a copy with its own venv holding numpy takes the sidecar path.
-          [ ! -e "$V/.rag/vectors.npz" ]; ck $? "a build without numpy writes no sidecar"
+          if python3 -c 'import numpy' 2>/dev/null; then
+            echo "  skip a build without numpy writes no sidecar (this runner's python has numpy)"
+          else
+            [ ! -e "$V/.rag/vectors.npz" ]; ck $? "a build without numpy writes no sidecar"
+          fi
           V2="$RUNNER_TEMP/recallvault-npz"; rm -rf "$V2"; cp -R "$V" "$V2"; rm -f "$V2/.rag/index.jsonl"
           python3 -m venv "$V2/.rag/venv" && "$V2/.rag/venv/bin/pip" install -q numpy >/dev/null 2>&1
           ck $? "a venv with numpy for the sidecar vault"
@@ -3632,8 +3636,11 @@ jobs:
           ./bin/recall.sh --wiki "$V2" --json -n 5 "mortgage rate lock closing" | grep -q '"memory/lock.md"'
           ck $? "a torn sidecar falls back to index.jsonl"
           cp "$V2/.rag/vectors.npz" "$V/.rag/vectors.npz"
-          ./bin/rag-build.sh --wiki "$V" >/dev/null 2>&1; [ ! -e "$V/.rag/vectors.npz" ]
-          ck $? "a build that cannot write the sidecar removes a stale one"
+          if ! python3 -c 'import numpy' 2>/dev/null; then
+            ./bin/rag-build.sh --wiki "$V" >/dev/null 2>&1; [ ! -e "$V/.rag/vectors.npz" ]
+            ck $? "a build that cannot write the sidecar removes a stale one"
+          fi
+          rm -f "$V/.rag/vectors.npz"
 
           H=./bin/recall-hook.sh
           hk() { printf '{"prompt":%s}' "$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$1")" | WIKI_PATH="$V" "$H"; }

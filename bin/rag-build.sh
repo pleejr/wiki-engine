@@ -154,6 +154,10 @@ tmp = INDEX + ".tmp"
 with open(tmp, "w", encoding="utf-8") as f:
     for r in records:
         f.write(json.dumps(r, ensure_ascii=False) + "\n")
+# Stamp the sidecar from the file this build wrote, before the rename: a rename keeps its
+# inode and mtime, and a stat after it could name a concurrent build's index instead.
+_st = os.stat(tmp)
+INDEX_STAMP = [_st.st_ino, _st.st_size, _st.st_mtime_ns]
 os.replace(tmp, INDEX)
 print("rag-build: %d files, %d chunks (%d embedded, %d reused%s) -> %s"
       % (len(files) - skipped, len(records), embedded, reused,
@@ -174,8 +178,7 @@ side_msg = "not written (no numpy in this python; recall reads index.jsonl)"
 try:
     dims = {len(r["vector"]) for r in records}
     if np is not None and records and len(dims) == 1:
-        st = os.stat(INDEX)
-        meta = {"v": 1, "index": [st.st_ino, st.st_size, st.st_mtime_ns],
+        meta = {"v": 1, "index": INDEX_STAMP,
                 "records": [{k: r[k] for k in ("file", "line", "heading", "text")} for r in records]}
         stmp = SIDE + ".tmp"
         with open(stmp, "wb") as f:
@@ -188,6 +191,8 @@ try:
         side_msg = "not written (%s)" % ("no chunks" if not records else "mixed vector sizes")
 except Exception as e:   # the sidecar is a speed-up; a failure to write it never fails the build
     side_msg = "not written (%s)" % e
+    try: os.remove(SIDE + ".tmp")
+    except OSError: pass
 if not side_msg[0].isdigit() and os.path.exists(SIDE):
     try: os.remove(SIDE)
     except OSError: pass
