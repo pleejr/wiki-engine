@@ -44,7 +44,7 @@ fi
 export RAG_WIKI="$WIKI" RAG_BINDIR="$SCRIPT_DIR" RAG_FORCE="$FORCE"
 
 "$PYBIN" - <<'PY'
-import os, sys, json, glob, re
+import os, sys, json, glob, re, tempfile
 sys.path.insert(0, os.environ["RAG_BINDIR"])
 from rag_embed import Embedder, MAX_CHARS
 from rag_chunk import parse_file, CHUNKER_VERSION
@@ -150,14 +150,59 @@ for rel, p in files:
         embedded += 1
 
 os.makedirs(RAGDIR, exist_ok=True)
-tmp = INDEX + ".tmp"
-with open(tmp, "w", encoding="utf-8") as f:
+# A temp file of this build's own (mkstemp), so two builds at once never write, stamp or
+# rename each other's file; the stamp below then names the file this build wrote.
+fd, tmp = tempfile.mkstemp(dir=RAGDIR, prefix="index.jsonl.", suffix=".tmp")
+os.fchmod(fd, 0o644)
+with os.fdopen(fd, "w", encoding="utf-8") as f:
     for r in records:
         f.write(json.dumps(r, ensure_ascii=False) + "\n")
+# Stamp the sidecar from the file this build wrote, before the rename: a rename keeps its
+# inode and mtime, and a stat after it could name a concurrent build's index instead.
+_st = os.stat(tmp)
+INDEX_STAMP = [_st.st_ino, _st.st_size, _st.st_mtime_ns]
 os.replace(tmp, INDEX)
 print("rag-build: %d files, %d chunks (%d embedded, %d reused%s) -> %s"
       % (len(files) - skipped, len(records), embedded, reused,
          (", %d skipped" % skipped) if skipped else "", os.path.relpath(INDEX, WIKI)))
+
+# The vector sidecar: the same records as index.jsonl, vectors as one float32 array, so a
+# prompt's recall loads them in milliseconds instead of parsing every vector as JSON text
+# (~0.9s of a ~2s recall on a 6.7k-chunk vault). index.jsonl stays the source; the sidecar
+# names the index file it was cut from (inode, size, mtime_ns) and recall.sh uses it only
+# while that still matches, so an index rewritten by anything else retires it unread.
+# np.load is called with allow_pickle=False, so the file holds arrays only, never code.
+SIDE = os.path.join(RAGDIR, "vectors.npz")
+try:
+    import numpy as np
+except ImportError:
+    np = None
+side_msg = "not written (no numpy in this python; recall reads index.jsonl)"
+stmp = None
+try:
+    dims = {len(r["vector"]) for r in records}
+    if np is not None and records and len(dims) == 1:
+        meta = {"v": 1, "index": INDEX_STAMP,
+                "records": [{k: r[k] for k in ("file", "line", "heading", "text")} for r in records]}
+        sfd, stmp = tempfile.mkstemp(dir=RAGDIR, prefix="vectors.", suffix=".npz.tmp")
+        os.fchmod(sfd, 0o644)
+        with os.fdopen(sfd, "wb") as f:
+            np.savez(f, vectors=np.asarray([r["vector"] for r in records], dtype=np.float32),
+                     meta=np.frombuffer(json.dumps(meta, ensure_ascii=False).encode("utf-8"),
+                                        dtype=np.uint8))
+        os.replace(stmp, SIDE)
+        side_msg = "%d x %d -> %s" % (len(records), dims.pop(), os.path.relpath(SIDE, WIKI))
+    elif np is not None:
+        side_msg = "not written (%s)" % ("no chunks" if not records else "mixed vector sizes")
+except Exception as e:   # the sidecar is a speed-up; a failure to write it never fails the build
+    side_msg = "not written (%s)" % e
+    if stmp:
+        try: os.remove(stmp)
+        except OSError: pass
+if not side_msg[0].isdigit() and os.path.exists(SIDE):
+    try: os.remove(SIDE)
+    except OSError: pass
+print("rag-build: vector sidecar %s" % side_msg)
 
 # Report the largest chunk against the cap, always. A "0 truncated" line would be
 # constant and therefore unread; a high-water mark moves with the content, so a page

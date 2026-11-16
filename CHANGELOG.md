@@ -4,6 +4,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.8.0] — 2026-11-15
+
+Minor — prompt recall reads a binary vector sidecar and waits up to 12s instead of 6s.
+
+### Changed
+- **The recall hook waits up to 12s, not 6s** (`RECALL_DEADLINE_MAX`), under a `hooks.json` timeout raised from 10s to 16s. On one consumer vault the 3.7.4 log showed 8 of the first 13 real-session runs stopped at 6s, so most prompts waited 6s and got no recall. A prompt can now wait up to 12s before it is sent; `RAG_RECALL_DEADLINE` still only lowers it.
+
+### Added
+- **`.rag/vectors.npz`, a vector sidecar.** `rag-build.sh` writes the index's vectors as one float32 array, with each chunk's file, line, heading, and text, stamped with the inode, size, and mtime of the `index.jsonl` it was cut from. `recall.sh` reads it instead of parsing every vector as JSON text: on a 6,751-chunk vault a query took 0.81–1.02s instead of 1.87–2.01s, with byte-identical results on the queries compared. `index.jsonl` stays the source; a sidecar whose stamp does not match, or that cannot be read, is ignored and recall reads `index.jsonl` as before. It is written only when the build's Python has numpy, removed when a build cannot write it, and loaded with `allow_pickle=False`.
+
+### Tests
+- A build with numpy writes the sidecar and one without does not; recall from it equals recall from `index.jsonl`; with `index.jsonl` blanked in place (same stamp) recall still answers, proving the sidecar answered, and after the stamp moves it does not; a torn sidecar falls back; a build that cannot write one removes a stale one. The deadline checks now expect 12s. Against 3.7.5 the sidecar and deadline checks are red; with the stamp comparison removed, the stale-sidecar check is red.
+
 ## [3.7.5] — 2026-11-15
 
 Patch — `distill-finish.sh` no longer counts a merge it has not pulled as the session's own work.

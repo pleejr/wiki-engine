@@ -30,7 +30,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/recall-hook.sh\"",
-            "timeout": 10
+            "timeout": 16
           }
         ]
       }
