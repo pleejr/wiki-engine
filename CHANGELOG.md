@@ -4,6 +4,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.7.5] — 2026-11-15
+
+Patch — `distill-finish.sh` no longer counts a merge it has not pulled as the session's own work.
+
+### Fixed
+- **An empty session opened a pull request GitHub refuses** (fail-closed). The count of commits to land was taken against canonical `main` alone, which can sit behind `origin/main` after a merge not pulled locally. On the `publish = pr` route a session with no commits then pushed an empty `wt/<session>` branch and reported `VAULT OUTSTANDING` with "No commits between main and wt/<session>". It now counts only commits in neither canonical `main` nor `origin/main`, the base `vault-worktree.sh ensure` normally cuts from, and takes the "nothing to land" path.
+- **The direct route had the same defect in two forms.** An empty session integrated the peer's commit and reported `1 commit(s) landed`; with the peer's file left untracked in canonical, the blocked fast-forward told it to resolve a conflict in its own worktree. The same count fixes both.
+- **The "nothing to land" path keeps canonical current.** When the branch is already on `origin/main` but not on canonical `main` (a rerun after a merge-commit merge), it fast-forwards canonical to `origin/main` as `integrate`'s reconcile does; a fast-forward blocked by a file is reported and owes nothing, and a canonical `main` that has diverged from `origin/main` is reported as outstanding, because the next `integrate` refuses it, unless its content equals `origin/main` and it is clean, the squash-merge state `integrate` adopts.
+- **A detached canonical checkout is refused** (exit 2) instead of read as `HEAD`, which counted a real commit as nothing to land and retired its worktree (fail-open).
+
+### Tests
+- Canonical `main` one commit behind `origin/main`: on the pull-request route a session with no commits must report `VAULT DONE` and push no branch, and on the direct route (fast-forward blocked) it must report `VAULT DONE` with nothing landed; all are red against 3.7.4. A session with a commit must still open its pull request. A rerun after a merge-commit merge must fast-forward canonical `main`; an empty session over a diverged canonical `main` must report the divergence, and over a content-equal squash state must not; a detached canonical must be refused with rc 2 and the session's worktree kept.
+
 ## [3.7.4] — 2026-11-15
 
 Patch — the prompt recall hook ends a slow recall itself, silently, before the harness timeout, and logs how often it does.

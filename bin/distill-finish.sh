@@ -88,6 +88,13 @@ case "$route" in
      exit 2;;
 esac
 
+main="$(git -C "$CANON" symbolic-ref --short -q HEAD)" || {
+  # Detached (mid-rebase, say): <main> would read "HEAD", the count below would be HEAD --not
+  # HEAD, and a real commit would be reported as nothing to land.
+  echo "distill-finish: $CANON is not on a branch — finish or abort what detached it, then rerun. Nothing was landed." >&2
+  exit 2
+}
+
 # --- 2. catalog + lint ------------------------------------------------------------------
 "$SCRIPT_DIR/gen-projects-index.sh" --wiki "$WORK" >/dev/null 2>&1 || true
 if [ -n "$(git -C "$WORK" status --porcelain)" ]; then
@@ -96,7 +103,7 @@ if [ -n "$(git -C "$WORK" status --porcelain)" ]; then
 fi
 # Lint what this session changed against canonical's main; lint.sh widens to the whole vault
 # itself when a page was deleted or renamed.
-if ! "$SCRIPT_DIR/lint.sh" --wiki "$WORK" --changed "$(git -C "$CANON" rev-parse --abbrev-ref HEAD)" > "${TMPDIR:-/tmp}/distill-finish-lint.$$" 2>&1; then
+if ! "$SCRIPT_DIR/lint.sh" --wiki "$WORK" --changed "$main" > "${TMPDIR:-/tmp}/distill-finish-lint.$$" 2>&1; then
   tail -25 "${TMPDIR:-/tmp}/distill-finish-lint.$$" >&2; rm -f "${TMPDIR:-/tmp}/distill-finish-lint.$$"
   echo "distill-finish: lint failed in $WORK — fix it, commit, rerun. Nothing was landed." >&2
   exit 1
@@ -106,11 +113,37 @@ say "lint passed"
 
 # --- 3. land ----------------------------------------------------------------------------
 git -C "$CANON" fetch -q origin 2>/dev/null || true
-main="$(git -C "$CANON" rev-parse --abbrev-ref HEAD)"
-ahead="$(git -C "$WORK" rev-list --count "$main..HEAD" 2>/dev/null || echo 0)"
+# New means on this branch and in neither canonical <main> nor origin/<main>. Either can be
+# the stale one: canonical <main> sits behind after a merge not pulled here, while the branch
+# is normally cut from origin/<main>. Counting against canonical <main> alone called that
+# merge "ahead": the pr route pushed an empty branch and asked for a pull request GitHub
+# refuses, and the direct route integrated a peer's commit and reported it as this session's.
+base="$main"; not_refs=("$main")
+if git -C "$WORK" rev-parse -q --verify "origin/$main" >/dev/null 2>&1; then
+  base="$main or origin/$main"; not_refs+=("origin/$main")
+fi
+ahead="$(git -C "$WORK" rev-list --count HEAD --not "${not_refs[@]}" 2>/dev/null || echo 0)"
 landed=0
 if [ "$ahead" = "0" ]; then
-  say "nothing on $BRANCH that $main lacks"; landed=1
+  say "nothing on $BRANCH that $base lacks"; landed=1
+  # Zero can also mean the branch is already on origin/<main> but not on canonical <main>: a
+  # rerun after its pull request was merged with a merge commit, or a merge another session
+  # made. Bring canonical up to it the way integrate's own reconcile does (a fast-forward to
+  # origin/<main>, never `git pull`, whose config can change what happens). A blocked
+  # fast-forward is reported and owes nothing: the work is on origin, and the next integrate
+  # names what blocks it. A canonical <main> that has diverged from origin is owed, unless
+  # its content equals origin's and it is clean, the squash-merge state integrate adopts.
+  if [ "${#not_refs[@]}" -gt 1 ] && ! git -C "$WORK" merge-base --is-ancestor HEAD "$main" 2>/dev/null; then
+    if git -C "$CANON" merge-base --is-ancestor "$main" "origin/$main" 2>/dev/null; then
+      if VAULT_INTEGRATE=1 git -C "$CANON" merge --ff-only -q "origin/$main" 2>/dev/null; then say "$BRANCH is on origin/$main; $main fast-forwarded"
+      else say "$BRANCH is on origin/$main; $main did not fast-forward to it (git -C \"$CANON\" merge --ff-only origin/$main shows why)"; fi
+    elif [ -z "$(git -C "$CANON" diff --name-only "origin/$main" "$main" 2>/dev/null)" ] \
+         && [ -z "$(git -C "$CANON" status --porcelain -uno 2>/dev/null)" ]; then
+      say "$main has the same content as origin/$main under different history (a squash merge); the next integrate adopts origin/$main"
+    else
+      owe "$main in $CANON has diverged from origin/$main, and the next integrate will refuse it: reconcile it (e.g. rebase $main onto origin/$main), then rerun"
+    fi
+  fi
 elif [ "$route" = "direct" ]; then
   ( cd "$WORK" && "$SCRIPT_DIR/vault-worktree.sh" integrate ) >/dev/null 2>&1; rc=$?
   case "$rc" in
