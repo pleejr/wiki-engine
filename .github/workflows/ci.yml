@@ -3595,6 +3595,46 @@ jobs:
           [ "$(./bin/recall.sh --wiki "$V" --json --min-gap 0.04 "keyboard shortcut herdr spaces")" != "[]" ]
           ck $? "--min-gap keeps a page that stands clear of the rest"
 
+          # The vector sidecar. This runner's python has no numpy, so the vault above took the
+          # index.jsonl path; a copy with its own venv holding numpy takes the sidecar path.
+          [ ! -e "$V/.rag/vectors.npz" ]; ck $? "a build without numpy writes no sidecar"
+          V2="$RUNNER_TEMP/recallvault-npz"; rm -rf "$V2"; cp -R "$V" "$V2"; rm -f "$V2/.rag/index.jsonl"
+          python3 -m venv "$V2/.rag/venv" && "$V2/.rag/venv/bin/pip" install -q numpy >/dev/null 2>&1
+          ck $? "a venv with numpy for the sidecar vault"
+          ./bin/rag-build.sh --wiki "$V2" | grep -Eq '^rag-build: vector sidecar [0-9]+ x 512 -> \.rag/vectors\.npz$'
+          ck $? "a build with numpy writes the sidecar"
+          same=0
+          for q in "mortgage rate lock closing" "keyboard shortcut herdr spaces" "notes on violin practice"; do
+            a="$(./bin/recall.sh --wiki "$V2" --json -n 5 "$q")"
+            mv "$V2/.rag/vectors.npz" "$V2/.rag/vectors.off"
+            b="$(./bin/recall.sh --wiki "$V2" --json -n 5 "$q")"
+            mv "$V2/.rag/vectors.off" "$V2/.rag/vectors.npz"
+            [ -n "$a" ] && [ "$a" != "[]" ] && [ "$a" = "$b" ] || same=1
+          done
+          ck $same "recall from the sidecar returns exactly what index.jsonl returns"
+          # Prove the sidecar is what answered: blank index.jsonl in place (same inode, size and
+          # mtime), so only the sidecar still holds vectors. Then move its mtime: the stamp no
+          # longer matches, the sidecar is ignored, and recall reads the blanked index.
+          cp "$V2/.rag/index.jsonl" "$RUNNER_TEMP/index.keep"
+          python3 - "$V2/.rag/index.jsonl" <<'PY'
+          import os, sys
+          p = sys.argv[1]; st = os.stat(p)
+          with open(p, "r+b") as f: f.write(b"x" * st.st_size)
+          os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+          PY
+          ./bin/recall.sh --wiki "$V2" --json -n 5 "mortgage rate lock closing" | grep -q '"memory/lock.md"'
+          ck $? "recall answers from the sidecar while its stamp matches index.jsonl"
+          python3 -c 'import os,sys; os.utime(sys.argv[1], (1e9, 1e9))' "$V2/.rag/index.jsonl"
+          [ "$(./bin/recall.sh --wiki "$V2" --json -n 5 "mortgage rate lock closing")" = "[]" ]
+          ck $? "a sidecar whose stamp no longer matches index.jsonl is ignored"
+          cp "$RUNNER_TEMP/index.keep" "$V2/.rag/index.jsonl"
+          printf 'not a zip' > "$V2/.rag/vectors.npz"
+          ./bin/recall.sh --wiki "$V2" --json -n 5 "mortgage rate lock closing" | grep -q '"memory/lock.md"'
+          ck $? "a torn sidecar falls back to index.jsonl"
+          cp "$V2/.rag/vectors.npz" "$V/.rag/vectors.npz"
+          ./bin/rag-build.sh --wiki "$V" >/dev/null 2>&1; [ ! -e "$V/.rag/vectors.npz" ]
+          ck $? "a build that cannot write the sidecar removes a stale one"
+
           H=./bin/recall-hook.sh
           hk() { printf '{"prompt":%s}' "$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$1")" | WIKI_PATH="$V" "$H"; }
           out="$(hk "the mortgage rate lock expires before closing")"; rc=$?
@@ -3664,21 +3704,21 @@ jobs:
           out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:8774/x RAG_RECALL_DEADLINE=inf "$H")"; rc=$?
           el=$(( $(date +%s) - t0 ))
           for _ in $(seq 1 20); do [ -e "$HUNG" ] && break; sleep 0.1; done
-          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -ge 5 ] && [ "$el" -le 9 ] && [ -e "$HUNG" ]
+          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -ge 11 ] && [ "$el" -le 15 ] && [ -e "$HUNG" ]
           ck $? "RAG_RECALL_DEADLINE=inf runs for the maximum, not zero and not unbounded (took ${el}s)"
           rm -f "$HUNG"; t0=$(date +%s)
           out="$(printf '{"prompt":"the mortgage rate lock expires before closing"}' | WIKI_PATH="$V" RAG_EMBED_URL=http://127.0.0.1:8774/x RAG_RECALL_DEADLINE=20 "$H")"; rc=$?
           el=$(( $(date +%s) - t0 ))
           for _ in $(seq 1 20); do [ -e "$HUNG" ] && break; sleep 0.1; done
-          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -ge 5 ] && [ "$el" -le 9 ] && [ -e "$HUNG" ]
+          [ $rc = 0 ] && [ -z "$out" ] && [ "$el" -ge 11 ] && [ "$el" -le 15 ] && [ -e "$HUNG" ]
           ck $? "RAG_RECALL_DEADLINE=20 is capped at the maximum (took ${el}s)"
           # Each run leaves one line in the vault's recall log, so how often the deadline
           # fires is a reading. The last run above missed it; an answered one is "ok".
           L="$V/.rag/recall-hook.log"
-          tail -1 "$L" | grep -Eq '^[0-9T:+-]+ deadline [0-9.]+ 6$'
+          tail -1 "$L" | grep -Eq '^[0-9T:+-]+ deadline [0-9.]+ 12$'
           ck $? "a run that hits the deadline is logged as deadline"
           hk "the mortgage rate lock expires before closing" >/dev/null
-          tail -1 "$L" | grep -Eq '^[0-9T:+-]+ ok [0-9.]+ 6$'
+          tail -1 "$L" | grep -Eq '^[0-9T:+-]+ ok [0-9.]+ 12$'
           ck $? "an answered run is logged as ok"
           # The hook runs in whatever directory the session is in. A module there named like a
           # stdlib one must not run in place of it, in the hook or in recall.sh's embedder.

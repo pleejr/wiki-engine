@@ -90,21 +90,51 @@ HUBS = set(os.environ.get("RAG_HUB_FILES", "index.md log.md").split()) \
     if os.environ.get("RAG_EXCLUDE_HUBS") == "1" else set()
 
 qv = Embedder(WIKI).embed_query(Q)
-recs = []
-for line in open(INDEX, encoding="utf-8"):
+
+def from_sidecar():
+    """Records and vectors from .rag/vectors.npz, or None to read index.jsonl instead.
+
+    rag-build.sh writes the sidecar after index.jsonl and stamps it with that file's inode,
+    size and mtime_ns; any other stamp means the index was rewritten since, so the sidecar
+    is ignored rather than trusted. Any failure (no numpy, no file, a torn or foreign file)
+    also falls back: the sidecar only makes recall faster, never different.
+    """
     try:
-        rec = json.loads(line)
+        import numpy as np
+        st = os.stat(INDEX)
+        with np.load(os.path.join(WIKI, ".rag", "vectors.npz"), allow_pickle=False) as z:
+            meta = json.loads(z["meta"].tobytes().decode("utf-8"))
+            M = z["vectors"]
+        if meta.get("v") != 1 or meta.get("index") != [st.st_ino, st.st_size, st.st_mtime_ns]:
+            return None
+        recs = meta["records"]
+        if M.ndim != 2 or M.shape[0] != len(recs) or M.dtype != np.float32:
+            return None
+        keep = [i for i, r in enumerate(recs) if r["file"] not in HUBS]
+        return [recs[i] for i in keep], M[keep]
     except Exception:
-        continue
-    if rec["file"] in HUBS:
-        continue
-    recs.append(rec)
+        return None
+
+side = from_sidecar()
+if side is not None:
+    recs, M = side
+else:
+    recs, M = [], None
+    for line in open(INDEX, encoding="utf-8"):
+        try:
+            rec = json.loads(line)
+        except Exception:
+            continue
+        if rec["file"] in HUBS:
+            continue
+        recs.append(rec)
 
 try:   # numpy ships with every local backend; the pure-python path serves endpoint-only vaults
     import numpy as np
     sims = []
     if recs:
-        M = np.asarray([r["vector"] for r in recs], dtype=np.float32)
+        if M is None:
+            M = np.asarray([r["vector"] for r in recs], dtype=np.float32)
         q = np.asarray(qv, dtype=np.float32)
         n = np.linalg.norm(M, axis=1) * (np.linalg.norm(q) or 1.0)
         sims = (M @ q / np.where(n == 0, 1.0, n)).tolist()

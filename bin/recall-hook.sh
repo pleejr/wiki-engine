@@ -16,7 +16,7 @@
 #
 # Deterministic: runs a CPU embedder, NEVER `claude` — no re-entry path (hard rule, see
 # CLAUDE.md). Always exits 0, so a slow or broken index can never block a prompt; its own
-# RAG_RECALL_DEADLINE (at most 6s) bounds the recall step, leaving the hooks.json timeout
+# RAG_RECALL_DEADLINE (at most 12s) bounds the recall step, leaving the hooks.json timeout
 # room for the stdin read and the short Python steps around it. Each run appends one line
 # (time, ok|deadline|error|interrupted, seconds, deadline) to <vault>/.rag/recall-hook.log.
 set -uo pipefail
@@ -57,7 +57,9 @@ set -- --min-gap "${RAG_RECALL_MIN_GAP:-0.04}"
 # a value that is not a number in (0, RECALL_DEADLINE_MAX] uses the maximum, because a
 # longer one hands the run back to the harness timeout. CI asserts stdin timeout + maximum
 # + 1s stays below the hooks.json timeout.
-RECALL_DEADLINE_MAX=6
+# 12, not 6: on a vault of ~6.7k chunks the 6s limit of 3.7.4 stopped 8 of the first 13
+# real-session runs on one machine, so most prompts waited 6s and got nothing.
+RECALL_DEADLINE_MAX=12
 hits="$(RAG_RECALL_LOG="$WIKI/.rag/recall-hook.log" python3 -I -c '
 import os, subprocess, sys, time
 top = float(sys.argv[2])

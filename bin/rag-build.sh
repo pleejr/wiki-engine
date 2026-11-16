@@ -159,6 +159,40 @@ print("rag-build: %d files, %d chunks (%d embedded, %d reused%s) -> %s"
       % (len(files) - skipped, len(records), embedded, reused,
          (", %d skipped" % skipped) if skipped else "", os.path.relpath(INDEX, WIKI)))
 
+# The vector sidecar: the same records as index.jsonl, vectors as one float32 array, so a
+# prompt's recall loads them in milliseconds instead of parsing every vector as JSON text
+# (~0.9s of a ~2s recall on a 6.7k-chunk vault). index.jsonl stays the source; the sidecar
+# names the index file it was cut from (inode, size, mtime_ns) and recall.sh uses it only
+# while that still matches, so an index rewritten by anything else retires it unread.
+# np.load is called with allow_pickle=False, so the file holds arrays only, never code.
+SIDE = os.path.join(RAGDIR, "vectors.npz")
+try:
+    import numpy as np
+except ImportError:
+    np = None
+side_msg = "not written (no numpy in this python; recall reads index.jsonl)"
+try:
+    dims = {len(r["vector"]) for r in records}
+    if np is not None and records and len(dims) == 1:
+        st = os.stat(INDEX)
+        meta = {"v": 1, "index": [st.st_ino, st.st_size, st.st_mtime_ns],
+                "records": [{k: r[k] for k in ("file", "line", "heading", "text")} for r in records]}
+        stmp = SIDE + ".tmp"
+        with open(stmp, "wb") as f:
+            np.savez(f, vectors=np.asarray([r["vector"] for r in records], dtype=np.float32),
+                     meta=np.frombuffer(json.dumps(meta, ensure_ascii=False).encode("utf-8"),
+                                        dtype=np.uint8))
+        os.replace(stmp, SIDE)
+        side_msg = "%d x %d -> %s" % (len(records), dims.pop(), os.path.relpath(SIDE, WIKI))
+    elif np is not None:
+        side_msg = "not written (%s)" % ("no chunks" if not records else "mixed vector sizes")
+except Exception as e:   # the sidecar is a speed-up; a failure to write it never fails the build
+    side_msg = "not written (%s)" % e
+if not side_msg[0].isdigit() and os.path.exists(SIDE):
+    try: os.remove(SIDE)
+    except OSError: pass
+print("rag-build: vector sidecar %s" % side_msg)
+
 # Report the largest chunk against the cap, always. A "0 truncated" line would be
 # constant and therefore unread; a high-water mark moves with the content, so a page
 # creeping toward the limit is visible before it is a problem. At-cap chunks are the
