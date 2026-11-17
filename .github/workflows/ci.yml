@@ -6525,6 +6525,47 @@ jobs:
 
           exit "$fail"
 
+      - name: Every lock is one mkdir(2), not a coreutils mkdir that can let two racers in
+        run: |
+          # REGRESSION: Ubuntu 26.04 ships uutils coreutils, whose mkdir(1) (0.10.0) can
+          # report success to two processes racing for the same new directory — measured on
+          # a hosted runner on 70 of 300 rounds with six contenders. Every engine lock was a
+          # `mkdir LOCK` test, so two SessionEnd captures appended interleaved duplicate
+          # blocks and two integrates both took the vault lock. Locks now go through
+          # bin/lock-lib.sh, which reaches mkdir(2) directly.
+          . bin/lock-lib.sh
+          fail=0; T="$RUNNER_TEMP/lockrace"; rm -rf "$T"; mkdir -p "$T"
+          # race CMD... — 300 rounds of 6 contenders; prints rounds whose winner count != 1
+          race() {
+            local k p bad=0
+            for k in $(seq 1 300); do
+              for p in 1 2 3 4 5 6; do ( "$@" "$T/r$k" 2>/dev/null && echo win ) & done > "$T/out$k"
+              wait
+              [ "$(grep -c win "$T/out$k" || true)" = 1 ] || bad=$((bad + 1))
+            done
+            rm -rf "$T"/r* "$T"/out*
+            echo "$bad"
+          }
+          # Control: the instrument must be able to see the defect where it exists, or a
+          # clean result below proves nothing. Reported, not asserted — a runner whose
+          # mkdir(1) is atomic is not a failure of this check.
+          ctl="$(race mkdir)"
+          echo "  info mkdir(1) [$(mkdir --version 2>/dev/null | head -1)] let two racers in on $ctl/300 rounds"
+          got="$(race lock_mkdir)"
+          [ "$got" = 0 ] \
+            && echo "  ok   lock_mkdir admitted exactly one racer in every round" \
+            || { echo "  FAIL lock_mkdir admitted !=1 racer on $got/300 rounds"; fail=1; }
+          # and it is still a mkdir: refuses an existing dir, creates a missing one
+          lock_mkdir "$T/x" && [ -d "$T/x" ] && ! lock_mkdir "$T/x" \
+            && echo "  ok   lock_mkdir creates once, refuses after" \
+            || { echo "  FAIL lock_mkdir is not create-once"; fail=1; }
+          # The class: no engine script takes a lock with a bare mkdir(1) test.
+          hits="$(grep -nE '(if|until|while !?) *mkdir [^-]|mkdir "\$[A-Za-z_]*(lock|LOCK)[A-Za-z_]*" 2>/dev/null' bin/*.sh | grep -v '^bin/lock-lib.sh:' || true)"
+          [ -z "$hits" ] \
+            && echo "  ok   every lock goes through lock-lib" \
+            || { echo "  FAIL a lock still tests mkdir(1):"; printf '%s\n' "$hits"; fail=1; }
+          exit "$fail"
+
       - name: The capture hook returns at once and loses nothing to a cancelled exit
         run: |
           # REGRESSION: the SessionEnd hook ran the whole capture before returning, and the

@@ -37,6 +37,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/lock-lib.sh" || { echo "distill-finish: cannot load $SCRIPT_DIR/lock-lib.sh" >&2; exit 2; }
 REPOS=() WINDOW_DAYS=60 PUSH=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -227,7 +228,7 @@ for f in "$CANON"/raw/sessions/[0-9][0-9][0-9][0-9]-[0-9][0-9].md; do
   [ -n "$cutoff" ] && [ "$newest" \< "$cutoff" ] || continue
   lock="$CAP_STATE/lock-$(printf '%s' "$f" | cksum | cut -d' ' -f1)"
   mkdir -p "$CAP_STATE"
-  if mkdir "$lock" 2>/dev/null; then
+  if lock_mkdir "$lock"; then
     rm -f "$f"; rmdir "$lock"
     say "aged out $(basename "$f") (newest block $newest, older than $WINDOW_DAYS days)"
   else

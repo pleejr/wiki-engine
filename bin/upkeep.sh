@@ -50,6 +50,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/lock-lib.sh" || { echo "upkeep: cannot load $SCRIPT_DIR/lock-lib.sh" >&2; exit 2; }
 WIKI="${WIKI_PATH:-}"
 REPOS_ROOT="${UPKEEP_REPOS_ROOT:-}"
 # How long an untouched project page may go before it is queued. Vault knobs, because
@@ -154,9 +155,9 @@ HEADER=$'# id\tkind\ttarget\tdetail\tstatus'
 
 mkdir -p "$UPKEEP_DIR"
 
-# mkdir is atomic — a cheap concurrency bound so two sessions can't clobber the
+# mkdir(2), via lock-lib, is atomic — a cheap concurrency bound so two sessions can't clobber the
 # queue file (cf. the vault's concurrent-session-clobber lesson).
-lock()   { mkdir "$LOCK" 2>/dev/null || { echo "upkeep: queue locked (another run in progress) — $LOCK" >&2; exit 4; }; }
+lock()   { lock_mkdir "$LOCK" || { echo "upkeep: queue locked (another run in progress) — $LOCK" >&2; exit 4; }; }
 unlock() { rmdir "$LOCK" 2>/dev/null || true; }
 
 # frontmatter sources.sha of a repo page (first sha under the sources block)

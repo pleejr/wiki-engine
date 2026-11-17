@@ -76,6 +76,7 @@ CMD="${1:-ensure}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/lease-lib.sh
 . "$SCRIPT_DIR/lease-lib.sh" || { log "vault-worktree: cannot load $SCRIPT_DIR/lease-lib.sh"; exit 2; }
+. "$SCRIPT_DIR/lock-lib.sh" || { log "vault-worktree: cannot load $SCRIPT_DIR/lock-lib.sh"; exit 2; }
 lease_lib_init "$WIKI"
 WT_ROOT="$LEASE_WT_ROOT"
 EXCLUDE="$WIKI/.git/info/exclude"
@@ -650,7 +651,7 @@ case "$CMD" in
     # gitignored (cause), and this check is precise (over-breadth).
     mkdir -p "$WT_ROOT" 2>/dev/null || true
     waited=0; wait_max="${WIKI_LOCK_WAIT_SEC:-120}"
-    until mkdir "$LOCK" 2>/dev/null; do
+    until lock_mkdir "$LOCK"; do
       # Break a lock whose owner is gone, so one crashed session can't wedge everyone.
       if [ -f "$LOCK/owner" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +30 2>/dev/null)" ]; then
         log "vault-worktree: breaking a stale integrate lock (owner $(cat "$LOCK/owner" 2>/dev/null), >30m old)"
