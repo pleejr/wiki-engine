@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.8.1] — 2026-11-17
+
+Patch — every engine lock takes `mkdir(2)` directly; Ubuntu 26.04's `mkdir(1)` can admit two racers.
+
+### Fixed
+- **Locks stopped excluding anyone on Ubuntu 26.04** (fail-open, duplicated and interleaved writes). Ubuntu 26.04 ships uutils coreutils as `/usr/bin/mkdir`; its 0.10.0 release reported success to two or more of six processes racing to create the same directory on 70 of 300 rounds measured on a hosted runner. Every engine lock was such a `mkdir` test, so two SessionEnd captures of one repo both appended (a duplicate block, interleaved with its twin), two `vault-worktree.sh integrate` runs could both hold the vault lock, two `upkeep.sh` runs could both rewrite the queue, and `distill-finish.sh` could age out a buffer a capture was writing. The new sourced `bin/lock-lib.sh` provides `lock_mkdir`, which calls `mkdir(2)` through perl, else python3, and falls back to `mkdir(1)` only on a host with neither; all four scripts now lock through it. macOS's BSD `mkdir` was never affected.
+
+### Tests
+- A new CI step races `lock_mkdir` with six contenders for 300 rounds and requires exactly one winner every round, reports the same race against the runner's `mkdir(1)` as a control, and fails if any `bin/*.sh` still takes a lock with a bare `mkdir` test. On the hosted runner, `lock_mkdir` defined as `mkdir(1)` is red; the class gate is red against 3.8.0 on all four call sites. The existing "two sessions ending together" capture check, red intermittently on `main` since the runner moved to 26.04, is green.
+
 ## [3.8.0] — 2026-11-15
 
 Minor — prompt recall reads a binary vector sidecar and waits up to 12s instead of 6s.

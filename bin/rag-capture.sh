@@ -118,6 +118,8 @@ fi
 # guessed boundary is worse than refusing, because rag-build's cross-boundary filter
 # drops a mis-stamped page from recall silently.
 VB="$(dirname "${BASH_SOURCE[0]}")/vault-boundary.sh"
+# shellcheck source=bin/lock-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lock-lib.sh" || { echo "error: missing lock-lib.sh — broken engine checkout" >&2; exit 1; }
 [ -x "$VB" ] || { echo "error: missing $VB — broken engine checkout" >&2; exit 1; }
 BOUND="$("$VB" --wiki "$WIKI" 2>/dev/null || true)"
 [ -n "$BOUND" ] || {
@@ -196,7 +198,7 @@ trap on_exit EXIT
 # Two sessions ending together each read the buffer, compare against the newest block,
 # and append. Unserialized, both read before either writes and the repeat filter cannot
 # see the twin — and a detached hook makes "ending together" the normal case for a fan-out
-# of one-shots. mkdir is the lock (atomic everywhere; flock(1) is absent on macOS), keyed
+# of one-shots. mkdir(2) is the lock, via lock-lib (flock(1) is absent on macOS), keyed
 # on the buffer path, held until exit, and stolen from a holder whose pid is gone.
 #
 # A lock that cannot be had within RAG_CAPTURE_LOCK_WAIT seconds (default 60) is passed
@@ -207,7 +209,7 @@ mkdir -p "$CAP_STATE"
 lock_path="$CAP_STATE/lock-$(printf '%s' "$FILE" | cksum | cut -d' ' -f1)"
 waited=0; got=0
 while :; do
-  if mkdir "$lock_path" 2>/dev/null; then got=1; break; fi
+  if lock_mkdir "$lock_path"; then got=1; break; fi
   holder="$(cat "$lock_path/pid" 2>/dev/null || true)"
   if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
     rm -rf "$lock_path"; continue                 # holder died without releasing
