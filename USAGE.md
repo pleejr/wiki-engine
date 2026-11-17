@@ -130,11 +130,13 @@ The SessionStart banner reports engine freshness. A machine can fold in **its ow
 
 ## Finishing a session (`distill-finish`)
 
-`distill`'s mechanical half, run from the session worktree after the commit:
+`distill`'s mechanical half, run after the commit and pointed at the session worktree:
 
 ```
-<engine>/bin/distill-finish.sh [--repo DIR]... [--window-days N] [--no-push]
+<engine>/bin/distill-finish.sh [--work DIR] [--repo DIR]... [--window-days N] [--no-push]
 ```
+
+- **Name the worktree; do not stand in it.** `--work DIR` (3.9.0+) is the worktree `vault-worktree.sh ensure` printed; without it the script uses the worktree containing the current directory. The script deletes that worktree once the commit lands, so a shell that `cd`'d into it is left in a deleted directory. If the caller's directory was inside it, the script, and `vault-worktree.sh gc` too, prints `your shell is inside the retired worktree — cd "<canonical>"`.
 
 - **The publish route is declared, never inferred.** `.wiki-gates.conf` carries one line, `publish = direct` (integrate, then push `main`) or `publish = pr` (push the session branch and open its pull request; `main` moves only by the merge). A vault without it is refused with exit 2, naming the setting.
 - **The capture buffer ages out.** A `raw/sessions/YYYY-MM.md` whose newest block is older than `--window-days` (default 60) is deleted in canonical, under `rag-capture.sh`'s own lock; the current month's file never is. Nothing is pruned block by block.

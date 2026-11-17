@@ -991,6 +991,60 @@ jobs:
           chk "adoption adds log.md merge=union once" '[ "$(git -C "$V" check-attr merge -- log.md | sed "s/.*: //")" = union ] && [ "$(grep -c "merge=union" "$V/.gitattributes")" = 1 ]'
           exit "$fail"
 
+      - name: distill-finish never strands the caller's shell in the worktree it retires
+        run: |
+          # REGRESSION (distill-finish-retires-the-callers-cwd): the script found the session
+          # tree from $PWD, so the skill told the caller to `cd "$WORK"` — and step 6 then deleted
+          # that directory. A harness whose shell keeps its cwd refused the next command. Now
+          # `--work DIR` names the tree, so the skill never enters it, and both retirers
+          # (distill-finish step 6, vault-worktree gc) name `cd <canonical>` when the caller's
+          # cwd WAS inside what they removed.
+          fail=0
+          chk() { if eval "$2"; then echo "  ok   $1"; else echo "  FAIL $1"; fail=1; fi; }
+          T="$RUNNER_TEMP/finishcwd"; rm -rf "$T"; mkdir -p "$T"
+          export GIT_CONFIG_GLOBAL="$T/gitconfig"; git config --global user.email ci@example.invalid; git config --global user.name CI; git config --global init.defaultBranch main
+          export WIKI_ENGINE="$GITHUB_WORKSPACE" CLAUDE_SETTINGS="$T/settings.json" XDG_CACHE_HOME="$T/cache"
+          E="$GITHUB_WORKSPACE/bin"; V="$T/v"
+          "$E/new-wiki.sh" --path "$V" --boundary personal --email ci@example.invalid --git-name CI --no-rag >/dev/null 2>&1
+          git init -q --bare "$T/v.git"; git -C "$V" remote add origin "$T/v.git"; git -C "$V" push -q -u origin main 2>/dev/null
+          printf 'publish = direct\n' > "$V/.wiki-gates.conf"; export WIKI_PATH="$V"
+          entry() { printf -- '- **2026-11-17 (test)** — %s\n' "$1" >> "$2/log.md"; git -C "$2" add log.md; git -C "$2" commit -qm "$1" >/dev/null 2>&1; }
+          VP="$(cd "$V" && pwd -P)"
+
+          # 1. --work from canonical: lands, retires, and the caller's cwd never moved
+          W="$(WIKI_WT_SESSION=s1 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "work flag" "$W"
+          rc=0; out="$(cd "$V" && WIKI_WT_SESSION=s1 "$E/distill-finish.sh" --work "$W" --no-push 2>&1)" || rc=$?
+          chk "--work from canonical: VAULT DONE, rc 0" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^VAULT DONE"'
+          chk "--work from canonical: the worktree is retired" '[ ! -d "$W" ]'
+          chk "--work from canonical: the commit is on main" '[ "$(git -C "$V" log -1 --format=%s main)" = "work flag" ]'
+          chk "--work from canonical: no cwd notice (the shell was never inside)" '! printf "%s" "$out" | grep -q "your shell"'
+
+          # 2. --work naming canonical, or nothing, is refused
+          rc=0; out="$(cd "$T" && "$E/distill-finish.sh" --work "$V" 2>&1)" || rc=$?
+          chk "--work at canonical: refused, rc 2" '[ "$rc" = 2 ] && printf "%s" "$out" | grep -q "canonical checkout"'
+          rc=0; out="$(cd "$T" && "$E/distill-finish.sh" --work "$T/nope" 2>&1)" || rc=$?
+          chk "--work at a missing dir: refused, rc 2" '[ "$rc" = 2 ]'
+
+          # 3. the old call (cwd inside the tree) still lands, and names the way out
+          W="$(WIKI_WT_SESSION=s3 "$E/vault-worktree.sh" ensure 2>/dev/null)"; entry "cwd call" "$W"
+          rc=0; out="$(cd "$W" && WIKI_WT_SESSION=s3 "$E/distill-finish.sh" --no-push 2>&1)" || rc=$?
+          chk "cwd inside the tree: still VAULT DONE" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -q "^VAULT DONE"'
+          chk "cwd inside the tree: names cd to canonical" 'printf "%s" "$out" | grep -qF "your shell is inside the retired worktree — cd \"$VP\""'
+
+          # 4. gc names the way out exactly when the caller stands in what it removed
+          W="$(WIKI_WT_SESSION=s4 "$E/vault-worktree.sh" ensure 2>/dev/null)"
+          out="$(cd "$W" && "$E/vault-worktree.sh" gc "$W" 2>&1)" || true
+          chk "gc from inside its target: names cd to canonical" '[ ! -d "$W" ] && printf "%s" "$out" | grep -qF "your shell is inside the retired worktree — cd \"$VP\""'
+          W="$(WIKI_WT_SESSION=s5 "$E/vault-worktree.sh" ensure 2>/dev/null)"
+          out="$(cd "$V" && "$E/vault-worktree.sh" gc "$W" 2>&1)" || true
+          chk "gc from canonical: no cwd notice" '[ ! -d "$W" ] && ! printf "%s" "$out" | grep -q "your shell"'
+
+          # 5. the skill's own invocation never enters the tree
+          S="$GITHUB_WORKSPACE/skills/distill/SKILL.md"
+          chk "distill skill invokes distill-finish with --work" 'grep -qF -- "distill-finish.sh --work \"\$WORK\"" "$S"'
+          chk "distill skill no longer says run from \$WORK" '! grep -qF "run from \`\$WORK\`" "$S"'
+          exit "$fail"
+
       - name: update.sh run from a worktree writes adoption's tracked files into that worktree
         run: |
           # REGRESSION (found landing v3.2.1): update.sh promises tracked content goes to the caller's

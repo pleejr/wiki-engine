@@ -30,17 +30,23 @@
 # Parallel sessions: everything acted on is keyed by this session's worktree and branch.
 # Peers' worktrees, branches, leases and buffer files are read, never changed.
 #
-# Usage: distill-finish.sh [--repo DIR]... [--window-days N] [--no-push]
-#   run from inside the session worktree that `vault-worktree.sh ensure` printed.
+# Usage: distill-finish.sh [--work DIR] [--repo DIR]... [--window-days N] [--no-push]
+#   --work names the session worktree that `vault-worktree.sh ensure` printed; without it,
+#   the worktree is the one containing the current directory. Prefer --work: step 6 deletes
+#   that worktree, and a caller whose shell keeps its cwd between commands is left standing
+#   in a deleted directory if it cd'd there to run this (distill-finish-retires-the-callers-cwd).
+#   When it did, step 6 names the `cd` back to canonical.
 # Exit: 0 vault done · 1 vault outstanding · 2 refused (wrong tree, no route declared, usage)
 # In-session and operator-initiated only; never from a lifecycle hook. Deterministic: no `claude`.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lock-lib.sh" || { echo "distill-finish: cannot load $SCRIPT_DIR/lock-lib.sh" >&2; exit 2; }
-REPOS=() WINDOW_DAYS=60 PUSH=1
+REPOS=() WINDOW_DAYS=60 PUSH=1 WORK_ARG=""
+START_P="$(pwd -P 2>/dev/null || echo "$PWD")"   # the caller's cwd, read while it exists
 while [ $# -gt 0 ]; do
   case "$1" in
+    --work)        WORK_ARG="$2"; shift 2;;
     --repo)        REPOS+=("$2"); shift 2;;
     --window-days) WINDOW_DAYS="$2"; shift 2;;
     --no-push)     PUSH=0; shift;;
@@ -53,11 +59,16 @@ OUT=()                                   # outstanding vault items, one line eac
 owe() { OUT+=("$1"); }
 say() { printf 'distill-finish: %s\n' "$1"; }
 
-WORK="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "distill-finish: not inside a git checkout" >&2; exit 2; }
-CANON="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
+if [ -n "$WORK_ARG" ]; then
+  [ -d "$WORK_ARG" ] || { echo "distill-finish: --work $WORK_ARG: no such directory" >&2; exit 2; }
+  WORK="$(git -C "$WORK_ARG" rev-parse --show-toplevel 2>/dev/null)" || { echo "distill-finish: --work $WORK_ARG is not inside a git checkout" >&2; exit 2; }
+else
+  WORK="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "distill-finish: not inside a git checkout (pass --work DIR)" >&2; exit 2; }
+fi
+CANON="$(cd "$WORK" && cd "$(git rev-parse --git-common-dir)/.." && pwd)"
 if [ "$WORK" = "$CANON" ] && [ "${WIKI_WORKTREE:-1}" != "0" ]; then
   echo "distill-finish: refusing — this is the canonical checkout ($CANON)." >&2
-  echo "distill-finish:   run from the session worktree printed by vault-worktree.sh ensure." >&2
+  echo "distill-finish:   pass --work with the session worktree printed by vault-worktree.sh ensure." >&2
   exit 2
 fi
 export WIKI_PATH="$CANON"
@@ -237,9 +248,15 @@ for f in "$CANON"/raw/sessions/[0-9][0-9][0-9][0-9]-[0-9][0-9].md; do
 done
 
 # --- 6. retire this session's worktree ----------------------------------------------------
+WORK_P="$(cd "$WORK" && pwd -P)"; CANON_P="$(cd "$CANON" && pwd -P)"   # before it is gone
 if [ "$landed" = 1 ] && [ "$WORK" != "$CANON" ]; then
   if ( cd "$CANON" && "$SCRIPT_DIR/vault-worktree.sh" gc "$WORK" ) >/dev/null 2>&1 && [ ! -d "$WORK" ]; then
     say "retired worktree $WORK"
+    # The caller's shell is this process's cwd unless it ran us in a subshell; a harness that
+    # keeps its cwd between commands would refuse the next one. We cannot move it — say how.
+    case "$START_P/" in
+      "$WORK_P"/*) say "your shell is inside the retired worktree — cd \"$CANON_P\"";;
+    esac
   else
     owe "worktree $WORK is still there: (cd \"$CANON\" && vault-worktree.sh gc \"$WORK\")"
   fi

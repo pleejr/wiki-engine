@@ -11,7 +11,7 @@ updated: 2026-10-14
 **Vault**: `$WIKI_PATH`, set. The judgement is here; every mechanical step is `distill-finish.sh`.
 
 ## 0. Isolate
-`WORK="$(${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh ensure)"` — check its exit status (non-zero: not isolated, resolve first) and read its stderr (the only place a stale base is reported). Make every edit and commit in `$WORK`. Stage explicit paths, never `git add -A`.
+`WORK="$(${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh ensure)"` — check its exit status (non-zero: not isolated, resolve first) and read its stderr (the only place a stale base is reported). Make every edit and commit in `$WORK` by absolute path and `git -C "$WORK"` — never `cd` into it, because step 4 deletes it and a shell left there refuses its next command. Stage explicit paths, never `git add -A`.
 
 ## 1. Project state (if a project is active)
 In `projects/<slug>.md`: **overwrite** Current state, update Next steps, **append** to Key decisions when a decision was made. Keep `status:` (`active|paused|done`) and the one-line `summary:` current — they generate the index's Projects buckets.
@@ -26,13 +26,13 @@ In `projects/<slug>.md`: **overwrite** Current state, update Next steps, **appen
 Append one dated line to `log.md` (`- **YYYY-MM-DD (tag)** — …`, linking the notes from step 2) **only** when no other skill (`drain`, `update`, `verify`, `ingest`) already logged this session's work. The project page and notes are the record; the log is the index to them.
 
 ## 4. Commit, then finish
-Commit the edits in `$WORK`, then run from `$WORK`:
+Commit the edits in `$WORK`, then run, from anywhere outside it:
 
 ```sh
-${CLAUDE_SKILL_DIR}/../../bin/distill-finish.sh --repo <each other repository this session changed>
+${CLAUDE_SKILL_DIR}/../../bin/distill-finish.sh --work "$WORK" --repo <each other repository this session changed>
 ```
 
-It refuses an uncommitted tree, refuses a vault with no declared route (`publish = direct` or `publish = pr` in `.wiki-gates.conf` — ask the operator which; never guess), lints, lands the session branch (a direct vault integrates and pushes; a pull-request vault pushes the branch and opens its pull request, and never integrates), rebuilds recall, ages out old capture-buffer months, and retires this worktree. It prints `VAULT DONE` or `VAULT OUTSTANDING` with the command that clears each item, and `REVIEW` lines for the other repositories.
+It refuses an uncommitted tree, refuses a vault with no declared route (`publish = direct` or `publish = pr` in `.wiki-gates.conf` — ask the operator which; never guess), lints, lands the session branch (a direct vault integrates and pushes; a pull-request vault pushes the branch and opens its pull request, and never integrates), rebuilds recall, ages out old capture-buffer months, and retires this worktree. If your shell was inside it anyway, it prints `your shell is inside the retired worktree — cd "<canonical>"`; run that before anything else. It prints `VAULT DONE` or `VAULT OUTSTANDING` with the command that clears each item, and `REVIEW` lines for the other repositories.
 
 ## 5. Say whether the session can close
 The verdict is yours, from three sources:
