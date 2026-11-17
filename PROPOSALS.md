@@ -69,7 +69,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `distill-finish-pr-route-counts-an-earlier-merged-pr-as-this-landing` | shipped | derived |
 | `distill-finish-pr-route-reads-null-as-a-pr-number` | shipped | derived |
 | `distill-finish-rerun-resurrects-merged-session-branch` | shipped | derived |
-| `distill-finish-retires-the-callers-cwd` | open | received 2026-11-17 |
+| `distill-finish-retires-the-callers-cwd` | partially-accepted | built the -C option (as --work) plus the warning, not the subshell: distill §0 has the caller edit and commit in $WORK, so a persistent shell is usually already inside it before step 4, and a subshell at step 4 alone cannot produce the Expected. --work lets the skill never enter the tree; the warning (now also in vault-worktree gc) names the cd when a caller did. |
 | `distill-recorded-handoff-is-safe-to-close` | shipped | derived |
 | `doc-path-references-unchecked-outside-usage` | shipped | derived |
 | `engine-proposal-file-queue` | partially-accepted | transport diagnosis kept whole; submit split from push because the repo is public and the scan cannot see semantic leakage, the submitted-vs-local criterion re-specified on local evidence since status is offline, the banner return path replaced by pin-bump delivery, and PROPOSALS.md generated rather than retired to avoid rewriting the trailer gate |

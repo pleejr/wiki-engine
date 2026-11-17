@@ -757,6 +757,7 @@ case "$CMD" in
   gc)
     shift  # drop "gc"; remaining args are explicit worktree paths to retire NOW
     removed=0
+    start_p="$(pwd -P 2>/dev/null || echo "$PWD")"   # the caller's cwd, read while it exists
     if [ "$#" -gt 0 ]; then
       # Explicit targets: retire exactly these, regardless of age — this is how a skill
       # retires the worktree it just finished with (distill §0), which the age-gated
@@ -767,7 +768,16 @@ case "$CMD" in
           "$WT_ROOT"/*) ;;
           *) log "vault-worktree: refusing to gc $wt (not under $WT_ROOT)"; continue;;
         esac
-        retire_worktree "$wt" && removed=$((removed+1))
+        wt_p="$(cd "$wt" && pwd -P)"
+        if retire_worktree "$wt"; then
+          removed=$((removed+1))
+          # A harness that keeps its shell's cwd between commands refuses the next one when
+          # that cwd was just deleted (distill-finish-retires-the-callers-cwd). We cannot move
+          # the caller's shell; name the way out.
+          case "$start_p/" in
+            "$wt_p"/*) log "vault-worktree: your shell is inside the retired worktree — cd \"$(cd "$WIKI" && pwd -P)\"";;
+          esac
+        fi
       done
     else
       # Bare gc: sweep CLEAN orphans whose dir hasn't changed in WIKI_WT_STALE_HOURS —

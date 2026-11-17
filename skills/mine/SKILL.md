@@ -18,7 +18,7 @@ A skill is worth writing when a procedure **repeats**, and the end of a session 
 
 - `WORK="$(${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh ensure)" || { echo "not isolated — resolve before writing"; }` — **check the exit status** and read its stderr for a stale base; the full contract is `distill` §0.
 - **Read the evidence from canonical `$WIKI_PATH`, write the verdicts to `$WORK`.** The session buffer is git-ignored, so it exists only in canonical; a worktree's empty copy is indistinguishable from a quiet month.
-- Commit, land it as `distill` §0 does — `vault-worktree.sh integrate` when the vault commits straight to `main`, or push and merge a pull request (no `integrate`) when it ships by one — then `gc "$WORK"`.
+- Commit, land it as `distill` §0 does — `vault-worktree.sh integrate` when the vault commits straight to `main`, or push and merge a pull request (no `integrate`) when it ships by one — then, from outside it, `gc "$WORK"`. Work in it by `git -C "$WORK"` and absolute paths, never `cd`: `gc` deletes it.
 
 This skill invokes nothing; writing its own notes is not an invocation.
 

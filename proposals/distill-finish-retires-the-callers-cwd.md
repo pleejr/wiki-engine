@@ -1,6 +1,7 @@
 ---
 slug: distill-finish-retires-the-callers-cwd
-outcome: open
+outcome: partially-accepted
+reason: "built the -C option (as --work) plus the warning, not the subshell: distill §0 has the caller edit and commit in $WORK, so a persistent shell is usually already inside it before step 4, and a subshell at step 4 alone cannot produce the Expected. --work lets the skill never enter the tree; the warning (now also in vault-worktree gc) names the cd when a caller did."
 received: 2026-11-17
 ---
 

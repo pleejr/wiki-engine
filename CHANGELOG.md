@@ -4,6 +4,19 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.9.0] — 2026-11-17
+
+Minor — `distill-finish --work` keeps the caller's shell out of the worktree it deletes.
+
+### Added
+- **`distill-finish.sh --work DIR`** names the session worktree instead of reading it from the current directory. The `distill` skill now runs `distill-finish.sh --work "$WORK"` from outside the worktree, and §0 says to edit and commit by absolute path and `git -C "$WORK"` rather than `cd`. Without `--work` the old behaviour is unchanged; `--work` naming the canonical checkout is refused (exit 2) as the current directory being canonical always was.
+
+### Fixed
+- **A finished distill stranded the caller's shell in a deleted directory** (fail-closed: the next command is refused, nothing is lost). The script required the caller to stand in `$WORK` and then retired `$WORK` in step 6, so a harness whose shell keeps its cwd between commands refused the next command after every successful distill. A child process cannot move its caller's shell, so step 6 of `distill-finish.sh` and `vault-worktree.sh gc <path>` now print `your shell is inside the retired worktree — cd "<canonical>"` when the caller's directory was inside what they removed, and nothing otherwise. The `mine` skill's own `gc "$WORK"` gets the same no-`cd` instruction.
+
+### Tests
+- A new CI step lands and retires a worktree with `--work` from canonical and checks that no notice is printed; refuses `--work` at canonical; checks that the old in-tree call still lands and prints the `cd` notice; checks that `gc` prints the notice from inside its target and not from canonical; and checks that the skill invokes `--work "$WORK"`. Against 3.8.1, 8 of its 12 checks are red.
+
 ## [3.8.1] — 2026-11-17
 
 Patch — every engine lock takes `mkdir(2)` directly; Ubuntu 26.04's `mkdir(1)` can admit two racers.
