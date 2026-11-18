@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.9.3] — 2026-11-17
+
+Patch — `rag-setup.sh` restores pip when only its metadata survived.
+
+### Fixed
+- **3.9.2's pip repair missed the shape a real vault had** (fail-open: the re-sync still failed, now with a message). The vault's `.rag/venv` kept `pip-*.dist-info` but had lost the `pip/` package, and `ensurepip` decides "already installed" from that metadata, so it reported `Requirement already satisfied` and changed nothing. `rag-setup.sh` now removes pip metadata whose package directory is gone before running `ensurepip`.
+
+### Tests
+- The pip-repair CI step adds that fixture: a normal venv with `site-packages/pip` deleted and its `dist-info` left in place. Against 3.9.2, "pip is restored when only its metadata survived" is red; 3.9.2's `--without-pip` fixture never had metadata to mislead `ensurepip`.
+
 ## [3.9.2] — 2026-11-17
 
 Patch — `rag-setup.sh` restores pip in a pip-less venv; `update.sh` reports a failed re-sync.

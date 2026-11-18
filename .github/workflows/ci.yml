@@ -3671,6 +3671,17 @@ jobs:
           printf '%s' "$out" | grep -q 'No module named pip' && r=1 || r=0; ck $r "rag-setup does not die on 'No module named pip'"
           "$V/.rag/venv/bin/python" -m pip --version >/dev/null 2>&1 && r=0 || r=1; ck $r "pip is present after rag-setup"
           "$V/.rag/venv/bin/python" -c 'import six' 2>/dev/null && r=0 || r=1; ck $r "...and the requested package installed with it"
+
+          # The shape found on a real vault: pip's metadata survived, the pip/ package did not.
+          # ensurepip reads the metadata, says "already satisfied", and leaves pip broken.
+          V2="$RUNNER_TEMP/orphanpipvault"; rm -rf "$V2"; mkdir -p "$V2/.rag"
+          python3 -m venv "$V2/.rag/venv"
+          site="$("$V2/.rag/venv/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+          rm -rf "$site/pip"
+          ls -d "$site"/pip-*.dist-info >/dev/null 2>&1 && ! "$V2/.rag/venv/bin/python" -m pip --version >/dev/null 2>&1 && r=0 || r=1
+          ck $r "precondition: pip metadata present, pip package gone"
+          out="$(RAG_PIP_PKG=six ./bin/rag-setup.sh --wiki "$V2" 2>&1 || true)"
+          "$V2/.rag/venv/bin/python" -m pip --version >/dev/null 2>&1 && r=0 || r=1; ck $r "pip is restored when only its metadata survived"
           exit "$fail"
 
       - name: recall leaves out the hubs, returns pages, reads its vector sidecar, and the prompt hook stays quiet off-topic
