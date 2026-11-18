@@ -111,7 +111,9 @@ fi
 # whether canonical is gated decides where everything below is written.
 "$SCRIPT_DIR/adopt.sh" --wiki "$WIKI" --tree "$PAGE_TREE"
 if [ -x "$WIKI/.rag/venv/bin/python" ]; then
-  "$SCRIPT_DIR/rag-setup.sh" --wiki "$WIKI" >/dev/null && echo "update: RAG deps in sync"
+  # Optional, so a failure does not stop the update — but it is reported, never silent.
+  if "$SCRIPT_DIR/rag-setup.sh" --wiki "$WIKI" >/dev/null; then echo "update: RAG deps in sync"
+  else echo "update: RAG deps NOT re-synced (rag-setup.sh failed) — run $SCRIPT_DIR/rag-setup.sh --wiki \"$WIKI\" to see why" >&2; fi
 fi
 
 defer=0

@@ -108,6 +108,15 @@ if [ ! -x "$VENV/bin/python" ]; then
   "$PY" -m venv "$VENV"
 fi
 
+# A venv can exist without pip — created with --without-pip, or pip uninstalled from it
+# later — and every step below is a pip call, so without this the run dies on the first
+# one with `No module named pip`, and update.sh's re-sync fails on every release.
+# ensurepip ships with CPython and installs offline, so the repair needs no network.
+if ! "$VENV/bin/python" -m pip --version >/dev/null 2>&1; then
+  echo "rag-setup: .rag/venv has no pip — restoring it with ensurepip"
+  "$VENV/bin/python" -m ensurepip --upgrade --default-pip >/dev/null \
+    || { echo "error: could not restore pip in .rag/venv — recreate it: $0 --wiki \"$WIKI\" --force" >&2; exit 1; }
+fi
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
 if [ -n "${RAG_PIP_PKG:-}" ]; then
   echo "rag-setup: installing $RAG_PIP_PKG (override — unpinned)"
