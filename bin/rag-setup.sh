@@ -112,8 +112,15 @@ fi
 # later — and every step below is a pip call, so without this the run dies on the first
 # one with `No module named pip`, and update.sh's re-sync fails on every release.
 # ensurepip ships with CPython and installs offline, so the repair needs no network.
+# It decides "already installed" from pip's METADATA, so a venv that kept pip-*.dist-info
+# but lost the pip/ package itself (the shape found on a real vault) is reported as
+# satisfied and left broken. Metadata whose package is gone is removed first.
 if ! "$VENV/bin/python" -m pip --version >/dev/null 2>&1; then
   echo "rag-setup: .rag/venv has no pip — restoring it with ensurepip"
+  site="$("$VENV/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+  if [ -n "$site" ] && [ ! -d "$site/pip" ]; then
+    for d in "$site"/pip-*.dist-info; do [ -d "$d" ] && rm -rf "$d"; done
+  fi
   "$VENV/bin/python" -m ensurepip --upgrade --default-pip >/dev/null \
     || { echo "error: could not restore pip in .rag/venv — recreate it: $0 --wiki \"$WIKI\" --force" >&2; exit 1; }
 fi
