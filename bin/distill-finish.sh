@@ -223,7 +223,13 @@ fi
 
 # --- 4. recall index --------------------------------------------------------------------
 if [ "$landed" = 1 ] && [ -f "$CANON/.rag/index.jsonl" ]; then
-  if "$SCRIPT_DIR/rag-build.sh" >/dev/null 2>&1; then say "recall index rebuilt"
+  # rag-build runs one build per vault: when another session's build holds the lock, it
+  # hands this request to that build and returns at once with a `deferred` line.
+  if rb_out="$("$SCRIPT_DIR/rag-build.sh" 2>&1)"; then
+    case "$rb_out" in
+      *"rag-build: deferred"*) say "recall index rebuild handed to the build already running on this vault";;
+      *) say "recall index rebuilt";;
+    esac
   else say "recall index rebuild failed (optional; recall is a derived lens) — run rag-build.sh to see why"; fi
 fi
 

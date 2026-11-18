@@ -3583,6 +3583,80 @@ jobs:
 
           exit "$fail"
 
+      - name: One rag-build per vault — a second caller defers, the holder re-runs, a dead holder's lock is reclaimed
+        run: |
+          # Two distill-finish runs a minute apart each launched rag-build on the same vault:
+          # two embedders, ~16G each on a 24G host, and two builds racing to replace
+          # index.jsonl and vectors.npz separately. The property: at most one embed in flight
+          # per vault, and content that lands while a build runs is still indexed.
+          fail=0
+          ck() { if [ "$1" = 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          # A SLOW threaded stub that records the most requests ever in flight at once. One
+          # build embeds sequentially, so a maximum above 1 means two embedders ran together.
+          export MAXF="$RUNNER_TEMP/maxinflight"; : > "$MAXF"
+          python3 - <<'PY' &
+          import json, os, threading, time
+          from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+          lk = threading.Lock(); st = {"in": 0, "max": 0}
+          class H(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  self.rfile.read(int(self.headers.get('Content-Length', 0)))
+                  with lk:
+                      st["in"] += 1; st["max"] = max(st["max"], st["in"])
+                      open(os.environ["MAXF"], "w").write(str(st["max"]))
+                  time.sleep(0.15)
+                  with lk: st["in"] -= 1
+                  b = json.dumps({"embedding": [0.1] * 8}).encode()
+                  self.send_response(200); self.send_header('Content-Type', 'application/json')
+                  self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+              def log_message(self, *a): pass
+          ThreadingHTTPServer(('127.0.0.1', 8775), H).serve_forever()
+          PY
+          STUB=$!
+          trap 'kill $STUB 2>/dev/null' EXIT
+          for _ in $(seq 1 50); do
+            python3 -c "import socket;socket.create_connection(('127.0.0.1',8775),0.2)" 2>/dev/null && break
+            sleep 0.1
+          done
+          export RAG_EMBED_API=ollama RAG_EMBED_URL=http://127.0.0.1:8775/api/embeddings
+
+          V="$RUNNER_TEMP/lockvault"; rm -rf "$V"; mkdir -p "$V/memory"
+          printf -- '---\nboundary: personal\n---\n# v\n' > "$V/CLAUDE.md"
+          for t in garden kayak sourdough telescope violin bicycle chess pottery; do
+            printf -- '# %s\n\n## A\n\nnotes on %s\n' "$t" "$t" > "$V/memory/$t.md"
+          done
+
+          # 1. A starts; a page lands; B starts while A is still embedding.
+          ./bin/rag-build.sh --wiki "$V" > "$RUNNER_TEMP/a.out" 2>&1 & A=$!
+          sleep 0.4
+          printf -- '# late\n\n## A\n\nzeppelin arrived late\n' > "$V/memory/late.md"
+          overlap=1; kill -0 "$A" 2>/dev/null || overlap=0   # A must still be running now
+          ./bin/rag-build.sh --wiki "$V" > "$RUNNER_TEMP/b.out" 2>&1 & B=$!
+          ra=0; wait "$A" || ra=$?; rb=0; wait "$B" || rb=$?
+          [ "$overlap" = 1 ] && r=0 || r=1; ck $r "precondition: B started while A was still running"
+          [ "$ra" = 0 ] && [ "$rb" = 0 ] && r=0 || r=1; ck $r "both callers exit 0 (A=$ra B=$rb)"
+          [ "$(cat "$MAXF")" = 1 ] && r=0 || r=1; ck $r "at most one embed in flight per vault (saw $(cat "$MAXF"))"
+          grep -q '"file": *"memory/late.md"' "$V/.rag/index.jsonl" && r=0 || r=1; ck $r "a page that landed mid-build is indexed when every caller has returned"
+          grep -q '^rag-build: deferred' "$RUNNER_TEMP/b.out" && r=0 || r=1; ck $r "the second caller says it deferred"
+          [ ! -e "$V/.rag/build.lock" ] && [ ! -e "$V/.rag/build.owed" ] && r=0 || r=1; ck $r "lock released and no request left owed"
+
+          # 2. A holder that died without releasing does not block every later build.
+          mkdir "$V/.rag/build.lock"; sh -c 'echo $$' > "$V/.rag/build.lock/pid"
+          printf -- '# after\n\n## A\n\nafter the crash\n' > "$V/memory/after.md"
+          out="$(./bin/rag-build.sh --wiki "$V" 2>&1)"
+          printf '%s' "$out" | grep -q '^rag-build: deferred' && r=1 || r=0; ck $r "a dead holder's lock is reclaimed, not deferred to"
+          grep -q '"file": *"memory/after.md"' "$V/.rag/index.jsonl" && r=0 || r=1; ck $r "...and that build indexes"
+
+          # 3. --force is not lost when it is the request that defers.
+          rm -rf "$V/.rag/build.lock"; mkdir "$V/.rag/build.lock"; sleep 300 & LIVE=$!; echo "$LIVE" > "$V/.rag/build.lock/pid"
+          out="$(./bin/rag-build.sh --wiki "$V" --force 2>&1)"
+          printf '%s' "$out" | grep -q '^rag-build: deferred' && r=0 || r=1; ck $r "a build defers to a live holder"
+          grep -q force "$V/.rag/build.owed" 2>/dev/null && r=0 || r=1; ck $r "...and records that the deferred request was --force"
+          kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null || true
+          out="$(./bin/rag-build.sh --wiki "$V" 2>&1)"
+          printf '%s' "$out" | grep -q ' 0 reused' && r=0 || r=1; ck $r "the next holder serves the owed --force (re-embeds everything)"
+          exit "$fail"
+
       - name: recall leaves out the hubs, returns pages, reads its vector sidecar, and the prompt hook stays quiet off-topic
         run: |
           # Recall was correct and unused: its only trigger was a skill sessions rarely ran.
