@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.9.2] — 2026-11-17
+
+Patch — `rag-setup.sh` restores pip in a pip-less venv; `update.sh` reports a failed re-sync.
+
+### Fixed
+- **A pip-less `.rag/venv` failed every RAG re-sync** (fail-open: recall kept working on stale deps with no clear notice). Every step of `rag-setup.sh` is a pip call, so a venv created without pip, or with pip later removed, died on `No module named pip`, and `update.sh` dropped that failure without a message of its own. `rag-setup.sh` now runs `ensurepip` (offline, bundled with CPython) when the venv has no pip, and `update.sh` prints `update: RAG deps NOT re-synced` with the command to rerun. Found while adopting 3.9.1 into a vault whose venv had no pip.
+
+### Tests
+- A new CI step builds a venv with `--without-pip`, runs `rag-setup.sh`, and requires no `No module named pip`, pip present afterwards, and the requested package installed. Against 3.9.1, all three are red.
+
 ## [3.9.1] — 2026-11-17
 
 Patch — one `rag-build.sh` per vault: a second caller hands its request to the running build.

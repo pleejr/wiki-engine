@@ -3657,6 +3657,22 @@ jobs:
           printf '%s' "$out" | grep -q ' 0 reused' && r=0 || r=1; ck $r "the next holder serves the owed --force (re-embeds everything)"
           exit "$fail"
 
+      - name: rag-setup restores pip in a venv that has none
+        run: |
+          # A venv without pip made every rag-setup run (and so update.sh's re-sync on every
+          # release) die on 'No module named pip'. ensurepip repairs it offline.
+          fail=0
+          ck() { if [ "$1" = 0 ]; then echo "  ok   $2"; else echo "  FAIL $2"; fail=1; fi; }
+          V="$RUNNER_TEMP/piplessvault"; rm -rf "$V"; mkdir -p "$V/.rag"
+          python3 -m venv --without-pip "$V/.rag/venv"
+          "$V/.rag/venv/bin/python" -m pip --version >/dev/null 2>&1 && r=1 || r=0; ck $r "precondition: the venv has no pip"
+          # RAG_PIP_PKG keeps the install small; the model prefetch after it may fail, and that is not this check.
+          out="$(RAG_PIP_PKG=six ./bin/rag-setup.sh --wiki "$V" 2>&1 || true)"
+          printf '%s' "$out" | grep -q 'No module named pip' && r=1 || r=0; ck $r "rag-setup does not die on 'No module named pip'"
+          "$V/.rag/venv/bin/python" -m pip --version >/dev/null 2>&1 && r=0 || r=1; ck $r "pip is present after rag-setup"
+          "$V/.rag/venv/bin/python" -c 'import six' 2>/dev/null && r=0 || r=1; ck $r "...and the requested package installed with it"
+          exit "$fail"
+
       - name: recall leaves out the hubs, returns pages, reads its vector sidecar, and the prompt hook stays quiet off-topic
         run: |
           # Recall was correct and unused: its only trigger was a skill sessions rarely ran.
