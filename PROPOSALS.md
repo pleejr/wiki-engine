@@ -97,7 +97,7 @@ Putting it beside `Co-authored-by:` is still the tidiest habit (it keeps `git lo
 | `prove-the-test-can-fail-cede-verdict-audit` | shipped | derived |
 | `push-verb-omits-git-push` | shipped | derived |
 | `queue-cannot-see-unmerged-proposal-prs` | shipped | derived |
-| `rag-build-no-concurrency-lock` | open | received 2026-11-17 |
+| `rag-build-no-concurrency-lock` | shipped | derived |
 | `rag-capture-aborts-silently-when-wiki-path-is-not-a-vault` | shipped | derived |
 | `rag-capture-blocks-forever-when-stdin-is-an-open-pipe` | shipped | derived |
 | `rag-capture-dirties-canonical-blocks-integrate` | shipped | derived |

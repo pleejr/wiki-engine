@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.9.1] — 2026-11-17
+
+Patch — one `rag-build.sh` per vault: a second caller hands its request to the running build.
+
+### Fixed
+- **Concurrent index builds exhausted host memory** (fail-closed for the index, resource exhaustion on the host). Two `distill-finish.sh` runs a minute apart each launched `rag-build.sh` on the same vault, so two embedders ran at once (about 16G each on a 24G host) and raced to replace `index.jsonl` and `vectors.npz` separately; a build that began before a sibling commit landed could also replace the newer index last. `rag-build.sh` now holds `<vault>/.rag/build.lock` through `lock-lib.sh`. A caller that finds it held records the request in `.rag/build.owed` (including `--force`), prints `rag-build: deferred — …` and exits 0 at once; the holder makes one more pass before releasing, so any number of deferred callers costs one extra pass. A lock whose holder has died is reclaimed, and `RAG_BUILD_MAX_PASSES` (default 5) bounds the loop. `distill-finish.sh` step 4 reports a deferred rebuild as handed to the running build rather than as rebuilt.
+
+### Tests
+- A new CI step runs two builds against a slow threaded stub embedder that records the most requests in flight at once, and requires a maximum of 1, the second caller to defer, a page written mid-build to be indexed, and the lock released with nothing owed. It also checks that a dead holder's lock is reclaimed and that a deferred `--force` is served by the next holder. Against 3.9.0, the in-flight check reads 2 and is red.
+
 ## [3.9.0] — 2026-11-17
 
 Minor — `distill-finish --work` keeps the caller's shell out of the worktree it deletes.

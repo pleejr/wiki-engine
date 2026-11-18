@@ -1,6 +1,7 @@
 ---
 slug: rag-build-no-concurrency-lock
-outcome: open
+outcome: accepted
+reason: "built the suggested shape: a per-vault lock (lock-lib, <vault>/.rag/build.lock) plus a rebuild-owed flag the holder serves before releasing, so any number of callers costs one extra pass and a late commit is still indexed. Reproduced at v3.9.0 with a slow stub embedder (2 embeds in flight). The unverified interleave of index.jsonl and vectors.npz is closed by the same lock rather than separately tested. Also: dead-holder reclaim, --force carried through the owed flag, and distill-finish reports a deferred rebuild."
 received: 2026-11-17
 ---
 

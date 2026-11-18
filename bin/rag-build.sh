@@ -15,6 +15,13 @@
 #   rag-build.sh                 build/refresh against $WIKI_PATH
 #   rag-build.sh --wiki DIR      target DIR
 #   rag-build.sh --force         re-embed every file (ignore unchanged-file reuse)
+#
+# One build per vault at a time. A build holds <vault>/.rag/build.lock (lock-lib.sh's
+# mkdir(2)). A build that finds it held does not start a second embedder: it records the
+# request in .rag/build.owed and exits 0 at once with a `deferred` line, and the running
+# build makes one more pass before it releases, so content landed after it began is
+# still indexed. Any number of deferred callers costs one extra pass, not one each.
+# A lock whose holder has died is reclaimed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,8 +48,12 @@ else
 fi
 [ -n "$PYBIN" ] || { echo "error: python3 required" >&2; exit 1; }
 
-export RAG_WIKI="$WIKI" RAG_BINDIR="$SCRIPT_DIR" RAG_FORCE="$FORCE"
+# shellcheck source=bin/lock-lib.sh
+. "$SCRIPT_DIR/lock-lib.sh" || { echo "error: missing lock-lib.sh — broken engine checkout" >&2; exit 1; }
 
+# build_once — one full index pass. Reads FORCE at call time.
+build_once() {
+export RAG_WIKI="$WIKI" RAG_BINDIR="$SCRIPT_DIR" RAG_FORCE="$FORCE"
 "$PYBIN" - <<'PY'
 import os, sys, json, glob, re, tempfile
 sys.path.insert(0, os.environ["RAG_BINDIR"])
@@ -230,3 +241,53 @@ else:
     print("rag-build: cross-boundary filter armed (%s) — %d page(s) skipped"
           % (VBOUND, skipped))
 PY
+}
+
+# --- one build per vault ------------------------------------------------------------------
+# Two builds at once each load the embedder (gigabytes for a local model) and race to
+# replace index.jsonl and vectors.npz separately: the host swaps, the two files can come
+# from different builds, and a build that began before a sibling commit landed can
+# replace the newer index last. So the second caller hands its request to the first.
+RAGDIR="$WIKI/.rag"; mkdir -p "$RAGDIR"
+LOCK="$RAGDIR/build.lock"; OWED="$RAGDIR/build.owed"
+MAX_PASSES="${RAG_BUILD_MAX_PASSES:-5}"   # bounds the loop however often callers arrive
+holder=""
+
+# take_lock — 0 iff this process now holds LOCK. Reclaims a lock whose holder is dead,
+# or one left with no pid for over 10 minutes (holder died between mkdir and the pid write).
+take_lock() {
+  while :; do
+    if lock_mkdir "$LOCK"; then echo $$ > "$LOCK/pid"; return 0; fi
+    holder="$(cat "$LOCK/pid" 2>/dev/null || true)"
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -rf "$LOCK"; continue; fi
+    if [ -z "$holder" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
+      rm -rf "$LOCK"; continue
+    fi
+    return 1
+  done
+}
+
+# Contender order: record the request, THEN try once more. The holder's order is the
+# mirror (release, THEN look for a request), so whichever side moves second sees the other.
+if ! take_lock; then
+  if [ "$FORCE" = 1 ]; then echo force >> "$OWED"; else touch "$OWED"; fi
+  if ! take_lock; then
+    echo "rag-build: deferred — build ${holder:-?} holds .rag/build.lock; it re-runs once more for this request"
+    exit 0
+  fi
+fi
+trap 'rm -rf "$LOCK"' EXIT
+
+passes=0
+while :; do
+  if [ -e "$OWED" ]; then grep -q force "$OWED" 2>/dev/null && FORCE=1; rm -f "$OWED"; fi
+  build_once || exit $?          # owed requests stay recorded for the next caller
+  FORCE=0; passes=$((passes + 1))
+  if [ -e "$OWED" ] && [ "$passes" -lt "$MAX_PASSES" ]; then
+    echo "rag-build: re-running — another build was requested during this one"; continue
+  fi
+  [ -e "$OWED" ] && { echo "rag-build: $MAX_PASSES passes run; a request is still owed — the next rag-build serves it"; break; }
+  rm -rf "$LOCK"; trap - EXIT
+  [ -e "$OWED" ] && take_lock && { trap 'rm -rf "$LOCK"' EXIT; echo "rag-build: re-running — a build was requested as this one released"; continue; }
+  break
+done
