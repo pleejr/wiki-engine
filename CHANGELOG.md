@@ -4,6 +4,13 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.10.1] — 2026-11-19
+
+Patch — RAG pins: `fastembed` 0.9.1, `onnxruntime` 1.32.0, `numpy` 2.5.5.
+
+### Changed
+- **Pins:** `fastembed` 0.9.0 → 0.9.1, `onnxruntime` 1.31.0 → 1.32.0, `numpy` 2.5.4 → 2.5.5; `doctor.sh` named all three on every consumer session. Measured against the old pins in `uv` venvs on cpython 3.12.13, 3.13.14 and 3.14.10: install clean, `uv pip check` compatible, 28 packages, 768-dim embeddings bit-identical (cosine 1.0, max component delta 0.0) on every interpreter, both with all three moved and with only onnxruntime moved. The instrument was checked first: onnxruntime 1.29.0 → 1.30.0 on the same corpus reproduces its known drift (max delta 1.2e-04), and the baselines agree across interpreters (delta 0.0). No reindex. `huggingface_hub` stays on 1.33.0: fastembed 0.9.1 still requires `huggingface-hub<2.0`.
+
 ## [3.10.0] — 2026-11-19
 
 Minor — `distill` sizes itself to the session: a fact-only session takes a light path.
