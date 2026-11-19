@@ -59,8 +59,7 @@ The verdict is yours, from three sources:
 
 End with exactly one of:
 
-- `SAFE TO CLOSE — distilled <n> note(s); <project>; nothing outstanding; audit examined <m> process(es).` When items were handed off, append `; handed off: <item> (<where recorded>)` for each.
-  On the light path, `distilled <n> note(s)` reads `light distill: <k> line(s) corrected; ruled out: scope, assumption, recurrence, decision`, so a wrong triage is visible and can be rerun as full.
+- `SAFE TO CLOSE — distilled <n> note(s); <project>; nothing outstanding; audit examined <m> process(es).` When items were handed off, append `; handed off: <item> (<where recorded>)` for each. On the light path, `distilled <n> note(s)` reads `light distill: <k> line(s) corrected; ruled out: scope, assumption, recurrence, decision`, so a wrong triage is visible and can be rerun as full.
 - `NOT SAFE TO CLOSE — <k> outstanding:` then one line per item with the command that clears it, and the `AUDIT` line's count.
 
 `<m>` is the `AUDIT` line's count after anything stopped. When the audit could not run (exit 2), say so in the verdict rather than reporting a count.
