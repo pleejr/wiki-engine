@@ -1,6 +1,6 @@
 ---
 slug: distill-light-path-for-a-fact-only-session
-outcome: open
+outcome: accepted
 received: 2026-11-19
 ---
 

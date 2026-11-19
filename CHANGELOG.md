@@ -4,6 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
+## [3.10.0] — 2026-11-19
+
+Minor — `distill` sizes itself to the session: a fact-only session takes a light path.
+
+### Added
+- **`distill` step 0.5, triage.** When every durable change the session made is a re-read of a fact the vault already records (a date, a status, a count, a "read at" time) and the session had no scope change, wrong assumption, recurrence or reasoned choice, distill takes the **light** path: it corrects each stale line in place, replaces the note sweep with one ruled-out line naming each candidate class, and skips the log line. Anything else, or any doubt, takes the full path unchanged. Steps 0, 4 and 5 (isolation, landing, the close verdict) run on both paths, and the light verdict reads `light distill: <k> line(s) corrected; ruled out: scope, assumption, recurrence, decision`, so a wrong triage is visible. A session with nothing stale and nothing produced says `nothing to distill` and still runs steps 4 and 5.
+
+### Tests
+- The distill-finish CI step adds case I: an empty session worktree lands with `VAULT DONE — nothing new to land`, rc 0, and is retired, pinning what the light path's `nothing to distill` relies on. The property already held at 3.9.3, so this is a regression pin; a mutated landing message turns it red. Three skill-text checks pin that the light path keeps steps 0, 4 and 5, that doubt picks full, and that the light verdict names its path and ruled-out classes; all three are red against 3.9.3.
+
 ## [3.9.3] — 2026-11-17
 
 Patch — `rag-setup.sh` restores pip when only its metadata survived.

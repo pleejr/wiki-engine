@@ -3,7 +3,7 @@ name: distill
 description: End-of-session wrap-up. Records what this session made durable — the active project's Current state and Next steps, decisions, and preference/decision/lesson notes in memory/ — then runs distill-finish.sh, which lints, lands the commit by the vault's declared route, ages out the capture buffer and retires the session worktree, and ends with an explicit SAFE TO CLOSE or NOT SAFE TO CLOSE verdict naming every outstanding item (running shells or subagents, unmerged pull requests, unpushed branches, leftover worktrees). Use when finishing or pausing work, or when a keeper fact, decision or lesson emerged. It never offers or runs the `mine` pass. In-session, on demand — never from a lifecycle hook.
 status: active
 summary: "end-of-session: record project state and durable notes, run distill-finish.sh, then say SAFE TO CLOSE or what is still owed. Never offers the mining pass."
-updated: 2026-10-14
+updated: 2026-11-19
 ---
 
 # distill — record what lasts, then say whether the session can close
@@ -12,6 +12,17 @@ updated: 2026-10-14
 
 ## 0. Isolate
 `WORK="$(${CLAUDE_SKILL_DIR}/../../bin/vault-worktree.sh ensure)"` — check its exit status (non-zero: not isolated, resolve first) and read its stderr (the only place a stale base is reported). Make every edit and commit in `$WORK` by absolute path and `git -C "$WORK"` — never `cd` into it, because step 4 deletes it and a shell left there refuses its next command. Stage explicit paths, never `git add -A`.
+
+## 0.5 Triage — light or full
+Decide from the conversation, and say which path and why:
+- **light** — every change this session made to durable state is a re-read of a fact the vault already records (a date, a status, a count, a "read at" time), and the session had no scope change, wrong assumption, recurrence of a recorded mistake, or choice with a reason.
+  - Step 1 shrinks to correcting each stale line in place, dated; Current state and Next steps change only on those lines.
+  - Step 2 becomes one ruled-out line naming each candidate class checked — scope change, wrong assumption, recurrence, decision — and `none` for each. Zero notes is a claim; this line is its evidence.
+  - Step 3 is skipped.
+  - Nothing stale and nothing produced: say `nothing to distill`, commit nothing; step 4 then reports `nothing new to land`.
+- **full** — anything else: steps 1–3 as written.
+
+Any doubt picks full. Steps 0, 4 and 5 run on both paths: isolation, landing and the close verdict are the safety-bearing parts.
 
 ## 1. Project state (if a project is active)
 In `projects/<slug>.md`: **overwrite** Current state, update Next steps, **append** to Key decisions when a decision was made. Keep `status:` (`active|paused|done`) and the one-line `summary:` current — they generate the index's Projects buckets.
@@ -49,6 +60,7 @@ The verdict is yours, from three sources:
 End with exactly one of:
 
 - `SAFE TO CLOSE — distilled <n> note(s); <project>; nothing outstanding; audit examined <m> process(es).` When items were handed off, append `; handed off: <item> (<where recorded>)` for each.
+  On the light path, `distilled <n> note(s)` reads `light distill: <k> line(s) corrected; ruled out: scope, assumption, recurrence, decision`, so a wrong triage is visible and can be rerun as full.
 - `NOT SAFE TO CLOSE — <k> outstanding:` then one line per item with the command that clears it, and the `AUDIT` line's count.
 
 `<m>` is the `AUDIT` line's count after anything stopped. When the audit could not run (exit 2), say so in the verdict rather than reporting a count.
