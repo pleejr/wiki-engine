@@ -989,6 +989,20 @@ jobs:
           WIKI="$V" ENGINE="$GITHUB_WORKSPACE" ADOPT_LIB="$GITHUB_WORKSPACE/bin/adopt-lib.sh" ADOPT_CHECK="" bash "$GITHUB_WORKSPACE/adopt.d/45-vault-log-union.sh" >/dev/null
           WIKI="$V" ENGINE="$GITHUB_WORKSPACE" ADOPT_LIB="$GITHUB_WORKSPACE/bin/adopt-lib.sh" ADOPT_CHECK="" bash "$GITHUB_WORKSPACE/adopt.d/45-vault-log-union.sh" >/dev/null
           chk "adoption adds log.md merge=union once" '[ "$(git -C "$V" check-attr merge -- log.md | sed "s/.*: //")" = union ] && [ "$(grep -c "merge=union" "$V/.gitattributes")" = 1 ]'
+          # I (distill-light-path-for-a-fact-only-session): the light path's "nothing to distill"
+          # commits nothing, and still owes step 4. Landing an empty session must succeed, say so,
+          # and retire the worktree, or the close verdict the light path keeps has nothing to read.
+          mkvault i; export WIKI_PATH="$V"; printf 'publish = direct\n' > "$V/.wiki-gates.conf"
+          git -C "$V" add .wiki-gates.conf; git -C "$V" commit -qm "declare route" --no-verify; git -C "$V" push -q origin main 2>/dev/null
+          I1="$(WIKI_WT_SESSION=i1 "$E/vault-worktree.sh" ensure 2>/dev/null)"
+          chk "fixture: an empty session worktree exists with nothing committed" '[ -d "$I1" ] && [ "$(git -C "$I1" rev-list --count HEAD --not origin/main)" = 0 ]'
+          rc=0; out="$(cd "$V" && WIKI_WT_SESSION=i1 "$E/distill-finish.sh" --work "$I1" 2>&1)" || rc=$?
+          chk "empty session: VAULT DONE — nothing new to land, rc 0" '[ "$rc" = 0 ] && printf "%s" "$out" | grep -qF "VAULT DONE — nothing new to land"'
+          chk "empty session: the worktree is retired" '[ ! -d "$I1" ]'
+          S="$GITHUB_WORKSPACE/skills/distill/SKILL.md"
+          chk "distill: the light path keeps steps 0, 4 and 5" 'grep -qF "Steps 0, 4 and 5 run on both paths" "$S"'
+          chk "distill: the light verdict names the path and the ruled-out classes" 'grep -qF "light distill: <k> line(s) corrected; ruled out: scope, assumption, recurrence, decision" "$S"'
+          chk "distill: doubt picks the full path" 'grep -qF "Any doubt picks full" "$S"'
           exit "$fail"
 
       - name: distill-finish never strands the caller's shell in the worktree it retires
