@@ -132,7 +132,8 @@ if [ "$WIRE_CLAUDE_MD" -eq 1 ]; then
   # looking normal. Import it from the config dir's stable pointer instead.
   # Compared as physical directories, so a trailing slash or a symlink to ~/.claude does not
   # add a second import next to the template's own.
-  if ! [ "$CFG" -ef "$HOME/.claude" ]; then
+  # -ef is false when either path is missing, so a fresh machine falls back to the spelling.
+  if ! { [ "$CFG" -ef "$HOME/.claude" ] || [ "${CFG%/}" = "$HOME/.claude" ]; }; then
     ROUTER="@$POINTER/CLAUDE.md"
     if [ -f "$CMD" ] && grep -qF "$ROUTER" "$CMD"; then
       ok "$CMD already imports the engine router (left as-is)"

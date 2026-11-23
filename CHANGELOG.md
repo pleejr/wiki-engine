@@ -13,7 +13,7 @@ Patch — `wire-machine.sh --wire-claude-md` imports the engine router under a `
 - Docs that named `~/.claude` where the code resolves `${CLAUDE_CONFIG_DIR:-~/.claude}`: `new-wiki.sh` and `wire-machine.sh` help, `onboard` steps 2 and 5, and the `propose` intake review check, whose shell test now reads the config dir.
 
 ### Tests
-- The `CLAUDE_CONFIG_DIR` CI step adds five checks: both imports written once each after two runs, starting from a file with no trailing newline; `~/.claude/CLAUDE.md` untouched; `--check` naming a missing router import; the vault import but no router line under the default config dir; and none under a symlinked, slash-ended spelling of it. The first and third are red against 3.10.1.
+- The `CLAUDE_CONFIG_DIR` CI step adds five checks: both imports written once each after two runs, starting from a file that already imports the vault with no trailing newline; `~/.claude/CLAUDE.md` untouched; `--check` naming a missing router import; the vault import but no router line under the default config dir; and none under a symlinked, slash-ended spelling of it. The first and third are red against 3.10.1.
 
 ## [3.10.1] — 2026-11-19
 

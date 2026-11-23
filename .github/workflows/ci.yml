@@ -2924,8 +2924,9 @@ jobs:
           # here, and an @-import cannot name a variable. --wire-claude-md must import the router
           # from the config dir's stable pointer, once, and leave ~/.claude/CLAUDE.md alone.
           CMD="$CLAUDE_CONFIG_DIR/CLAUDE.md"; ROUTER="@$CLAUDE_CONFIG_DIR/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md"
-          # Start from a file with no trailing newline: an append must not join the last line.
-          printf '# machine notes' > "$CMD"
+          # Start from a file that already imports the vault, with no trailing newline: the router
+          # append is then the first write, and it must not join that line.
+          printf '# machine notes\n@%s/CLAUDE.md' "$(cd "$V" && pwd)" > "$CMD"
           ./bin/wire-machine.sh --wiki "$V" --wire-claude-md --no-rag >/dev/null 2>&1 || true
           ./bin/wire-machine.sh --wiki "$V" --wire-claude-md --no-rag >/dev/null 2>&1 || true
           if [ "$(grep -cxF "$ROUTER" "$CMD")" = 1 ] && grep -qx '# machine notes' "$CMD" && [ "$(grep -cxF "@$(cd "$V" && pwd)/CLAUDE.md" "$CMD")" = 1 ]; then ck 0 "wire-machine --wire-claude-md imports the vault and the engine router once each"; else ck 1 "wire-machine --wire-claude-md imports the vault and the engine router once each: $(cat "$CMD")"; fi
