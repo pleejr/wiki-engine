@@ -32,10 +32,10 @@ A defect that reproduces and has an obvious, contained fix does **not** need the
 
 ## How to review — the checklist
 
-**How to review.** Use a rigorous critique skill if this vault has one installed — check `~/.claude/skills/scrutinize` (this vault's is `scrutinize`; a vault may install it under another name, and the engine depends on none of them):
+**How to review.** Use a rigorous critique skill if this vault has one installed — check `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/scrutinize` (this vault's is `scrutinize`; a vault may install it under another name, and the engine depends on none of them):
 
 ```bash
-[ -e ~/.claude/skills/scrutinize ] && echo "review skill available" || echo "use the checklist below"
+[ -e "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/scrutinize" ] && echo "review skill available" || echo "use the checklist below"
 ```
 
 If none is installed, do the pass inline against this checklist — it is deliberately generic, and each line is a gap a real proposal has actually shipped with:

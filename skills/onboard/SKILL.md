@@ -20,14 +20,14 @@ Run **once**, right after `new-wiki.sh` (or after adopting the engine in an exis
 
 1. **Inventory, then confirm.** Survey the sources below and present a short proposed manifest (memories to distill, repos to ingest, projects to stub). **Ask before creating many pages.**
 
-2. **Memories → `memory/`.** Read Claude Code native memory (`~/.claude/projects/*/memory/*.md` and its `MEMORY.md` index) plus any preferences in `~/.claude/CLAUDE.md`. Distill **durable** facts into curated notes with the right `type` (`preference` · `decision` · `lesson` · `memory`), each with frontmatter (`title, created, updated, type, status, tags, sources, boundary`) and **≥2 `[[wikilinks]]`**. Native memory is raw scratch — promote the keepers, drop the transient. Same distillation as `distill`, done in bulk.
+2. **Memories → `memory/`.** Read Claude Code native memory (`${CLAUDE_CONFIG_DIR:-~/.claude}/projects/*/memory/*.md` and its `MEMORY.md` index) plus any preferences in `${CLAUDE_CONFIG_DIR:-~/.claude}/CLAUDE.md`. Distill **durable** facts into curated notes with the right `type` (`preference` · `decision` · `lesson` · `memory`), each with frontmatter (`title, created, updated, type, status, tags, sources, boundary`) and **≥2 `[[wikilinks]]`**. Native memory is raw scratch — promote the keepers, drop the transient. Same distillation as `distill`, done in bulk.
    - **Then prune the raw source.** Once a native note's durable content is in the vault, remove it from native memory and drop its `MEMORY.md` index line, so the vault is the single authority. **Never delete native content you haven't first captured.** Anything that must load *every* session (core behavioral guidance) belongs in `CLAUDE.md`, not left in native — move it there, then prune. Deletion is a guided in-session action; confirm before removing — it needs a human judgement, which no recursion guard supplies.
 
 3. **Repos → `repos/`.** For each repo you actively work in, invoke **`ingest`** (one per run) to create its page with git-ref provenance. Don't hand-write repo pages here.
 
 4. **Projects → `projects/`.** For in-flight work, stub `projects/<slug>.md` (`type: project`, `status: active|paused`, `repos: [[...]]`) with Goal · Linked repos · Key decisions · Current state · Next steps. Link each to its repo pages.
 
-5. **Skills.** The engine's skills arrive with the plugin (`wiki-engine:<name>`). Inventory any other `~/.claude/skills/*` and installed plugins; note user-authored ones worth promoting into the engine (a manual add — don't copy them into the vault). Then regenerate the catalog: `${CLAUDE_SKILL_DIR}/../../bin/gen-skills-index.sh`.
+5. **Skills.** The engine's skills arrive with the plugin (`wiki-engine:<name>`). Inventory any other `${CLAUDE_CONFIG_DIR:-~/.claude}/skills/*` and installed plugins; note user-authored ones worth promoting into the engine (a manual add — don't copy them into the vault). Then regenerate the catalog: `${CLAUDE_SKILL_DIR}/../../bin/gen-skills-index.sh`.
 
 6. **Finalize.** Refresh `$WIKI_PATH/index.md` sections for the new pages, run `${CLAUDE_SKILL_DIR}/../../bin/lint.sh` (umbrella) and fix any failures, and append a dated `log.md` line summarizing the seed.
 
