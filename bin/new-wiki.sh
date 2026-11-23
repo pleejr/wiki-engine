@@ -8,7 +8,7 @@
 # Creates the vault repo, records this engine's release in .engine-version, renders the
 # scaffold templates, seeds node folders, and hands machine wiring to wire-machine.sh. The
 # engine itself reaches sessions as the wiki-engine Claude Code plugin. It does NOT touch
-# settings.json, your shell rc, ~/.claude/CLAUDE.md, or create any remote unless asked —
+# settings.json, your shell rc, the config dir's CLAUDE.md, or create any remote unless asked —
 # those are printed as next steps.
 set -euo pipefail
 
@@ -36,7 +36,7 @@ Machine wiring (opt-in; safe on a dedicated single-vault machine — idempotent)
   --wire-env         set "env": {"WIKI_PATH": <path>} in settings.json (recommended)
   --wire-shell [RC]  append `export WIKI_PATH=<path>` to RC (default: ~/.zshrc);
                      skipped with a warning if WIKI_PATH is already exported there
-  --wire-claude-md   append `@<path>/CLAUDE.md` to ~/.claude/CLAUDE.md (always-on router)
+  --wire-claude-md   append `@<path>/CLAUDE.md` to ${CLAUDE_CONFIG_DIR:-~/.claude}/CLAUDE.md (always-on router)
   --wire-statusline  set the engine status line, unless a foreign one is set
   --remote URL       add `origin` = URL, then push main
   --create-remote SLUG   create the remote via `gh` (OWNER/NAME) and push

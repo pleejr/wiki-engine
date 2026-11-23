@@ -23,7 +23,9 @@
 #                       hooks, the Bash tool and the status line (the recommended default)
 #   --wire-shell [RC]   also ensure `export WIKI_PATH=DIR` in RC (default ~/.zshrc), for
 #                       shells outside Claude Code
-#   --wire-claude-md    ensure `@DIR/CLAUDE.md` in ~/.claude/CLAUDE.md
+#   --wire-claude-md    ensure `@DIR/CLAUDE.md` in the config dir's CLAUDE.md
+#                       (${CLAUDE_CONFIG_DIR:-~/.claude}); under a CLAUDE_CONFIG_DIR, also the
+#                       engine router import, which the vault template names under ~/.claude
 #   --wire-statusline   ensure the engine status line, unless a foreign one is set
 #   --no-rag            skip provisioning the .rag semantic-recall runtime
 #   --check             dry-run: report pending changes, change nothing (exit 1 if any pending)
@@ -124,6 +126,17 @@ if [ "$WIRE_CLAUDE_MD" -eq 1 ]; then
     ok "$CMD already imports this vault (left as-is)"
   elif [ "$CHECK" -eq 1 ]; then would "append '$IMPORT' to $CMD"
   else mkdir -p "$CFG"; printf '\n%s\n' "$IMPORT" >> "$CMD"; did "always-on import -> $CMD"; fi
+  # The vault template imports the engine router as @~/.claude/plugins/data/…, and an @-import
+  # cannot name a variable. Under a CLAUDE_CONFIG_DIR that path does not exist, the import
+  # resolves to nothing, and the session starts without the router or its safety rule while
+  # looking normal. Import it from the config dir's stable pointer instead.
+  if [ "$CFG" != "$HOME/.claude" ]; then
+    ROUTER="@$POINTER/CLAUDE.md"
+    if [ -f "$CMD" ] && grep -qxF "$ROUTER" "$CMD"; then
+      ok "$CMD already imports the engine router (left as-is)"
+    elif [ "$CHECK" -eq 1 ]; then would "append '$ROUTER' to $CMD"
+    else mkdir -p "$CFG"; printf '%s\n' "$ROUTER" >> "$CMD"; did "engine router import -> $CMD"; fi
+  fi
 fi
 
 # 6. status line, through the stable pointer --------------------------------------------

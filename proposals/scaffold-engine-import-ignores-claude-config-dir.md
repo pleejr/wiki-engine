@@ -1,6 +1,7 @@
 ---
 slug: scaffold-engine-import-ignores-claude-config-dir
-outcome: open
+outcome: partially-accepted
+reason: "The wire-machine half is built as suggested: under a CLAUDE_CONFIG_DIR, --wire-claude-md writes the router import from the config dir's stable pointer, and --check reports it missing. The session-preflight warning is not built. Telling whether an @-import resolves means walking CLAUDE.md import chains at every session start, and wire-machine --check already reports the gap on demand and through adopt. The template line is kept, because it is correct under the default config dir. Shipped in v3.11.0."
 received: 2026-11-23
 ---
 
