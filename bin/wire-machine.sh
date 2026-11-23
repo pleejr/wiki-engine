@@ -130,12 +130,14 @@ if [ "$WIRE_CLAUDE_MD" -eq 1 ]; then
   # cannot name a variable. Under a CLAUDE_CONFIG_DIR that path does not exist, the import
   # resolves to nothing, and the session starts without the router or its safety rule while
   # looking normal. Import it from the config dir's stable pointer instead.
-  if [ "$CFG" != "$HOME/.claude" ]; then
+  # Compared as physical directories, so a trailing slash or a symlink to ~/.claude does not
+  # add a second import next to the template's own.
+  if ! [ "$CFG" -ef "$HOME/.claude" ]; then
     ROUTER="@$POINTER/CLAUDE.md"
-    if [ -f "$CMD" ] && grep -qxF "$ROUTER" "$CMD"; then
+    if [ -f "$CMD" ] && grep -qF "$ROUTER" "$CMD"; then
       ok "$CMD already imports the engine router (left as-is)"
     elif [ "$CHECK" -eq 1 ]; then would "append '$ROUTER' to $CMD"
-    else mkdir -p "$CFG"; printf '%s\n' "$ROUTER" >> "$CMD"; did "engine router import -> $CMD"; fi
+    else mkdir -p "$CFG"; printf '\n%s\n' "$ROUTER" >> "$CMD"; did "engine router import -> $CMD"; fi
   fi
 fi
 

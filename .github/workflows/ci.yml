@@ -2924,16 +2924,22 @@ jobs:
           # here, and an @-import cannot name a variable. --wire-claude-md must import the router
           # from the config dir's stable pointer, once, and leave ~/.claude/CLAUDE.md alone.
           CMD="$CLAUDE_CONFIG_DIR/CLAUDE.md"; ROUTER="@$CLAUDE_CONFIG_DIR/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md"
+          # Start from a file with no trailing newline: an append must not join the last line.
+          printf '# machine notes' > "$CMD"
           ./bin/wire-machine.sh --wiki "$V" --wire-claude-md --no-rag >/dev/null 2>&1 || true
           ./bin/wire-machine.sh --wiki "$V" --wire-claude-md --no-rag >/dev/null 2>&1 || true
-          if [ "$(grep -cxF "$ROUTER" "$CMD")" = 1 ] && [ "$(grep -cxF "@$(cd "$V" && pwd)/CLAUDE.md" "$CMD")" = 1 ]; then ck 0 "wire-machine --wire-claude-md imports the vault and the engine router once each"; else ck 1 "wire-machine --wire-claude-md imports the vault and the engine router once each: $(cat "$CMD")"; fi
+          if [ "$(grep -cxF "$ROUTER" "$CMD")" = 1 ] && grep -qx '# machine notes' "$CMD" && [ "$(grep -cxF "@$(cd "$V" && pwd)/CLAUDE.md" "$CMD")" = 1 ]; then ck 0 "wire-machine --wire-claude-md imports the vault and the engine router once each"; else ck 1 "wire-machine --wire-claude-md imports the vault and the engine router once each: $(cat "$CMD")"; fi
           if [ ! -e "$HOME/.claude/CLAUDE.md" ]; then ck 0 "...and leaves ~/.claude/CLAUDE.md alone"; else ck 1 "...and leaves ~/.claude/CLAUDE.md alone"; fi
           grep -vxF "$ROUTER" "$CMD" > "$RUNNER_TEMP/cmd.md"; mv "$RUNNER_TEMP/cmd.md" "$CMD"
           out="$(./bin/wire-machine.sh --wiki "$V" --wire-claude-md --no-rag --check 2>&1)" || true
           if printf '%s' "$out" | grep -qF "append '$ROUTER'"; then ck 0 "--check reports a missing router import"; else ck 1 "--check reports a missing router import: $out"; fi
           # Control: under the default config dir the template's own import resolves; add nothing.
           ( unset CLAUDE_CONFIG_DIR; ./bin/wire-machine.sh --wiki "$V" --wire-claude-md --no-rag >/dev/null 2>&1 || true )
-          if ! grep -q 'wiki-engine-wiki-engine/engine/CLAUDE.md' "$HOME/.claude/CLAUDE.md"; then ck 0 "the default config dir gets no extra router import"; else ck 1 "the default config dir gets no extra router import"; fi
+          if grep -qxF "@$(cd "$V" && pwd)/CLAUDE.md" "$HOME/.claude/CLAUDE.md" && ! grep -q 'wiki-engine-wiki-engine/engine/CLAUDE.md' "$HOME/.claude/CLAUDE.md"; then ck 0 "the default config dir gets no extra router import"; else ck 1 "the default config dir gets no extra router import"; fi
+          # A config dir that IS ~/.claude under another spelling (trailing slash, symlink) is the default.
+          ln -s "$HOME/.claude" "$RUNNER_TEMP/cdlink"
+          ( CLAUDE_CONFIG_DIR="$RUNNER_TEMP/cdlink/" ./bin/wire-machine.sh --wiki "$V" --wire-claude-md --no-rag >/dev/null 2>&1 || true )
+          if ! grep -q 'wiki-engine-wiki-engine/engine/CLAUDE.md' "$HOME/.claude/CLAUDE.md"; then ck 0 "a symlinked, slash-ended spelling of ~/.claude gets no router import"; else ck 1 "a symlinked, slash-ended spelling of ~/.claude gets no router import"; fi
           exit "$fail"
 
       - name: A finished session must not be reported as a live peer

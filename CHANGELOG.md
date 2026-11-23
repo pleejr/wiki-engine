@@ -4,16 +4,16 @@ All notable changes to the wiki-engine. Versioned with [SemVer](https://semver.o
 
 **What gets a tag:** the engine is consumed by *installing a tag* (the plugin marketplace pins the latest release tag, and a vault's `.engine-version` names the tag its CI checks out), so tag + release **only** when a change touches what a consumer runs — `skills/`, `bin/`, `hooks/`, `SCHEMA.md`, `scaffold/`, the `CLAUDE.md` router (`LICENSE`/legal too). **Docs-only** changes (`README`, `USAGE`, comments, this file's prose) land on `main` **untagged** and ride along under `## [Unreleased]` into the next functional release.
 
-## [3.11.0] — 2026-11-23
+## [3.10.2] — 2026-11-23
 
-Minor — `wire-machine.sh --wire-claude-md` imports the engine router under a `CLAUDE_CONFIG_DIR`.
+Patch — `wire-machine.sh --wire-claude-md` imports the engine router under a `CLAUDE_CONFIG_DIR`.
 
 ### Fixed
-- **A vault wired under a `CLAUDE_CONFIG_DIR` loaded without the engine router** (fail-open: the session looked normal). The scaffolded vault `CLAUDE.md` imports the router as `@~/.claude/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md`; with `CLAUDE_CONFIG_DIR` set, the plugin data lives under that directory, `~/.claude/plugins/data` does not exist, and the import resolved to nothing, so the router and its hard safety rule were silently absent. An `@`-import cannot name a variable, so the template cannot carry the fix. When the config dir is not `~/.claude`, `--wire-claude-md` now also writes `@$CLAUDE_CONFIG_DIR/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md` (the stable pointer the boot hook maintains) into the config dir's `CLAUDE.md`, once; `--check` reports it missing. Under the default config dir nothing changes. A machine already wired re-converges with `wire-machine.sh --wire-claude-md`, or through `adopt`. Proposal: scaffold-engine-import-ignores-claude-config-dir
+- **A vault wired under a `CLAUDE_CONFIG_DIR` loaded without the engine router** (fail-open: the session looked normal). The scaffolded vault `CLAUDE.md` imports the router as `@~/.claude/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md`; with `CLAUDE_CONFIG_DIR` set, the plugin data lives under that directory, `~/.claude/plugins/data` does not exist, and the import resolved to nothing, so the router and its hard safety rule were silently absent. An `@`-import cannot name a variable, so the template cannot carry the fix. When the config dir is not `~/.claude`, `--wire-claude-md` now also writes `@$CLAUDE_CONFIG_DIR/plugins/data/wiki-engine-wiki-engine/engine/CLAUDE.md` (the stable pointer the boot hook maintains) into the config dir's `CLAUDE.md`, once, on a line of its own; `--check --wire-claude-md` reports it missing. Under the default config dir, compared as a physical path so a trailing slash or a symlink counts, nothing changes. A machine already wired re-converges with `wire-machine.sh --wire-claude-md`, or through `adopt`. Proposal: scaffold-engine-import-ignores-claude-config-dir
 - Docs that named `~/.claude` where the code resolves `${CLAUDE_CONFIG_DIR:-~/.claude}`: `new-wiki.sh` and `wire-machine.sh` help, `onboard` steps 2 and 5, and the `propose` intake review check, whose shell test now reads the config dir.
 
 ### Tests
-- The `CLAUDE_CONFIG_DIR` CI step adds four checks: both imports written once each after two runs, `~/.claude/CLAUDE.md` untouched, `--check` naming a missing router import, and no router line under the default config dir. The first is red against 3.10.1.
+- The `CLAUDE_CONFIG_DIR` CI step adds five checks: both imports written once each after two runs, starting from a file with no trailing newline; `~/.claude/CLAUDE.md` untouched; `--check` naming a missing router import; the vault import but no router line under the default config dir; and none under a symlinked, slash-ended spelling of it. The first and third are red against 3.10.1.
 
 ## [3.10.1] — 2026-11-19
 
